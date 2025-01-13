@@ -24,7 +24,11 @@ func NewAutoResolver(store *store.Store, db *gorm.DB) *AutoResolver {
 }
 
 func (autoResolver *AutoResolver) AutoResolveStaleErrors(ctx context.Context) {
-	projectFilterSettings := autoResolver.store.FindProjectsWithAutoResolveSetting(ctx)
+	projectFilterSettings, err := autoResolver.store.FindProjectsWithAutoResolveSetting(ctx)
+	if err != nil {
+		log.WithContext(ctx).WithError(err).Error("failed to query auto resolve settings")
+		return
+	}
 
 	for _, projectFilterSettings := range projectFilterSettings {
 		log.WithContext(ctx).WithFields(
@@ -34,13 +38,13 @@ func (autoResolver *AutoResolver) AutoResolveStaleErrors(ctx context.Context) {
 			}).Info("Finding stale errors for project")
 		interval := projectFilterSettings.AutoResolveStaleErrorsDayInterval
 
-		project, err := autoResolver.store.GetProject(projectFilterSettings.ProjectID)
+		project, err := autoResolver.store.GetProject(ctx, projectFilterSettings.ProjectID)
 		if err != nil {
 			log.WithContext(ctx).WithFields(log.Fields{"project_id": projectFilterSettings.ProjectID}).Error(err)
 			continue
 		}
 
-		err = autoResolver.resolveStaleErrorsForProject(ctx, project, interval)
+		err = autoResolver.resolveStaleErrorsForProject(ctx, *project, interval)
 
 		if err != nil {
 			log.WithContext(ctx).WithFields(log.Fields{"project_id": projectFilterSettings.ProjectID}).Error(err)
@@ -63,7 +67,7 @@ func (autoResolver *AutoResolver) resolveStaleErrorsForProject(ctx context.Conte
 			ProjectID: project.ID,
 		})
 
-	err := db.Debug().
+	err := db.
 		Select("DISTINCT(error_groups.id), error_groups.project_id").
 		Where(model.ErrorGroup{
 			State:     privateModel.ErrorStateOpen,
@@ -77,21 +81,25 @@ func (autoResolver *AutoResolver) resolveStaleErrorsForProject(ctx context.Conte
 	}
 
 	for _, errorGroup := range errorGroups {
-		log.WithContext(ctx).WithFields(
-			log.Fields{
-				"project_id":     project.ID,
-				"error_group_id": errorGroup.ID,
-				"worker":         "autoresolver",
-			}).Info("Autoresolving error group")
+		logFields := log.Fields{
+			"project_id":     project.ID,
+			"error_group_id": errorGroup.ID,
+			"worker":         "autoresolver",
+		}
 
-		_, err := autoResolver.store.UpdateErrorGroupStateBySystem(ctx, store.UpdateErrorGroupParams{
+		log.WithContext(ctx).WithFields(logFields).Info("Autoresolving error group")
+
+		err := autoResolver.store.UpdateErrorGroupStateBySystem(ctx, store.UpdateErrorGroupParams{
 			ID:    errorGroup.ID,
 			State: privateModel.ErrorStateResolved,
 		})
 
 		if err != nil {
-			return err
+			log.WithContext(ctx).WithFields(logFields).Error(err)
+			continue
 		}
+
+		log.WithContext(ctx).WithFields(logFields).Info("Resolved error group")
 	}
 
 	return nil

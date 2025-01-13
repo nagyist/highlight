@@ -6,30 +6,24 @@ import Navbar from '../components/common/Navbar/Navbar'
 import { Section } from '../components/common/Section/Section'
 import styles from '../components/Home/Home.module.scss'
 
-import HeroBugLeft from '../public/images/hero-bug-left.gif'
-import HeroBugRight from '../public/images/hero-bug-right.gif'
 import LandingInfoRowSecurity from '../public/images/landingInfoRowSecurity.png'
 
-import { Collapse } from 'antd'
 import classNames from 'classnames'
 import Link from 'next/link'
+import { FaPlay } from 'react-icons/fa'
 import { AnimateBugLeft, AnimateBugRight } from '../components/Animate'
+import { CalendlyModal } from '../components/common/CalendlyModal/CalendlyModal'
 import { FooterCallToAction } from '../components/common/CallToAction/FooterCallToAction'
 import { OSSCallToAction } from '../components/common/CallToAction/OSSCallToAction'
 import Footer from '../components/common/Footer/Footer'
 import { Typography } from '../components/common/Typography/Typography'
 import { BigHeroArt } from '../components/Home/BigHeroArt'
-import { CalendlyPopover } from '../components/Home/CalendlyPopover'
 import { CompaniesReel } from '../components/Home/CompaniesReel/CompaniesReel'
 import { CustomerReviewTrack } from '../components/Home/CustomerReviewTrack'
 import { FeatureCarousel } from '../components/Home/FeatureCarousel/FeatureCarousel'
 import LandingInfoRow from '../components/Home/LandingInfoRow'
 import { Review } from '../components/Home/Reviews'
 import InfoRow from '../components/Products/InfoRow'
-
-const IMAGE_SHOW_OFFSET = 450
-
-const { Panel } = Collapse
 
 export const FeatureItem = ({
 	children,
@@ -91,8 +85,9 @@ const Home: NextPage = () => {
 	const reviewsRef = useRef<HTMLDivElement>(null)
 	const scrollYPosition = useRef<number>(0)
 	const [scrollReviews, setScrollReviews] = useState(false)
-	const [leftBugLoaded, setLeftBugLoaded] = useState(false)
-	const [rightBugLoaded, setRightBugLoaded] = useState(false)
+	const [bugLoaded, setBugLoaded] = useState(true)
+	const leftBugRef = useRef<HTMLVideoElement>(null)
+	const rightBugRef = useRef<HTMLVideoElement>(null)
 
 	const scrollListener = useCallback(() => {
 		if (!scrollReviews) {
@@ -148,29 +143,55 @@ const Home: NextPage = () => {
 		}
 	}, [reviewsRef])
 
+	useEffect(() => {
+		if (bugLoaded && leftBugRef.current && rightBugRef.current) {
+			leftBugRef.current.play()
+			rightBugRef.current.play()
+		}
+	}, [bugLoaded])
+
 	return (
 		<div>
 			<Navbar />
 			<main>
 				<Section className={styles.heroVideoWrapper}>
-					<AnimateBugLeft loaded={leftBugLoaded && rightBugLoaded}>
+					<AnimateBugLeft loaded={bugLoaded}>
 						<div className={styles.heroBug}>
-							<Image
-								src={HeroBugLeft}
-								alt="bug left"
-								onLoadingComplete={() => setLeftBugLoaded(true)}
-							/>
+							<video
+								ref={leftBugRef}
+								width="400"
+								height="400"
+								onPlay={() => setBugLoaded(true)}
+								autoPlay
+								muted
+								loop
+							>
+								<source
+									src="/images/hero-bug-left.webm"
+									type="video/webm"
+								/>
+								Your browser does not support the video tag.
+							</video>
 						</div>
 					</AnimateBugLeft>
-					<AnimateBugRight loaded={leftBugLoaded && rightBugLoaded}>
+					<AnimateBugRight loaded={bugLoaded}>
 						<div className={styles.heroBug}>
-							<Image
-								src={HeroBugRight}
-								alt="bug right"
-								onLoadingComplete={() =>
-									setRightBugLoaded(true)
-								}
-							/>
+							<video
+								ref={rightBugRef}
+								width="400"
+								height="400"
+								className="scale-x-[-1]"
+								onPlay={() => setBugLoaded(true)}
+								autoPlay
+								muted
+								loop
+							>
+								<source
+									src="/images/hero-bug-left.webm"
+									type="video/webm"
+								/>
+								Your browser does not support the video tag.
+							</video>
 						</div>
 					</AnimateBugRight>
 					<div className={styles.anchorFeature}>
@@ -200,21 +221,43 @@ const Home: NextPage = () => {
 								</PrimaryButton>
 
 								<PrimaryButton
-									href={'/docs'}
+									href={'https://app.highlight.io/demo'}
 									className={classNames(styles.hollowButton)}
 								>
-									<Typography type="copy2" emphasis={true}>
-										Read our docs
-									</Typography>
+									<div className="flex items-center gap-2">
+										<FaPlay />
+										<Typography
+											type="copy2"
+											emphasis={true}
+										>
+											Live demo
+										</Typography>
+									</div>
 								</PrimaryButton>
 							</div>
 						</div>
 						<div className="relative flex flex-col items-center mt-8 mb-28">
-							<CalendlyPopover />
+							<CalendlyModal className="px-3 hover:bg-white/10" />
 						</div>
 						<FeatureCarousel />
 					</div>
 				</Section>
+				<Section>
+					<CompaniesReel />
+				</Section>
+				<Section>
+					<div className={styles.anchorFeature}>
+						<div className={styles.anchorHead}>
+							<Typography type="copy2" onDark>
+								Don&apos;t take our word.{' '}
+								<Link href="/customers">
+									Read our customer review section →
+								</Link>
+							</Typography>
+						</div>
+					</div>
+				</Section>
+				<CustomerReviewTrack />
 				<Section>
 					<div className={styles.anchorFeature} id="features">
 						<div className={styles.anchorTitle}>
@@ -265,22 +308,6 @@ const Home: NextPage = () => {
 				</div>
 				<BigHeroArt />
 				<OSSCallToAction />
-				<Section>
-					<CompaniesReel />
-				</Section>
-				<Section>
-					<div className={styles.anchorFeature}>
-						<div className={styles.anchorHead}>
-							<Typography type="copy2" onDark>
-								Don&apos;t take our word.{' '}
-								<Link href="/customers">
-									Read our customer review section →
-								</Link>
-							</Typography>
-						</div>
-					</div>
-				</Section>
-				<CustomerReviewTrack />
 				<FooterCallToAction />
 			</main>
 			<Footer />

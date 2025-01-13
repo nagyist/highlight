@@ -1,28 +1,28 @@
 import { Avatar } from '@components/Avatar/Avatar'
+import { Button } from '@components/Button'
+import { useSearchContext } from '@components/Search/SearchContext'
 import { TableList, TableListItem } from '@components/TableList/TableList'
+import { toast } from '@components/Toaster'
 import { useGetEnhancedUserDetailsQuery } from '@graph/hooks'
 import { GetEnhancedUserDetailsQuery } from '@graph/operations'
 import { Maybe, Session, SocialLink, SocialType } from '@graph/schemas'
 import {
 	Box,
-	ButtonIcon,
-	IconSolidExternalLink,
+	IconSolidCheveronRight,
 	IconSolidQuestionMarkCircle,
 	Tag,
 	Text,
 	Tooltip,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
 import usePlayerConfiguration from '@pages/Player/PlayerHook/utils/usePlayerConfiguration'
 import { sessionIsBackfilled } from '@pages/Player/utils/utils'
-import { useSearchContext } from '@pages/Sessions/SearchContext/SearchContext'
 import {
-	getDisplayName,
 	getDisplayNameAndField,
 	getIdentifiedUserProfileImage,
+	getUserProperties,
 } from '@pages/Sessions/SessionsFeedV3/MinimalSessionCard/utils/utils'
 import { useParams } from '@util/react-router/useParams'
-import { copyToClipboard, validateEmail } from '@util/string'
-import { message } from 'antd'
+import { copyToClipboard } from '@util/string'
 import clsx from 'clsx'
 import { capitalize } from 'lodash'
 import React, { useCallback, useEffect, useMemo } from 'react'
@@ -34,16 +34,19 @@ import {
 	FaTwitterSquare,
 } from 'react-icons/fa'
 
-import { buildQueryStateString } from '@/util/url/params'
+import { SearchExpression } from '@/components/Search/Parser/listener'
+import { stringifyExpression } from '@/components/Search/utils'
+import { RelatedResourceButtons } from '@/pages/Player/MetadataBox/RelatedResourceButtons'
 
 import { useReplayerContext } from '../ReplayerContext'
 import * as style from './MetadataBox.css'
 import { getAbsoluteUrl, getMajorVersion } from './utils/utils'
+import { quoteQueryValue } from '@/components/Search/SearchForm/utils'
 
 export const MetadataBox = React.memo(() => {
 	const { session_secure_id } = useParams<{ session_secure_id: string }>()
-	const { session } = useReplayerContext()
-	const { setSearchQuery } = useSearchContext()
+	const { session, sessionMetadata } = useReplayerContext()
+	const { onSubmit, queryParts } = useSearchContext()
 	const { setShowLeftPanel } = usePlayerConfiguration()
 
 	const [enhancedAvatar, setEnhancedAvatar] = React.useState<string>()
@@ -94,13 +97,21 @@ export const MetadataBox = React.memo(() => {
 				keyDisplayValue: 'Location',
 				valueDisplayValue: geoData,
 			},
+			...(session?.ip?.length
+				? [
+						{
+							keyDisplayValue: 'IP',
+							valueDisplayValue: session?.ip,
+						},
+					]
+				: []),
 			{
 				keyDisplayValue: 'Browser',
 				valueDisplayValue:
 					session?.browser_name && session?.browser_version
 						? `${session.browser_name} ${getMajorVersion(
 								session.browser_version,
-						  )}`
+							)}`
 						: undefined,
 			},
 			{
@@ -109,7 +120,7 @@ export const MetadataBox = React.memo(() => {
 					session?.os_name && session?.os_version
 						? `${session.os_name} ${getMajorVersion(
 								session.os_version,
-						  )}`
+							)}`
 						: undefined,
 			},
 			{
@@ -186,18 +197,42 @@ export const MetadataBox = React.memo(() => {
 	const searchIdentifier = useCallback(() => {
 		if (!session) return
 
-		const displayName = getDisplayName(session)
-		const userParam = validateEmail(displayName) ? 'email' : 'identifier'
+		let newQueryParts = []
+		if (session.identified) {
+			const { email } = getUserProperties(session.user_properties)
+			const { identifier } = session
 
-		setSearchQuery((query) =>
-			buildQueryStateString({
-				query,
-				[`user_${userParam}`]: displayName,
-			}),
-		)
+			if (!email && !identifier) {
+				return
+			}
+
+			const { key, value } = email
+				? { key: 'email', value: email }
+				: { key: 'identifier', value: identifier }
+
+			newQueryParts = queryParts.filter((part) => part.key !== key)
+			newQueryParts.push({
+				key,
+				operator: '=',
+				value,
+				text: `${key}=${quoteQueryValue(value)}`,
+			} as SearchExpression)
+		} else {
+			newQueryParts = queryParts.filter(
+				(part) => part.key !== 'device_id',
+			)
+			newQueryParts.push({
+				key: 'device_id',
+				operator: '=',
+				value: String(session.fingerprint),
+				text: `device_id=${session.fingerprint}`,
+			} as SearchExpression)
+		}
+
+		onSubmit(stringifyExpression(newQueryParts))
 
 		setShowLeftPanel(true)
-	}, [session, setSearchQuery, setShowLeftPanel])
+	}, [session, onSubmit, setShowLeftPanel, queryParts])
 
 	return (
 		<Box display="flex" flexDirection="column" style={{ width: 300 }}>
@@ -216,13 +251,13 @@ export const MetadataBox = React.memo(() => {
 					gap="8"
 					onClick={() => {
 						copyToClipboard(displayValue)
-						message.success(`Copied identifier ${displayValue}`, 3)
+						toast.success(`Copied identifier ${displayValue}`, {
+							duration: 3000,
+						})
 					}}
 				>
 					<Avatar
-						className={style.avatar}
-						seed={session?.identifier ?? ''}
-						shape="rounded"
+						size={28}
 						customImage={customAvatarImage || enhancedAvatar}
 					/>
 					<Text weight="bold" cssClass={style.defaultText} lines="1">
@@ -263,13 +298,23 @@ export const MetadataBox = React.memo(() => {
 						</Box>
 					)}
 				</Box>
-				<ButtonIcon
+				<Button
+					size="small"
 					kind="secondary"
 					emphasis="low"
-					shape="square"
-					size="small"
-					icon={<IconSolidExternalLink />}
+					iconRight={<IconSolidCheveronRight />}
 					onClick={searchIdentifier}
+					trackingId="session-metadata-identifier-search"
+				>
+					Sessions
+				</Button>
+			</Box>
+			<Box display="flex" pt="4" pb="8" px="8">
+				<RelatedResourceButtons
+					secureSessionId={session_secure_id}
+					disableErrors={!session?.has_errors}
+					startDate={new Date(sessionMetadata.startTime)}
+					endDate={new Date(sessionMetadata.endTime)}
 				/>
 			</Box>
 			<Box

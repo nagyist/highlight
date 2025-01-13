@@ -1,4 +1,5 @@
 import { SESSION_STORAGE_KEYS } from '../utils/sessionStorage/sessionStorageKeys'
+import { getItem, monkeyPatchLocalStorage, setItem } from '../utils/storage'
 
 enum SEGMENT_LOCAL_STORAGE_KEYS {
 	USER_ID = 'ajs_user_id',
@@ -91,41 +92,14 @@ export const SegmentIntegrationListener = (callback: (obj: any) => void) => {
 }
 
 const getLocalStorageValues = () => {
-	const userId = window.localStorage.getItem(
-		SEGMENT_LOCAL_STORAGE_KEYS['USER_ID'],
-	)
-	const userTraits = window.localStorage.getItem(
-		SEGMENT_LOCAL_STORAGE_KEYS['USER_TRAITS'],
-	)
-	const anonymousId = window.localStorage.getItem(
-		SEGMENT_LOCAL_STORAGE_KEYS['ANONYMOUS_ID'],
-	)
+	const userId = getItem(SEGMENT_LOCAL_STORAGE_KEYS['USER_ID'])
+	const userTraits = getItem(SEGMENT_LOCAL_STORAGE_KEYS['USER_TRAITS'])
+	const anonymousId = getItem(SEGMENT_LOCAL_STORAGE_KEYS['ANONYMOUS_ID'])
 
 	return {
 		userId,
 		userTraits,
 		anonymousId,
-	}
-}
-
-const monkeyPatchLocalStorage = (
-	onSetItemHandler: ({
-		keyName,
-		keyValue,
-	}: {
-		keyName: string
-		keyValue: string
-	}) => void,
-) => {
-	const originalSetItem = window.localStorage.setItem
-
-	window.localStorage.setItem = function () {
-		const [keyName, keyValue] = arguments as unknown as [
-			key: string,
-			value: string,
-		]
-		onSetItemHandler({ keyName, keyValue })
-		originalSetItem.apply(this, [keyName, keyValue])
 	}
 }
 
@@ -148,23 +122,17 @@ const shouldSend = (payload: any) => {
 
 	const hashDigest = hashCode(hashMessage)
 
-	const lastSentHash = window.sessionStorage.getItem(
+	const lastSentHash = getItem(
 		SESSION_STORAGE_KEYS.SEGMENT_LAST_SENT_HASH_KEY,
 	)
 
 	if (lastSentHash === undefined) {
-		window.sessionStorage.setItem(
-			SESSION_STORAGE_KEYS.SEGMENT_LAST_SENT_HASH_KEY,
-			hashDigest,
-		)
+		setItem(SESSION_STORAGE_KEYS.SEGMENT_LAST_SENT_HASH_KEY, hashDigest)
 		return true
 	}
 
 	if (hashDigest !== lastSentHash) {
-		window.sessionStorage.setItem(
-			SESSION_STORAGE_KEYS.SEGMENT_LAST_SENT_HASH_KEY,
-			hashDigest,
-		)
+		setItem(SESSION_STORAGE_KEYS.SEGMENT_LAST_SENT_HASH_KEY, hashDigest)
 		return true
 	}
 

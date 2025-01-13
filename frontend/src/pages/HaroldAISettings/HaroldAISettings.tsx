@@ -1,13 +1,13 @@
+import { toast } from '@components/Toaster'
 import {
 	Box,
 	Heading,
 	IconSolidExternalLink,
 	Stack,
 	Text,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
 import { useAuthorization } from '@util/authorization/authorization'
 import { POLICY_NAMES } from '@util/authorization/authorizationPolicies'
-import { message } from 'antd'
 
 import BorderBox from '@/components/BorderBox/BorderBox'
 import { Button } from '@/components/Button'
@@ -17,18 +17,18 @@ import {
 	useGetWorkspaceSettingsQuery,
 } from '@/graph/generated/hooks'
 import { namedOperations } from '@/graph/generated/operations'
-import { useParams } from '@/util/react-router/useParams'
+import { useApplicationContext } from '@/routers/AppRouter/context/ApplicationContext'
 
 type AiSetting = {
 	label: string
 	info: string
-	key: 'ai_application' | 'ai_insights'
+	key: 'ai_application' | 'ai_insights' | 'ai_query_builder'
 	feature: string
 }
 
 const AI_FEATURES: AiSetting[] = [
 	{
-		label: 'Enable Harold',
+		label: 'Error Suggestions & Session Summarization',
 		info: 'Enable error suggestions and session summarization across the app',
 		key: 'ai_application',
 		feature: 'Application',
@@ -39,17 +39,23 @@ const AI_FEATURES: AiSetting[] = [
 		key: 'ai_insights',
 		feature: 'Session Insights Digests',
 	},
+	{
+		label: 'AI-powered Query Builder',
+		info: 'Build queries with natural language using the power of Harold',
+		key: 'ai_query_builder',
+		feature: 'Query Builder',
+	},
 ]
 
 export const HaroldAISettings = () => {
-	const { workspace_id } = useParams<{ workspace_id: string }>()
+	const { currentWorkspace } = useApplicationContext()
 
 	const [editWorkspaceSettings] = useEditWorkspaceSettingsMutation({
 		refetchQueries: [namedOperations.Query.GetWorkspaceSettings],
 	})
 	const { data, loading } = useGetWorkspaceSettingsQuery({
-		variables: { workspace_id: workspace_id! },
-		skip: !workspace_id,
+		variables: { workspace_id: String(currentWorkspace?.id) },
+		skip: !currentWorkspace?.id,
 	})
 
 	const { checkPolicyAccess } = useAuthorization()
@@ -58,25 +64,25 @@ export const HaroldAISettings = () => {
 	})
 
 	const handleSwitch = (setting: AiSetting) => (isOptIn: boolean) => {
-		if (!workspace_id) {
+		if (!currentWorkspace?.id) {
 			return
 		}
 		editWorkspaceSettings({
 			variables: {
 				...data?.workspaceSettings,
-				workspace_id: workspace_id,
+				workspace_id: currentWorkspace?.id,
 				[setting.key]: isOptIn,
 			},
 		})
 			.then(() => {
-				message.success(
+				toast.success(
 					`${isOptIn ? 'Enabled' : 'Disabled'} Harold for your ${
 						setting.feature
 					}.`,
 				)
 			})
 			.catch((reason: any) => {
-				message.error(String(reason))
+				toast.error(String(reason))
 			})
 	}
 
@@ -123,7 +129,7 @@ export const HaroldAISettings = () => {
 					</BorderBox>
 					<Stack gap="12" direction="column" paddingTop="24">
 						<Text weight="bold" size="small" color="default">
-							Features
+							Harold Features
 						</Text>
 						{AI_FEATURES.map((c) => (
 							<BorderBox key={c.key}>

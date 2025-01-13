@@ -1,13 +1,15 @@
-import { vars } from '@highlight-run/ui'
-import { borders } from '@highlight-run/ui/src/css/borders'
-import { colors } from '@highlight-run/ui/src/css/colors'
+import { borders } from '@highlight-run/ui/borders'
+import { colors } from '@highlight-run/ui/colors'
+import { pulseKeyframes } from '@highlight-run/ui/keyframes'
+import { vars } from '@highlight-run/ui/vars'
 import { style } from '@vanilla-extract/css'
 
 export const OUTLINE_HISTOGRAM_HEIGHT = 120
 export const OUTLINE_PADDING = 2
+export const LEGEND_HISTOGRAM_HEIGHT = 98
 
 export const regularHeight = style({
-	height: '4.16rem', // computed as 52px in Chrome,
+	height: 62,
 })
 
 export const outlineHeight = style({
@@ -44,7 +46,13 @@ export const dragSelection = style({
 export const thresholdArea = style({
 	opacity: 0.2,
 	left: 0,
-	zIndex: 1,
 	width: 'calc(100% - 4px)',
 	pointerEvents: 'none',
+})
+
+export const barsLoading = style({
+	animation: pulseKeyframes,
+	animationDuration: '1.25s',
+	animationIterationCount: 'infinite',
+	animationTimingFunction: 'ease-out',
 })

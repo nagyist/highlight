@@ -34,6 +34,11 @@ input ErrorObjectInput {
 	payload: String
 }
 
+input ServiceInput {
+	name: String!
+	version: String!
+}
+
 input BackendErrorObjectInput {
 	session_secure_id: String
 	request_id: String
@@ -47,6 +52,8 @@ input BackendErrorObjectInput {
 	stackTrace: String!
 	timestamp: Timestamp!
 	payload: String
+	service: ServiceInput!
+	environment: String!
 }
 
 input MetricTag {
@@ -56,6 +63,9 @@ input MetricTag {
 
 input MetricInput {
 	session_secure_id: String!
+	span_id: String
+	parent_span_id: String
+	trace_id: String
 	group: String
 	name: String!
 	value: Float!
@@ -91,10 +101,12 @@ type Mutation {
 		clientConfig: String!
 		environment: String!
 		appVersion: String
+		serviceName: String
 		fingerprint: String!
 		client_id: String!
 		network_recording_domains: [String!]
 		disable_session_recording: Boolean
+		privacy_setting: String
 	): InitializeSessionResponse!
 	identifySession(
 		session_secure_id: String!
@@ -107,6 +119,7 @@ type Mutation {
 	): String!
 	pushPayload(
 		session_secure_id: String!
+		payload_id: ID # Optional for backwards compatibility with older clients
 		events: ReplayEventsInput!
 		messages: String!
 		resources: String!
@@ -115,8 +128,12 @@ type Mutation {
 		is_beacon: Boolean
 		has_session_unloaded: Boolean
 		highlight_logs: String
-		payload_id: ID # Optional for backwards compatibility with older clients
 	): Int!
+	pushPayloadCompressed(
+		session_secure_id: String!
+		payload_id: ID!
+		data: String!
+	): Any
 	pushBackendPayload(
 		project_id: String
 		errors: [BackendErrorObjectInput]!

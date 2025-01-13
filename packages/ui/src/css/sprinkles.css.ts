@@ -1,5 +1,7 @@
-import { defineProperties, createSprinkles } from '@vanilla-extract/sprinkles'
+import { createSprinkles, defineProperties } from '@vanilla-extract/sprinkles'
+
 import { borders } from './borders'
+import { mediaQueries } from './breakpoints'
 import { colors } from './colors'
 import { vars } from './vars'
 
@@ -58,6 +60,7 @@ export const backgroundColors = {
 		vars.theme.interactive.overlay.secondary.selected.default,
 	secondarySelectedHover:
 		vars.theme.interactive.overlay.secondary.selected.hover,
+	surfaceNeutral: vars.theme.static.surface.sentiment.neutral,
 	primaryDisabled: vars.theme.interactive.overlay.primary.disabled,
 	primaryEnabled: vars.theme.interactive.overlay.primary.enabled,
 	primaryHover: vars.theme.interactive.overlay.primary.hover,
@@ -66,7 +69,6 @@ export const backgroundColors = {
 
 const staticProperties = defineProperties({
 	properties: {
-		alignItems: ['stretch', 'flex-start', 'center', 'flex-end'],
 		borderRadius: vars.borderRadius,
 		borderTopLeftRadius: vars.borderRadius,
 		borderTopRightRadius: vars.borderRadius,
@@ -83,32 +85,14 @@ const staticProperties = defineProperties({
 		],
 		position: ['absolute', 'fixed', 'relative', 'static', 'sticky'],
 		textAlign: ['left', 'center', 'right'],
-		gap: vars.space,
 		flex: {
 			stretch: '1 1 0',
 			fixed: '0 0 auto',
 		},
 		flexBasis: [0, 1],
-		flexDirection: ['row', 'column', 'column-reverse'],
 		flexGrow: [0, 1],
 		flexShrink: [0],
 		flexWrap: ['wrap', 'nowrap'],
-		justifyContent: [
-			'stretch',
-			'flex-start',
-			'center',
-			'flex-end',
-			'space-around',
-			'space-between',
-		],
-		justifySelf: [
-			'stretch',
-			'flex-start',
-			'center',
-			'flex-end',
-			'space-around',
-			'space-between',
-		],
 		padding: vars.space,
 		paddingTop: vars.space,
 		paddingBottom: vars.space,
@@ -150,6 +134,7 @@ const staticProperties = defineProperties({
 			normal: 'normal',
 			breakWord: 'break-word',
 		},
+		textDecoration: ['none', 'underline', 'line-through'],
 		textTransform: [
 			'none',
 			'capitalize',
@@ -161,9 +146,9 @@ const staticProperties = defineProperties({
 		userSelect: ['all', 'auto', 'none'],
 		visibility: ['hidden', 'visible'],
 		whiteSpace: ['normal', 'nowrap'],
+		wordBreak: ['normal', 'break-all', 'break-word'],
 	},
 	shorthands: {
-		align: ['alignItems'],
 		btr: ['borderTopLeftRadius', 'borderTopRightRadius'],
 		bbr: ['borderBottomLeftRadius', 'borderBottomRightRadius'],
 		brr: ['borderTopRightRadius', 'borderBottomRightRadius'],
@@ -217,6 +202,40 @@ const colorProperties = defineProperties({
 	},
 })
 
-export const sprinkles = createSprinkles(colorProperties, staticProperties)
+const responsiveProperties = defineProperties({
+	conditions: mediaQueries,
+	defaultCondition: 'mobile',
+	properties: {
+		alignItems: ['stretch', 'flex-start', 'center', 'flex-end'],
+		alignSelf: ['stretch', 'flex-start', 'center', 'flex-end'],
+		flexDirection: ['row', 'column', 'column-reverse'],
+		gap: vars.space,
+		justifyContent: [
+			'stretch',
+			'flex-start',
+			'center',
+			'flex-end',
+			'space-around',
+			'space-between',
+		],
+		justifySelf: [
+			'stretch',
+			'flex-start',
+			'center',
+			'flex-end',
+			'space-around',
+			'space-between',
+		],
+	},
+	shorthands: {
+		align: ['alignItems'],
+	},
+})
+
+export const sprinkles = createSprinkles(
+	colorProperties,
+	staticProperties,
+	responsiveProperties,
+)
 
 export type Sprinkles = Parameters<typeof sprinkles>[0]

@@ -1,40 +1,53 @@
 import { ApolloError } from '@apollo/client'
 import { Button } from '@components/Button'
+import {
+	CustomColumnPopover,
+	SerializedColumn,
+} from '@components/CustomColumnPopover'
+import { AdditionalFeedResults } from '@components/FeedResults/FeedResults'
 import { Link } from '@components/Link'
 import LoadingBox from '@components/LoadingBox'
-import { ReservedLogKey } from '@graph/schemas'
-import { LogEdge } from '@graph/schemas'
 import {
 	Box,
 	Callout,
 	IconSolidCheveronDown,
 	IconSolidCheveronRight,
 	Stack,
+	Table,
 	Text,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
+import {
+	DEFAULT_LOG_COLUMNS,
+	HIGHLIGHT_STANDARD_COLUMNS,
+} from '@pages/LogsPage/LogsTable/CustomColumns/columns'
+import { ColumnRenderers } from '@pages/LogsPage/LogsTable/CustomColumns/renderers'
 import { FullScreenContainer } from '@pages/LogsPage/LogsTable/FullScreenContainer'
-import { LogDetails, LogValue } from '@pages/LogsPage/LogsTable/LogDetails'
-import { LogLevel } from '@pages/LogsPage/LogsTable/LogLevel'
-import { LogMessage } from '@pages/LogsPage/LogsTable/LogMessage'
-import { LogTimestamp } from '@pages/LogsPage/LogsTable/LogTimestamp'
 import { NoLogsFound } from '@pages/LogsPage/LogsTable/NoLogsFound'
+import { LogEdgeWithResources } from '@pages/LogsPage/useGetLogs'
 import {
-	LogsSearchParam,
-	parseLogsQuery,
-} from '@pages/LogsPage/SearchForm/utils'
-import { LogEdgeWithError } from '@pages/LogsPage/useGetLogs'
-import {
+	ColumnDef,
 	createColumnHelper,
 	ExpandedState,
 	flexRender,
 	getCoreRowModel,
 	getExpandedRowModel,
+	Row,
 	useReactTable,
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import clsx from 'clsx'
-import React, { Fragment, useEffect, useState } from 'react'
+import React, { Key, useEffect, useMemo, useRef, useState } from 'react'
 
+import {
+	ColumnHeader,
+	CustomColumnHeader,
+} from '@/components/CustomColumnHeader'
+import { findMatchingAttributes } from '@/components/JsonViewer/utils'
+import { SearchExpression } from '@/components/Search/Parser/listener'
+import { LogEdge, ProductType } from '@/graph/generated/schemas'
+import { MAX_LOGS } from '@/pages/LogsPage/useGetLogs'
+import analytics from '@/util/analytics'
+
+import { LogDetails } from './LogDetails'
 import * as styles from './LogsTable.css'
 
 type Props = {
@@ -103,93 +116,179 @@ export const LogsTable = (props: Props) => {
 
 type LogsTableInnerProps = {
 	loadingAfter: boolean
-	logEdges: LogEdgeWithError[]
-	query: string
-	tableContainerRef: React.RefObject<HTMLDivElement>
+	logEdges: LogEdgeWithResources[]
 	selectedCursor: string | undefined
+	query: string
+	queryParts: SearchExpression[]
+	fetchMoreWhenScrolled: (target: HTMLDivElement) => void
+	// necessary for loading most recent loads
+	moreLogs?: number
+	clearMoreLogs?: () => void
+	handleAdditionalLogsDateChange?: () => void
+	selectedColumns?: SerializedColumn[]
+	setSelectedColumns?: (columns: SerializedColumn[]) => void
+	pollingExpired?: boolean
 }
+
+const LOADING_AFTER_HEIGHT = 28
 
 const LogsTableInner = ({
 	logEdges,
 	loadingAfter,
-	query,
-	tableContainerRef,
 	selectedCursor,
+	query,
+	queryParts,
+	moreLogs,
+	pollingExpired,
+	clearMoreLogs,
+	handleAdditionalLogsDateChange,
+	fetchMoreWhenScrolled,
+	selectedColumns = DEFAULT_LOG_COLUMNS,
+	setSelectedColumns,
 }: LogsTableInnerProps) => {
-	const queryTerms = parseLogsQuery(query)
+	const bodyRef = useRef<HTMLDivElement>(null)
+	const enableFetchMoreLogs =
+		(!!moreLogs || pollingExpired) &&
+		!!clearMoreLogs &&
+		!!handleAdditionalLogsDateChange
+
 	const [expanded, setExpanded] = useState<ExpandedState>({})
 
 	const columnHelper = createColumnHelper<LogEdge>()
 
-	const columns = [
-		columnHelper.accessor('node.timestamp', {
-			cell: ({ row, getValue }) => (
-				<Box
-					flexShrink={0}
-					flexDirection="row"
-					display="flex"
-					alignItems="flex-start"
-					gap="6"
-				>
-					{row.getCanExpand() && (
-						<Box
-							display="flex"
-							alignItems="flex-start"
-							cssClass={styles.expandIcon}
-						>
-							{row.getIsExpanded() ? (
-								<IconExpanded />
-							) : (
-								<IconCollapsed />
-							)}
-						</Box>
-					)}
-					<LogTimestamp timestamp={getValue()} />
-				</Box>
-			),
-		}),
-		columnHelper.accessor('node.level', {
-			cell: ({ getValue }) => <LogLevel level={getValue()} />,
-		}),
-		columnHelper.accessor('node.message', {
-			cell: ({ row, getValue }) => (
-				<LogMessage
-					queryTerms={queryTerms}
-					message={getValue()}
-					expanded={row.getIsExpanded()}
-				/>
-			),
-		}),
-	]
+	const columnData = useMemo(() => {
+		const gridColumns: string[] = []
+		const columnHeaders: ColumnHeader[] = []
+		const columns: ColumnDef<LogEdge, any>[] = []
+
+		gridColumns.push('32px')
+		columnHeaders.push({ id: 'cursor', component: '' })
+		columns.push(
+			columnHelper.accessor('cursor', {
+				cell: ({ row }) => {
+					return (
+						<Table.Cell alignItems="flex-start">
+							<Box flexShrink={0} display="flex" width="full">
+								{row.getIsExpanded() ? (
+									<IconExpanded />
+								) : (
+									<IconCollapsed />
+								)}
+							</Box>
+						</Table.Cell>
+					)
+				},
+			}),
+		)
+
+		selectedColumns.forEach((column, index) => {
+			const first = index === 0
+
+			gridColumns.push(column.size)
+			columnHeaders.push({
+				id: column.id,
+				component: column.label,
+				showActions: !!setSelectedColumns,
+			})
+
+			const accessorFn =
+				column.id in HIGHLIGHT_STANDARD_COLUMNS
+					? HIGHLIGHT_STANDARD_COLUMNS[column.id].accessor
+					: (`node.logAttributes.${column.id}` as `node.logAttributes.${string}`)
+
+			const columnType =
+				column.id in HIGHLIGHT_STANDARD_COLUMNS
+					? HIGHLIGHT_STANDARD_COLUMNS[column.id].type
+					: 'string'
+
+			const accessor = columnHelper.accessor(accessorFn, {
+				cell: ({ row, getValue }) => {
+					const ColumnRenderer = ColumnRenderers[columnType]
+
+					return (
+						<ColumnRenderer
+							first={first}
+							key={column.id}
+							row={row}
+							getValue={getValue}
+							queryParts={queryParts}
+						/>
+					)
+				},
+				id: column.id,
+			})
+
+			columns.push(accessor)
+		})
+
+		if (setSelectedColumns) {
+			// add custom column
+			gridColumns.push('25px')
+			columnHeaders.push({
+				id: 'edit-column-button',
+				noPadding: true,
+				component: (
+					<CustomColumnPopover
+						productType={ProductType.Logs}
+						selectedColumns={selectedColumns}
+						setSelectedColumns={setSelectedColumns}
+						standardColumns={HIGHLIGHT_STANDARD_COLUMNS}
+						attributeAccessor={(row: LogEdge) =>
+							row.node.logAttributes
+						}
+					/>
+				),
+			})
+		}
+
+		return {
+			gridColumns,
+			columnHeaders,
+			columns,
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [queryParts, selectedColumns, setSelectedColumns])
 
 	const table = useReactTable({
 		data: logEdges,
-		columns,
+		columns: columnData.columns,
 		state: {
 			expanded,
 		},
-		onExpandedChange: setExpanded,
+		onExpandedChange: (expanded) => {
+			setExpanded(expanded)
+
+			if (expanded) {
+				analytics.track('logs_table-row-expand_click')
+			} else {
+				analytics.track('logs_table-row-collapse_click')
+			}
+		},
 		getRowCanExpand: (row) => row.original.node.logAttributes,
 		getCoreRowModel: getCoreRowModel(),
 		getExpandedRowModel: getExpandedRowModel(),
-		debugTable: true,
 	})
 
 	const { rows } = table.getRowModel()
 
 	const rowVirtualizer = useVirtualizer({
 		count: rows.length,
-		estimateSize: () => 26,
-		getScrollElement: () => tableContainerRef.current,
-		overscan: 10,
+		estimateSize: () => 29,
+		getScrollElement: () => bodyRef.current,
+		overscan: 50,
 	})
+
 	const totalSize = rowVirtualizer.getTotalSize()
 	const virtualRows = rowVirtualizer.getVirtualItems()
 	const paddingTop = virtualRows.length > 0 ? virtualRows[0]?.start || 0 : 0
-	const paddingBottom =
+	let paddingBottom =
 		virtualRows.length > 0
 			? totalSize - (virtualRows[virtualRows.length - 1]?.end || 0)
 			: 0
+
+	if (!loadingAfter) {
+		paddingBottom += LOADING_AFTER_HEIGHT
+	}
 
 	useEffect(() => {
 		// Collapse all rows when search changes
@@ -213,168 +312,181 @@ const LogsTableInner = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [])
 
+	useEffect(() => {
+		setTimeout(() => {
+			if (!loadingAfter && bodyRef?.current) {
+				fetchMoreWhenScrolled(bodyRef.current)
+			}
+		}, 0)
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [loadingAfter])
+
+	const handleFetchMoreWhenScrolled = (
+		e: React.UIEvent<HTMLDivElement, UIEvent>,
+	) => {
+		setTimeout(() => {
+			fetchMoreWhenScrolled(e.target as HTMLDivElement)
+		}, 0)
+	}
+
 	return (
-		<div style={{ height: `${totalSize}px`, position: 'relative' }}>
-			{paddingTop > 0 && <Box style={{ height: paddingTop }} />}
-
-			{virtualRows.map((virtualRow) => {
-				const row = rows[virtualRow.index]
-				const log = row.original.node
-				const matchedAttributes = findMatchingLogAttributes(
-					queryTerms,
-					{
-						...log.logAttributes,
-						level: log.level,
-						message: log.message,
-						secure_session_id: log.secureSessionID,
-						service_name: log.serviceName,
-						source: log.source,
-						span_id: log.spanID,
-						trace_id: log.traceID,
-					},
-				)
-
-				return (
-					<Box
-						cssClass={clsx(styles.row, {
-							[styles.rowExpanded]: row.getIsExpanded(),
-						})}
-						key={virtualRow.key}
-						data-index={virtualRow.index}
-						cursor="pointer"
-						onClick={row.getToggleExpandedHandler()}
-						mb="2"
-						ref={rowVirtualizer.measureElement}
-					>
-						<Stack direction="row" align="flex-start">
-							{row.getVisibleCells().map((cell) => {
-								return (
-									<Fragment key={cell.id}>
-										{flexRender(
-											cell.column.columnDef.cell,
-											cell.getContext(),
-										)}
-									</Fragment>
-								)
-							})}
-						</Stack>
-
-						{!row.getIsExpanded() &&
-							Object.entries(matchedAttributes).length > 0 && (
-								<Box mt="10" ml="20">
-									{Object.entries(matchedAttributes).map(
-										([key, { match, value }]) => {
-											return (
-												<LogValue
-													key={key}
-													label={key}
-													value={value}
-													queryKey={key}
-													queryMatch={match}
-													queryTerms={queryTerms}
-												/>
-											)
-										},
-									)}
-								</Box>
-							)}
-
-						<LogDetails
-							matchedAttributes={matchedAttributes}
-							row={row}
-							queryTerms={queryTerms}
+		<Table display="flex" flexDirection="column" height="full" noBorder>
+			<Table.Head>
+				<Table.Row gridColumns={columnData.gridColumns}>
+					{columnData.columnHeaders.map((header) => (
+						<CustomColumnHeader
+							key={header.id}
+							header={header}
+							selectedColumns={selectedColumns}
+							setSelectedColumns={setSelectedColumns!}
+							standardColumns={HIGHLIGHT_STANDARD_COLUMNS}
+							trackingIdPrefix="LogsTableColumn"
 						/>
+					))}
+				</Table.Row>
+				{enableFetchMoreLogs && (
+					<Table.Row>
+						<Box width="full">
+							<AdditionalFeedResults
+								maxResults={MAX_LOGS}
+								more={moreLogs ?? 0}
+								type="logs"
+								onClick={() => {
+									clearMoreLogs()
+									handleAdditionalLogsDateChange()
+								}}
+								pollingExpired={pollingExpired ?? false}
+							/>
+						</Box>
+					</Table.Row>
+				)}
+			</Table.Head>
+			<Table.Body
+				ref={bodyRef}
+				overflowY="auto"
+				onScroll={handleFetchMoreWhenScrolled}
+				hiddenScroll
+			>
+				{paddingTop > 0 && <Box style={{ height: paddingTop }} />}
+				{virtualRows.map((virtualRow) => {
+					const row = rows[virtualRow.index]
+
+					return (
+						<LogsTableRow
+							key={virtualRow.key}
+							row={row}
+							rowVirtualizer={rowVirtualizer}
+							expanded={row.getIsExpanded()}
+							virtualRowKey={virtualRow.key}
+							queryParts={queryParts}
+							gridColumns={columnData.gridColumns}
+						/>
+					)
+				})}
+				{paddingBottom > 0 && <Box style={{ height: paddingBottom }} />}
+
+				{loadingAfter && (
+					<Box
+						style={{
+							height: `${LOADING_AFTER_HEIGHT}px`,
+						}}
+					>
+						<LoadingBox />
 					</Box>
-				)
-			})}
-
-			{paddingBottom > 0 && <Box style={{ height: paddingBottom }} />}
-
-			{loadingAfter && (
-				<Box
-					backgroundColor="white"
-					border="dividerWeak"
-					display="flex"
-					flexGrow={1}
-					alignItems="center"
-					justifyContent="center"
-					padding="12"
-					position="absolute"
-					shadow="medium"
-					borderRadius="6"
-					textAlign="center"
-					style={{
-						bottom: 20,
-						left: 'calc(50% - 150px)',
-						width: 300,
-						zIndex: 10,
-					}}
-				>
-					<Text color="weak">Loading...</Text>
-				</Box>
-			)}
-		</div>
+				)}
+			</Table.Body>
+		</Table>
 	)
 }
 
 export const IconExpanded: React.FC = () => (
-	<IconSolidCheveronDown color="#6F6E77" size="16" />
+	<IconSolidCheveronDown color="#6F6E77" size="12" />
 )
 
 export const IconCollapsed: React.FC = () => (
-	<IconSolidCheveronRight color="#6F6E77" size="16" />
+	<IconSolidCheveronRight color="#6F6E77" size="12" />
 )
 
-const bodyKey = ReservedLogKey['Message']
+type LogsTableRowProps = {
+	row: Row<LogEdgeWithResources>
+	rowVirtualizer: any
+	expanded: boolean
+	virtualRowKey: Key
+	queryParts: SearchExpression[]
+	gridColumns: string[]
+}
 
-export const findMatchingLogAttributes = (
-	queryTerms: LogsSearchParam[],
-	logAttributes: object | string,
-	matchingAttributes: any = {},
-	attributeKeyBase: string[] = [],
-): { [key: string]: { match: string; value: string } } => {
-	if (!queryTerms?.length || !logAttributes) {
-		return {}
+const LogsTableRow: React.FC<LogsTableRowProps> = ({
+	row,
+	rowVirtualizer,
+	expanded,
+	virtualRowKey,
+	queryParts,
+	gridColumns,
+}) => {
+	const attributesRow = (row: LogsTableRowProps['row']) => {
+		const log = row.original.node
+		const rowExpanded = row.getIsExpanded()
+
+		return (
+			<Table.Row
+				selected={expanded}
+				className={styles.attributesRow}
+				gridColumns={['32px', '1fr']}
+			>
+				{rowExpanded && (
+					<>
+						<Table.Cell py="4" />
+						<Table.Cell py="4" borderTop="dividerWeak">
+							<LogDetails
+								matchedAttributes={findMatchingAttributes(
+									queryParts,
+									{
+										...log.logAttributes,
+										environment: log.environment,
+										level: log.level,
+										message: log.message,
+										secure_session_id: log.secureSessionID,
+										service_name: log.serviceName,
+										service_version: log.serviceVersion,
+										source: log.source,
+										span_id: log.spanID,
+										trace_id: log.traceID,
+									},
+								)}
+								row={row}
+							/>
+						</Table.Cell>
+					</>
+				)}
+			</Table.Row>
+		)
 	}
 
-	const bodyQueryValue = queryTerms.find((term) => term.key === 'body')?.value
-
-	Object.entries(logAttributes).forEach(([key, value]) => {
-		const isString = typeof value === 'string'
-
-		if (!isString) {
-			findMatchingLogAttributes(queryTerms, value, matchingAttributes, [
-				...attributeKeyBase,
-				key,
-			])
-			return
-		}
-
-		let matchingAttribute: string | undefined = undefined
-		if (
-			bodyQueryValue &&
-			key === bodyKey &&
-			value.indexOf(bodyQueryValue) !== -1
-		) {
-			matchingAttribute = bodyQueryValue
-		} else {
-			queryTerms.some((term) => {
-				const queryKey = term.key
-				const queryValue = term.value
-
-				if (queryKey === key && value.indexOf(queryValue) !== -1) {
-					matchingAttribute = queryValue
-				}
-			})
-		}
-
-		if (!!matchingAttribute) {
-			matchingAttributes[[...attributeKeyBase, key].join('.')] = {
-				match: matchingAttribute,
-				value,
-			}
-		}
-	})
-
-	return matchingAttributes
+	return (
+		<div
+			key={virtualRowKey}
+			data-index={virtualRowKey}
+			ref={rowVirtualizer.measureElement}
+		>
+			<Table.Row
+				gridColumns={gridColumns}
+				onClick={row.getToggleExpandedHandler()}
+				selected={expanded}
+				className={styles.dataRow}
+			>
+				{row.getVisibleCells().map((cell: any) => {
+					return (
+						<React.Fragment key={cell.column.id}>
+							{flexRender(
+								cell.column.columnDef.cell,
+								cell.getContext(),
+							)}
+						</React.Fragment>
+					)
+				})}
+			</Table.Row>
+			{attributesRow(row)}
+		</div>
+	)
 }

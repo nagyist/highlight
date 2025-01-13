@@ -6,18 +6,16 @@ describe('login spec', () => {
 		})
 	})
 
-	it('allows you to log in', () => {
+	it('allows you to log in using ADMIN_PASSWORD', () => {
 		cy.visit('/1/buttons').wait(5000)
 		cy.title().then((title) => {
+			console.log('TITLE', title)
 			if (title === 'About You') {
-				cy.get('[name="First Name"]').type('Swag')
-				cy.get('[name="Last Name"]').type('Master')
-				cy.get('[name="Role"]').type('Boba')
-				cy.get('button[type="button"]').click({ multiple: true })
-				cy.get('button[type="submit"]').click().wait(5000)
 			}
 		})
-		cy.get('#draw').click().wait(5000)
+		cy.get('[name="email"]').type('demo@user.com')
+		cy.get('[name="password"]').type('password')
+		cy.get('button[type="submit"]').click().wait(5000)
 
 		// Ensure client requests are made
 		cy.wait('@pushMetrics')
@@ -26,6 +24,6 @@ describe('login spec', () => {
 		cy.wait('@initializeSession')
 			.its('request.body.variables')
 			.should('have.property', 'session_secure_id')
-		cy.wait('@PushPayload')
+		cy.wait('@PushPayloadCompressed')
 	})
 })

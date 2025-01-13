@@ -12,29 +12,16 @@ mutation MarkSessionAsViewed($secure_id: String!, $viewed: Boolean!) {
 	}
 }
 
-mutation MarkSessionAsStarred($secure_id: String!, $starred: Boolean!) {
-	markSessionAsStarred(secure_id: $secure_id, starred: $starred) {
-		secure_id
-		starred
-	}
-}
-
 mutation MuteSessionCommentThread($id: ID!, $has_muted: Boolean) {
 	muteSessionCommentThread(id: $id, has_muted: $has_muted)
 }
 
-mutation CreateOrUpdateStripeSubscription(
-	$workspace_id: ID!
-	$plan_type: PlanType!
-	$interval: SubscriptionInterval!
-	$retention_period: RetentionPeriod!
-) {
-	createOrUpdateStripeSubscription(
-		workspace_id: $workspace_id
-		plan_type: $plan_type
-		interval: $interval
-		retention_period: $retention_period
-	)
+mutation CreateOrUpdateStripeSubscription($workspace_id: ID!) {
+	createOrUpdateStripeSubscription(workspace_id: $workspace_id)
+}
+
+mutation HandleAWSMarketplace($workspace_id: ID!, $code: String!) {
+	handleAWSMarketplace(workspace_id: $workspace_id, code: $code)
 }
 
 mutation SaveBillingPlan(
@@ -45,6 +32,10 @@ mutation SaveBillingPlan(
 	$errorsRetention: RetentionPeriod!
 	$logsLimitCents: Int
 	$logsRetention: RetentionPeriod!
+	$tracesLimitCents: Int
+	$tracesRetention: RetentionPeriod!
+	$metricsLimitCents: Int
+	$metricsRetention: RetentionPeriod!
 ) {
 	saveBillingPlan(
 		workspace_id: $workspace_id
@@ -54,6 +45,10 @@ mutation SaveBillingPlan(
 		errorsRetention: $errorsRetention
 		logsLimitCents: $logsLimitCents
 		logsRetention: $logsRetention
+		tracesLimitCents: $tracesLimitCents
+		tracesRetention: $tracesRetention
+		metricsLimitCents: $metricsLimitCents
+		metricsRetention: $metricsRetention
 	)
 }
 
@@ -98,11 +93,33 @@ mutation ChangeAdminRole(
 		workspace_id: $workspace_id
 		admin_id: $admin_id
 		new_role: $new_role
-	)
+	) {
+		workspaceId
+		admin {
+			id
+		}
+		role
+		projectIds
+	}
 }
 
-mutation DeleteAdminFromProject($project_id: ID!, $admin_id: ID!) {
-	deleteAdminFromProject(project_id: $project_id, admin_id: $admin_id)
+mutation ChangeProjectMembership(
+	$workspace_id: ID!
+	$admin_id: ID!
+	$project_ids: [ID!]!
+) {
+	changeProjectMembership(
+		workspace_id: $workspace_id
+		admin_id: $admin_id
+		project_ids: $project_ids
+	) {
+		workspaceId
+		admin {
+			id
+		}
+		role
+		projectIds
+	}
 }
 
 mutation DeleteAdminFromWorkspace($workspace_id: ID!, $admin_id: ID!) {
@@ -205,50 +222,16 @@ mutation CreateWorkspace($name: String!, $promo_code: String) {
 	}
 }
 
-mutation EditProject(
-	$id: ID!
-	$name: String
-	$billing_email: String
-	$excluded_users: StringArray
-	$error_filters: StringArray
-	$error_json_paths: StringArray
-	$filter_chrome_extension: Boolean
-	$rage_click_window_seconds: Int
-	$rage_click_radius_pixels: Int
-	$rage_click_count: Int
-	$backend_domains: StringArray
-) {
-	editProject(
-		id: $id
-		name: $name
-		billing_email: $billing_email
-		excluded_users: $excluded_users
-		error_filters: $error_filters
-		error_json_paths: $error_json_paths
-		filter_chrome_extension: $filter_chrome_extension
-		rage_click_window_seconds: $rage_click_window_seconds
-		rage_click_radius_pixels: $rage_click_radius_pixels
-		rage_click_count: $rage_click_count
-		backend_domains: $backend_domains
-	) {
+mutation EditProject($id: ID!, $name: String, $billing_email: String) {
+	editProject(id: $id, name: $name, billing_email: $billing_email) {
 		id
 		name
 		billing_email
-		excluded_users
-		error_filters
-		error_json_paths
-		filter_chrome_extension
-		rage_click_window_seconds
-		rage_click_radius_pixels
-		rage_click_count
-		backend_domains
 	}
 }
 
 mutation EditProjectSettings(
 	$projectId: ID!
-	$name: String
-	$billing_email: String
 	$excluded_users: StringArray
 	$error_filters: StringArray
 	$error_json_paths: StringArray
@@ -256,14 +239,12 @@ mutation EditProjectSettings(
 	$rage_click_window_seconds: Int
 	$rage_click_radius_pixels: Int
 	$rage_click_count: Int
-	$backend_domains: StringArray
 	$filterSessionsWithoutError: Boolean
 	$autoResolveStaleErrorsDayInterval: Int
+	$sampling: SamplingInput
 ) {
 	editProjectSettings(
 		projectId: $projectId
-		name: $name
-		billing_email: $billing_email
 		excluded_users: $excluded_users
 		error_filters: $error_filters
 		error_json_paths: $error_json_paths
@@ -271,9 +252,9 @@ mutation EditProjectSettings(
 		rage_click_window_seconds: $rage_click_window_seconds
 		rage_click_radius_pixels: $rage_click_radius_pixels
 		rage_click_count: $rage_click_count
-		backend_domains: $backend_domains
 		filterSessionsWithoutError: $filterSessionsWithoutError
 		autoResolveStaleErrorsDayInterval: $autoResolveStaleErrorsDayInterval
+		sampling: $sampling
 	) {
 		id
 		name
@@ -285,9 +266,25 @@ mutation EditProjectSettings(
 		rage_click_window_seconds
 		rage_click_radius_pixels
 		rage_click_count
-		backend_domains
 		filterSessionsWithoutError
 		autoResolveStaleErrorsDayInterval
+		sampling {
+			session_sampling_rate
+			error_sampling_rate
+			log_sampling_rate
+			trace_sampling_rate
+			metric_sampling_rate
+			session_minute_rate_limit
+			error_minute_rate_limit
+			log_minute_rate_limit
+			trace_minute_rate_limit
+			metric_minute_rate_limit
+			session_exclusion_query
+			error_exclusion_query
+			log_exclusion_query
+			trace_exclusion_query
+			metric_exclusion_query
+		}
 	}
 }
 
@@ -306,63 +303,18 @@ mutation EditWorkspaceSettings(
 	$workspace_id: ID!
 	$ai_application: Boolean
 	$ai_insights: Boolean
+	$ai_query_builder: Boolean
 ) {
 	editWorkspaceSettings(
 		workspace_id: $workspace_id
 		ai_application: $ai_application
 		ai_insights: $ai_insights
+		ai_query_builder: $ai_query_builder
 	) {
 		workspace_id
 		ai_application
 		ai_insights
-	}
-}
-
-mutation DeleteSegment($segment_id: ID!) {
-	deleteSegment(segment_id: $segment_id)
-}
-
-mutation EditSegment(
-	$project_id: ID!
-	$id: ID!
-	$params: SearchParamsInput!
-	$name: String!
-) {
-	editSegment(project_id: $project_id, id: $id, params: $params, name: $name)
-}
-
-mutation CreateSegment(
-	$project_id: ID!
-	$name: String!
-	$params: SearchParamsInput!
-) {
-	createSegment(project_id: $project_id, name: $name, params: $params) {
-		name
-		id
-		params {
-			user_properties {
-				name
-				value
-			}
-			excluded_properties {
-				name
-				value
-			}
-			date_range {
-				start_date
-				end_date
-			}
-			os
-			browser
-			visited_url
-			referrer
-			identified
-			hide_viewed
-			app_versions
-			environments
-			device_id
-			show_live_sessions
-		}
+		ai_query_builder
 	}
 }
 
@@ -386,6 +338,7 @@ mutation CreateSessionComment(
 	$issue_team_id: String
 	$issue_description: String
 	$additional_context: String
+	$issue_type_id: String
 ) {
 	createSessionComment(
 		project_id: $project_id
@@ -406,6 +359,70 @@ mutation CreateSessionComment(
 		issue_title: $issue_title
 		issue_team_id: $issue_team_id
 		issue_description: $issue_description
+		additional_context: $additional_context
+		issue_type_id: $issue_type_id
+	) {
+		id
+		timestamp
+		created_at
+		updated_at
+		author {
+			id
+			name
+			email
+		}
+		text
+		x_coordinate
+		y_coordinate
+		attachments {
+			id
+			integration_type
+			external_id
+			title
+		}
+	}
+}
+
+mutation CreateSessionCommentWithExistingIssue(
+	$project_id: ID!
+	$session_secure_id: String!
+	$session_timestamp: Int!
+	$text: String!
+	$text_for_email: String!
+	$x_coordinate: Float!
+	$y_coordinate: Float!
+	$tagged_admins: [SanitizedAdminInput]!
+	$tagged_slack_users: [SanitizedSlackChannelInput]!
+	$session_url: String!
+	$time: Float!
+	$author_name: String!
+	$session_image: String
+	$tags: [SessionCommentTagInput]!
+	$integrations: [IntegrationType]!
+	$issue_title: String
+	$issue_url: String!
+	$issue_id: String!
+	$additional_context: String
+) {
+	createSessionCommentWithExistingIssue(
+		project_id: $project_id
+		session_secure_id: $session_secure_id
+		session_timestamp: $session_timestamp
+		text: $text
+		text_for_email: $text_for_email
+		x_coordinate: $x_coordinate
+		y_coordinate: $y_coordinate
+		tagged_admins: $tagged_admins
+		tagged_slack_users: $tagged_slack_users
+		session_url: $session_url
+		time: $time
+		author_name: $author_name
+		session_image: $session_image
+		tags: $tags
+		integrations: $integrations
+		issue_title: $issue_title
+		issue_url: $issue_url
+		issue_id: $issue_id
 		additional_context: $additional_context
 	) {
 		id
@@ -440,6 +457,7 @@ mutation CreateIssueForSessionComment(
 	$issue_title: String
 	$issue_team_id: String
 	$issue_description: String
+	$issue_type_id: String
 ) {
 	createIssueForSessionComment(
 		project_id: $project_id
@@ -452,6 +470,52 @@ mutation CreateIssueForSessionComment(
 		issue_description: $issue_description
 		issue_team_id: $issue_team_id
 		integrations: $integrations
+		issue_type_id: $issue_type_id
+	) {
+		id
+		timestamp
+		created_at
+		updated_at
+		author {
+			id
+			name
+			email
+		}
+		text
+		x_coordinate
+		y_coordinate
+		attachments {
+			id
+			integration_type
+			external_id
+			title
+		}
+	}
+}
+
+mutation LinkIssueForSessionComment(
+	$project_id: ID!
+	$session_comment_id: Int!
+	$text_for_attachment: String!
+	$session_url: String!
+	$time: Float!
+	$author_name: String!
+	$integrations: [IntegrationType]!
+	$issue_title: String
+	$issue_id: String!
+	$issue_url: String!
+) {
+	linkIssueForSessionComment(
+		project_id: $project_id
+		session_url: $session_url
+		session_comment_id: $session_comment_id
+		author_name: $author_name
+		text_for_attachment: $text_for_attachment
+		time: $time
+		issue_title: $issue_title
+		issue_id: $issue_id
+		integrations: $integrations
+		issue_url: $issue_url
 	) {
 		id
 		timestamp
@@ -520,6 +584,7 @@ mutation CreateErrorComment(
 	$issue_title: String
 	$issue_team_id: String
 	$issue_description: String
+	$issue_type_id: String
 ) {
 	createErrorComment(
 		project_id: $project_id
@@ -534,6 +599,7 @@ mutation CreateErrorComment(
 		issue_title: $issue_title
 		issue_team_id: $issue_team_id
 		issue_description: $issue_description
+		issue_type_id: $issue_type_id
 	) {
 		id
 		created_at
@@ -546,6 +612,49 @@ mutation CreateErrorComment(
 		text
 	}
 }
+
+mutation CreateErrorCommentForExistingIssue(
+	$project_id: ID!
+	$error_group_secure_id: String!
+	$text: String!
+	$text_for_email: String!
+	$tagged_admins: [SanitizedAdminInput]!
+	$tagged_slack_users: [SanitizedSlackChannelInput]!
+	$error_url: String!
+	$author_name: String!
+	$integrations: [IntegrationType]!
+	$issue_title: String!
+	$issue_url: String!
+	$issue_id: String!
+) {
+	createErrorCommentForExistingIssue(
+		project_id: $project_id
+		error_group_secure_id: $error_group_secure_id
+		text: $text
+		text_for_email: $text_for_email
+		tagged_admins: $tagged_admins
+		tagged_slack_users: $tagged_slack_users
+		error_url: $error_url
+		author_name: $author_name
+		integrations: $integrations
+		issue_title: $issue_title
+		issue_url: $issue_url
+		issue_id: $issue_id
+	) {
+		id
+		created_at
+		updated_at
+		author {
+			id
+			name
+			email
+			__typename
+		}
+		text
+		__typename
+	}
+}
+
 mutation CreateIssueForErrorComment(
 	$project_id: ID!
 	$error_comment_id: Int!
@@ -556,6 +665,7 @@ mutation CreateIssueForErrorComment(
 	$issue_title: String
 	$issue_team_id: String
 	$issue_description: String
+	$issue_type_id: String
 ) {
 	createIssueForErrorComment(
 		project_id: $project_id
@@ -567,6 +677,47 @@ mutation CreateIssueForErrorComment(
 		issue_team_id: $issue_team_id
 		issue_description: $issue_description
 		integrations: $integrations
+		issue_type_id: $issue_type_id
+	) {
+		id
+		created_at
+		updated_at
+		author {
+			id
+			name
+			email
+		}
+		text
+		attachments {
+			id
+			integration_type
+			external_id
+			title
+		}
+	}
+}
+
+mutation LinkIssueForErrorComment(
+	$project_id: ID!
+	$error_comment_id: Int!
+	$text_for_attachment: String!
+	$error_url: String!
+	$author_name: String!
+	$integrations: [IntegrationType]!
+	$issue_title: String
+	$issue_id: String!
+	$issue_url: String!
+) {
+	linkIssueForErrorComment(
+		project_id: $project_id
+		error_url: $error_url
+		error_comment_id: $error_comment_id
+		author_name: $author_name
+		text_for_attachment: $text_for_attachment
+		issue_title: $issue_title
+		integrations: $integrations
+		issue_id: $issue_id
+		issue_url: $issue_url
 	) {
 		id
 		created_at
@@ -624,88 +775,6 @@ mutation ReplyToErrorComment(
 			photo_url
 		}
 		text
-	}
-}
-
-mutation DeleteErrorSegment($segment_id: ID!) {
-	deleteErrorSegment(segment_id: $segment_id)
-}
-
-mutation EditErrorSegment(
-	$project_id: ID!
-	$id: ID!
-	$params: ErrorSearchParamsInput!
-	$name: String!
-) {
-	editErrorSegment(
-		project_id: $project_id
-		id: $id
-		params: $params
-		name: $name
-	)
-}
-
-mutation CreateErrorSegment(
-	$project_id: ID!
-	$name: String!
-	$params: ErrorSearchParamsInput!
-) {
-	createErrorSegment(project_id: $project_id, name: $name, params: $params) {
-		name
-		id
-		params {
-			date_range {
-				start_date
-				end_date
-			}
-			os
-			browser
-			visited_url
-			state
-		}
-	}
-}
-
-mutation CreateErrorAlert(
-	$project_id: ID!
-	$name: String!
-	$count_threshold: Int!
-	$threshold_window: Int!
-	$slack_channels: [SanitizedSlackChannelInput]!
-	$discord_channels: [DiscordChannelInput!]!
-	$webhook_destinations: [WebhookDestinationInput!]!
-	$emails: [String]!
-	$environments: [String]!
-	$regex_groups: [String]!
-	$frequency: Int!
-) {
-	createErrorAlert(
-		project_id: $project_id
-		count_threshold: $count_threshold
-		name: $name
-		slack_channels: $slack_channels
-		discord_channels: $discord_channels
-		webhook_destinations: $webhook_destinations
-		emails: $emails
-		environments: $environments
-		threshold_window: $threshold_window
-		regex_groups: $regex_groups
-		frequency: $frequency
-	) {
-		id
-		ChannelsToNotify {
-			webhook_channel
-			webhook_channel_id
-		}
-		EmailsToNotify
-		Name
-		ExcludedEnvironments
-		CountThreshold
-		ThresholdWindow
-		LastAdminToEditID
-		RegexGroups
-		Frequency
-		disabled
 	}
 }
 
@@ -823,6 +892,98 @@ mutation DeleteMetricMonitor($metric_monitor_id: ID!, $project_id: ID!) {
 	}
 }
 
+mutation CreateAlert(
+	$project_id: ID!
+	$name: String!
+	$product_type: ProductType!
+	$function_type: MetricAggregator!
+	$function_column: String
+	$query: String
+	$group_by_key: String
+	$default: Boolean
+	$threshold_value: Float
+	$threshold_window: Int
+	$threshold_cooldown: Int
+	$threshold_type: ThresholdType
+	$threshold_condition: ThresholdCondition
+	$destinations: [AlertDestinationInput!]!
+) {
+	createAlert(
+		project_id: $project_id
+		name: $name
+		product_type: $product_type
+		function_type: $function_type
+		function_column: $function_column
+		query: $query
+		group_by_key: $group_by_key
+		default: $default
+		threshold_value: $threshold_value
+		threshold_window: $threshold_window
+		threshold_cooldown: $threshold_cooldown
+		threshold_type: $threshold_type
+		threshold_condition: $threshold_condition
+		destinations: $destinations
+	) {
+		id
+		name
+		product_type
+	}
+}
+
+mutation UpdateAlert(
+	$project_id: ID!
+	$alert_id: ID!
+	$name: String!
+	$product_type: ProductType!
+	$function_type: MetricAggregator!
+	$function_column: String
+	$query: String
+	$group_by_key: String
+	$threshold_value: Float
+	$threshold_window: Int
+	$threshold_cooldown: Int
+	$threshold_type: ThresholdType
+	$threshold_condition: ThresholdCondition
+	$destinations: [AlertDestinationInput!]
+) {
+	updateAlert(
+		project_id: $project_id
+		alert_id: $alert_id
+		name: $name
+		product_type: $product_type
+		function_type: $function_type
+		function_column: $function_column
+		query: $query
+		group_by_key: $group_by_key
+		threshold_value: $threshold_value
+		threshold_window: $threshold_window
+		threshold_cooldown: $threshold_cooldown
+		threshold_type: $threshold_type
+		threshold_condition: $threshold_condition
+		destinations: $destinations
+	) {
+		id
+		name
+		product_type
+	}
+}
+
+mutation UpdateAlertDisabled(
+	$project_id: ID!
+	$alert_id: ID!
+	$disabled: Boolean!
+) {
+	updateAlertDisabled(
+		project_id: $project_id
+		alert_id: $alert_id
+		disabled: $disabled
+	)
+}
+
+mutation DeleteAlert($project_id: ID!, $alert_id: ID!) {
+	deleteAlert(project_id: $project_id, alert_id: $alert_id)
+}
+
 mutation UpdateAdminAndCreateWorkspace(
 	$admin_and_workspace_details: AdminAndWorkspaceDetails!
 ) {
@@ -845,12 +1006,13 @@ mutation UpdateErrorAlert(
 	$threshold_window: Int
 	$slack_channels: [SanitizedSlackChannelInput]
 	$discord_channels: [DiscordChannelInput!]!
+	$microsoft_teams_channels: [MicrosoftTeamsChannelInput!]!
 	$webhook_destinations: [WebhookDestinationInput!]!
 	$emails: [String]
-	$environments: [String]
 	$regex_groups: [String]
 	$frequency: Int
 	$disabled: Boolean
+	$query: String!
 ) {
 	updateErrorAlert(
 		project_id: $project_id
@@ -859,13 +1021,14 @@ mutation UpdateErrorAlert(
 		count_threshold: $count_threshold
 		slack_channels: $slack_channels
 		discord_channels: $discord_channels
+		microsoft_teams_channels: $microsoft_teams_channels
 		webhook_destinations: $webhook_destinations
 		emails: $emails
-		environments: $environments
 		threshold_window: $threshold_window
 		regex_groups: $regex_groups
 		frequency: $frequency
 		disabled: $disabled
+		query: $query
 	) {
 		Name
 		ChannelsToNotify {
@@ -876,14 +1039,17 @@ mutation UpdateErrorAlert(
 			id
 			name
 		}
+		MicrosoftTeamsChannelsToNotify {
+			id
+			name
+		}
 		EmailsToNotify
-		ExcludedEnvironments
 		CountThreshold
 		ThresholdWindow
 		LastAdminToEditID
-		RegexGroups
 		Frequency
 		disabled
+		Query
 	}
 }
 
@@ -904,12 +1070,6 @@ mutation DeleteSessionAlert($project_id: ID!, $session_alert_id: ID!) {
 
 mutation UpdateLogAlert($id: ID!, $input: LogAlertInput!) {
 	updateLogAlert(id: $id, input: $input) {
-		id
-	}
-}
-
-mutation CreateLogAlert($input: LogAlertInput!) {
-	createLogAlert(input: $input) {
 		id
 	}
 }
@@ -972,23 +1132,6 @@ mutation UpdateErrorAlertIsDisabled(
 		disabled: $disabled
 	) {
 		id
-	}
-}
-
-mutation CreateSessionAlert($input: SessionAlertInput!) {
-	createSessionAlert(input: $input) {
-		id
-		ChannelsToNotify {
-			webhook_channel
-			webhook_channel_id
-		}
-		EmailsToNotify
-		Name
-		ExcludedEnvironments
-		CountThreshold
-		ThresholdWindow
-		LastAdminToEditID
-		disabled
 	}
 }
 
@@ -1091,14 +1234,18 @@ mutation DeleteDashboard($id: ID!) {
 
 mutation DeleteSessions(
 	$project_id: ID!
-	$query: String!
+	$params: QueryInput!
 	$sessionCount: Int!
 ) {
 	deleteSessions(
 		project_id: $project_id
-		query: $query
+		params: $params
 		sessionCount: $sessionCount
 	)
+}
+
+mutation ExportSession($session_secure_id: String!) {
+	exportSession(session_secure_id: $session_secure_id)
 }
 
 mutation UpdateVercelSettings(
@@ -1154,5 +1301,174 @@ mutation DeleteInviteLinkFromWorkspace(
 	deleteInviteLinkFromWorkspace(
 		workspace_id: $workspace_id
 		workspace_invite_link_id: $workspace_invite_link_id
+	)
+}
+
+mutation EditServiceGithubSettings(
+	$id: ID!
+	$project_id: ID!
+	$github_repo_path: String
+	$build_prefix: String
+	$github_prefix: String
+) {
+	editServiceGithubSettings(
+		id: $id
+		project_id: $project_id
+		github_repo_path: $github_repo_path
+		build_prefix: $build_prefix
+		github_prefix: $github_prefix
+	) {
+		id
+		projectID
+		name
+		status
+		githubRepoPath
+		buildPrefix
+		githubPrefix
+		errorDetails
+	}
+}
+
+mutation CreateErrorTag($title: String!, $description: String!) {
+	createErrorTag(title: $title, description: $description) {
+		id
+		created_at
+		title
+		description
+	}
+}
+
+mutation UpdateErrorTags {
+	updateErrorTags
+}
+
+mutation UpsertSlackChannel($project_id: ID!, $name: String!) {
+	upsertSlackChannel(project_id: $project_id, name: $name) {
+		webhook_channel
+		webhook_channel_id
+	}
+}
+
+mutation UpsertDiscordChannel($project_id: ID!, $name: String!) {
+	upsertDiscordChannel(project_id: $project_id, name: $name) {
+		id
+		name
+	}
+}
+
+mutation testErrorEnhancement(
+	$error_object_id: ID!
+	$github_repo_path: String!
+	$github_prefix: String
+	$build_prefix: String
+	$save_error: Boolean
+) {
+	testErrorEnhancement(
+		error_object_id: $error_object_id
+		github_repo_path: $github_repo_path
+		github_prefix: $github_prefix
+		build_prefix: $build_prefix
+		save_error: $save_error
+	) {
+		id
+		type
+		serviceName
+		serviceVersion
+		stack_trace
+		structured_stack_trace {
+			columnNumber
+			enhancementSource
+			enhancementVersion
+			error
+			externalLink
+			fileName
+			functionName
+			lineContent
+			lineNumber
+			linesAfter
+			linesBefore
+		}
+	}
+}
+
+mutation DeleteSavedSegment($segment_id: ID!) {
+	deleteSavedSegment(segment_id: $segment_id)
+}
+
+mutation EditSavedSegment(
+	$project_id: ID!
+	$id: ID!
+	$query: String!
+	$name: String!
+	$entity_type: SavedSegmentEntityType!
+) {
+	editSavedSegment(
+		project_id: $project_id
+		id: $id
+		query: $query
+		name: $name
+		entity_type: $entity_type
+	)
+}
+
+mutation CreateSavedSegment(
+	$project_id: ID!
+	$name: String!
+	$query: String!
+	$entity_type: SavedSegmentEntityType!
+) {
+	createSavedSegment(
+		project_id: $project_id
+		entity_type: $entity_type
+		name: $name
+		query: $query
+	) {
+		name
+		id
+	}
+}
+
+mutation UpsertVisualization($visualization: VisualizationInput!) {
+	upsertVisualization(visualization: $visualization)
+}
+
+mutation DeleteVisualization($id: ID!) {
+	deleteVisualization(id: $id)
+}
+
+mutation UpsertGraph($graph: GraphInput!) {
+	upsertGraph(graph: $graph) {
+		id
+		type
+		title
+		productType
+		query
+		groupByKeys
+		bucketByKey
+		bucketCount
+		limit
+		limitFunctionType
+		limitMetric
+		funnelSteps {
+			title
+			query
+		}
+		display
+		nullHandling
+		expressions {
+			aggregator
+			column
+		}
+	}
+}
+
+mutation DeleteGraph($id: ID!) {
+	deleteGraph(id: $id)
+}
+
+mutation CreateCloudflareProxy($workspace_id: ID!, $proxy_subdomain: String!) {
+	createCloudflareProxy(
+		workspace_id: $workspace_id
+		proxy_subdomain: $proxy_subdomain
 	)
 }

@@ -1,5 +1,6 @@
 import { useApolloClient } from '@apollo/client'
 import { Button } from '@components/Button'
+import { toast } from '@components/Toaster'
 import { GetErrorResolutionSuggestionDocument } from '@graph/hooks'
 import {
 	Box,
@@ -10,8 +11,7 @@ import {
 	IconSolidThumbUp,
 	Stack,
 	Text,
-} from '@highlight-run/ui'
-import { message } from 'antd'
+} from '@highlight-run/ui/components'
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -111,9 +111,9 @@ export const AiErrorSuggestion = ({ errorObjectId }: Props) => {
 															1,
 														)
 														setVoted(true)
-														message.success(
-															`Thanks for your feedback!`,
-															5,
+														toast.success(
+															'Thanks for your feedback!',
+															{ duration: 5000 },
 														)
 													}
 												}}
@@ -144,9 +144,9 @@ export const AiErrorSuggestion = ({ errorObjectId }: Props) => {
 															0,
 														)
 														setVoted(true)
-														message.success(
-															`Thanks for your feedback!`,
-															5,
+														toast.success(
+															'Thanks for your feedback!',
+															{ duration: 5000 },
 														)
 													}
 												}}

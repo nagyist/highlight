@@ -5,6 +5,7 @@ import {
 	filterMentionedSlackUsers,
 	parseAdminSuggestions,
 } from '@components/Comment/utils/utils'
+import { toast } from '@components/Toaster'
 import {
 	useGetCommentMentionSuggestionsQuery,
 	useGetWorkspaceAdminsByProjectIdQuery,
@@ -19,12 +20,11 @@ import {
 	Form,
 	IconSolidPaperAirplane,
 	Stack,
-} from '@highlight-run/ui'
-import CommentTextBody from '@pages/Player/Toolbar/NewCommentForm/CommentTextBody/CommentTextBody'
+} from '@highlight-run/ui/components'
+import { CommentTextBody } from '@pages/Player/Toolbar/NewCommentForm/CommentTextBody/CommentTextBody'
 import analytics from '@util/analytics'
 import { getCommentMentionSuggestions } from '@util/comment/util'
 import { useParams } from '@util/react-router/useParams'
-import { message } from 'antd'
 import React, { useMemo, useState } from 'react'
 import { OnChangeHandlerFunc } from 'react-mentions'
 
@@ -63,7 +63,7 @@ function CommentReplyForm<T extends CommentReplyAction>({
 	const [commentText, setCommentText] = useState('')
 	const [commentTextForEmail, setCommentTextForEmail] = useState('')
 	const [isReplying, setIsReplying] = React.useState(false)
-	const formState = Form.useFormState({ defaultValues: { commentText: '' } })
+	const formStore = Form.useStore({ defaultValues: { commentText: '' } })
 
 	const { project_id } = useParams<{ project_id: string }>()
 	const { admin } = useAuthContext()
@@ -105,14 +105,12 @@ function CommentReplyForm<T extends CommentReplyAction>({
 				refetchQueries: [action.query],
 				awaitRefetchQueries: true,
 			})
-			formState.reset()
+			formStore.reset()
 			setCommentText('')
 		} catch (_e) {
 			const e = _e as Error
 			analytics.track('Reply to Comment Failed', { error: e.toString() })
-			message.error(
-				<>Failed to reply to the comment, please try again.</>,
-			)
+			toast.error('Failed to reply to the comment, please try again.')
 		}
 		setIsReplying(false)
 	}
@@ -181,7 +179,7 @@ function CommentReplyForm<T extends CommentReplyAction>({
 		>
 			<Form
 				onSubmit={submitReply}
-				state={formState}
+				store={formStore}
 				onKeyDown={onFormChangeHandler}
 			>
 				<Box mb="4">

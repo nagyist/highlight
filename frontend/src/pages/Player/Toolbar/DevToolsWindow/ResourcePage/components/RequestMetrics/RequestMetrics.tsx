@@ -5,24 +5,57 @@ import {
 	useGetMetricsTimelineQuery,
 } from '@graph/hooks'
 import {
+	DashboardDefinition,
+	DashboardMetricConfig,
+	Maybe,
 	MetricAggregator,
 	MetricTagFilterOp,
 	NetworkRequestAttribute,
 } from '@graph/schemas'
-import { LINE_COLORS } from '@pages/Dashboards/components/DashboardCard/DashboardCard'
-import { findDashboardMetric } from '@pages/Dashboards/pages/Dashboard/DashboardPage'
 import { NetworkResource } from '@pages/Player/Toolbar/DevToolsWindowV2/utils'
 import { getGraphQLResolverName } from '@pages/Player/utils/utils'
 import { useParams } from '@util/react-router/useParams'
 import { Dropdown, Menu } from 'antd'
 import moment from 'moment'
-import React from 'react'
+import React, { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 
 import styles from './RequestMetrics.module.css'
 
+const LINE_COLORS = {
+	[MetricAggregator.Min]: 'var(--color-gray-200)',
+	[MetricAggregator.Max]: 'var(--color-red-500)',
+	[MetricAggregator.P99]: 'var(--color-red-400)',
+	[MetricAggregator.P95]: 'var(--color-orange-500)',
+	[MetricAggregator.P90]: 'var(--color-green-600)',
+	[MetricAggregator.P50]: 'var(--color-blue-400)',
+	[MetricAggregator.Avg]: 'var(--color-gray-400)',
+	[MetricAggregator.Count]: 'var(--color-green-500)',
+	[MetricAggregator.CountDistinctKey]: 'var(--color-green-700)',
+	[MetricAggregator.Sum]: 'var(--color-purple-700)',
+}
+
 interface Props {
 	resource: NetworkResource
+}
+
+const findDashboardMetric = (
+	dashboard: Maybe<DashboardDefinition>,
+	metricConfig: DashboardMetricConfig,
+) => {
+	return dashboard?.metrics.find((metric) => {
+		let isMatch = metric.name === metricConfig.name
+
+		if (isMatch && metricConfig.filters) {
+			isMatch = metricConfig.filters?.every((f) =>
+				metric.filters?.some(
+					(fi) => fi.tag === f.tag && fi.value === f.value,
+				),
+			)
+		}
+
+		return isMatch ? metric : false
+	})
 }
 
 const RequestMetrics: React.FC<Props> = ({ resource }) => {
@@ -69,7 +102,14 @@ const RequestMetrics: React.FC<Props> = ({ resource }) => {
 		skip: !project_id,
 	})
 
-	const duration = resource.responseEnd - resource.startTime
+	const duration = useMemo(() => {
+		if (resource?.responseEndAbs && resource?.startTimeAbs) {
+			return resource.responseEndAbs - resource.startTimeAbs
+		}
+		// used in highlight.run <8.8.0 for websocket events and <7.5.4 for requests
+		return resource.responseEnd - resource.startTime
+	}, [resource])
+
 	const metricConfig = {
 		name: 'latency',
 		description: `Latency (${graphQlOperation || resource.name})`,

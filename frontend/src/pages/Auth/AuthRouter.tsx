@@ -1,5 +1,5 @@
 import { useAuthContext } from '@authentication/AuthContext'
-import { Box } from '@highlight-run/ui'
+import { Box } from '@highlight-run/ui/components'
 import { MultiFactor } from '@pages/Auth/MultiFactor'
 import { ResetPassword } from '@pages/Auth/ResetPassword'
 import { SignIn } from '@pages/Auth/SignIn'
@@ -7,9 +7,12 @@ import { SignUp } from '@pages/Auth/SignUp'
 import { Landing } from '@pages/Landing/Landing'
 import firebase from 'firebase/compat/app'
 import React, { useState } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
+
+import { SignInRedirect } from '@/pages/Auth/SignInRedirect'
 
 import * as styles from './AuthRouter.css'
+import { AUTH_MODE } from '@/constants'
 
 export const SIGN_IN_ROUTE = '/sign_in'
 export const SIGN_UP_ROUTE = '/sign_up'
@@ -32,16 +35,22 @@ export const AuthRouter: React.FC = () => {
 						path={SIGN_IN_ROUTE}
 						element={<SignIn setResolver={setResolver} />}
 					/>
-					<Route path={SIGN_UP_ROUTE} element={<SignUp />} />
+					<Route
+						path={SIGN_UP_ROUTE}
+						element={
+							AUTH_MODE !== 'firebase' ? (
+								<SignIn setResolver={setResolver} />
+							) : (
+								<SignUp />
+							)
+						}
+					/>
 					<Route
 						path="/multi_factor"
 						element={<MultiFactor resolver={resolver} />}
 					/>
 					<Route path="/reset_password" element={<ResetPassword />} />
-					<Route
-						path="/*"
-						element={<Navigate to={SIGN_IN_ROUTE} replace />}
-					/>
+					<Route path="/*" element={<SignInRedirect />} />
 				</Routes>
 			</Box>
 		</Landing>

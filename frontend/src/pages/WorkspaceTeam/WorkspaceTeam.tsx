@@ -1,10 +1,17 @@
+import EnterpriseFeatureButton from '@components/Billing/EnterpriseFeatureButton'
 import { Button } from '@components/Button'
-import Tabs from '@components/Tabs/Tabs'
 import { useGetWorkspaceAdminsQuery } from '@graph/hooks'
-import { AdminRole, WorkspaceAdminRole } from '@graph/schemas'
-import { Badge, Box, IconSolidUserAdd, Stack } from '@highlight-run/ui'
+import { AdminRole, Project, WorkspaceAdminRole } from '@graph/schemas'
+import {
+	Box,
+	IconSolidUserAdd,
+	Stack,
+	Tabs,
+	Tooltip,
+} from '@highlight-run/ui/components'
+import { useAuthContext } from '@/authentication/AuthContext'
 import AllMembers from '@pages/WorkspaceTeam/components/AllMembers'
-import AutoJoinForm from '@pages/WorkspaceTeam/components/AutoJoinForm'
+import { AutoJoinForm } from '@pages/WorkspaceTeam/components/AutoJoinForm'
 import InviteMemberModal from '@pages/WorkspaceTeam/components/InviteMemberModal'
 import { PendingInvites } from '@pages/WorkspaceTeam/components/PendingInvites'
 import { Authorization } from '@util/authorization/authorization'
@@ -13,20 +20,30 @@ import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToggle } from 'react-use'
 
+import { useApplicationContext } from '@/routers/AppRouter/context/ApplicationContext'
+
 import layoutStyles from '../../components/layout/LeadAlignLayout.module.css'
 import styles from './WorkspaceTeam.module.css'
 
-type MemberKeyType = 'members' | 'invites'
+enum MemberKeyType {
+	Members = 'members',
+	Invites = 'invites',
+}
 
 const WorkspaceTeam = () => {
-	const { workspace_id, member_tab_key = 'members' } = useParams<{
+	const { workspace_id, member_tab_key = MemberKeyType.Members } = useParams<{
 		workspace_id: string
 		member_tab_key?: MemberKeyType
 	}>()
-	const { data, error, loading } = useGetWorkspaceAdminsQuery({
+	const {
+		data,
+		error,
+		loading: adminsLoading,
+	} = useGetWorkspaceAdminsQuery({
 		variables: { workspace_id: workspace_id! },
 		skip: !workspace_id,
 	})
+	const { allProjects, loading: appLoading } = useApplicationContext()
 	const navigate = useNavigate()
 	const [showModal, toggleShowModal] = useToggle(false)
 
@@ -44,7 +61,7 @@ const WorkspaceTeam = () => {
 						roles!
 					</p>
 					<Authorization allowedRoles={[AdminRole.Admin]}>
-						<AutoJoinForm label="Auto join" labelFirst />
+						<AutoJoinForm />
 					</Authorization>
 					<InviteMemberModal
 						workspaceId={workspace_id}
@@ -54,54 +71,47 @@ const WorkspaceTeam = () => {
 						toggleShowModal={toggleShowModal}
 					/>
 				</div>
-				<Tabs
-					animated={false}
-					id="memberTabs"
-					className={styles.teamTabs}
-					noHeaderPadding
-					noPadding
-					unsetOverflowY
-					activeKeyOverride={member_tab_key}
-					onChange={(activeKey) =>
-						navigate(`/w/${workspace_id}/team/${activeKey}`)
-					}
-					tabs={[
-						{
-							key: 'members',
-							title: <TabTitle label="Members" />,
-							panelContent: (
-								<TabContentContainer
-									title="All members"
-									toggleInviteModal={toggleShowModal}
-								>
-									<AllMembers
-										workspaceId={workspace_id}
-										admins={
-											data?.admins as WorkspaceAdminRole[]
-										}
-										loading={loading}
-									/>
-								</TabContentContainer>
-							),
-						},
-						{
-							key: 'invites',
-							title: <TabTitle label="Pending invites" />,
-							panelContent: (
-								<TabContentContainer
-									title="Pending invites"
-									toggleInviteModal={toggleShowModal}
-								>
-									<PendingInvites
-										workspaceId={workspace_id}
-										active={member_tab_key === 'invites'}
-										shouldRefetchData={!showModal}
-									/>
-								</TabContentContainer>
-							),
-						},
-					]}
-				/>
+
+				<Tabs<MemberKeyType>
+					selectedId={member_tab_key}
+					onChange={(id) => {
+						navigate(`/w/${workspace_id}/team/${id}`)
+					}}
+				>
+					<Tabs.List>
+						<Tabs.Tab id={MemberKeyType.Members}>Members</Tabs.Tab>
+						<Tabs.Tab id={MemberKeyType.Invites}>
+							Pending invites
+						</Tabs.Tab>
+					</Tabs.List>
+					<Tabs.Panel id={MemberKeyType.Members}>
+						<TabContentContainer
+							title="All members"
+							toggleInviteModal={toggleShowModal}
+						>
+							<AllMembers
+								workspaceId={workspace_id}
+								admins={data?.admins as WorkspaceAdminRole[]}
+								projects={allProjects as Project[]}
+								loading={adminsLoading || appLoading}
+							/>
+						</TabContentContainer>
+					</Tabs.Panel>
+					<Tabs.Panel id={MemberKeyType.Invites}>
+						<TabContentContainer
+							title="Pending invites"
+							toggleInviteModal={toggleShowModal}
+						>
+							<PendingInvites
+								workspaceId={workspace_id}
+								active={
+									member_tab_key === MemberKeyType.Invites
+								}
+								shouldRefetchData={!showModal}
+							/>
+						</TabContentContainer>
+					</Tabs.Panel>
+				</Tabs>
 			</Box>
 		</Box>
 	)
@@ -114,8 +124,12 @@ const TabContentContainer = ({
 }: {
 	children: any
 	title: string
-	toggleInviteModal: any
+	toggleInviteModal: React.Dispatch<React.SetStateAction<boolean>>
 }) => {
+	const { workspaceRole } = useAuthContext()
+
+	const isAdminUser = workspaceRole === AdminRole.Admin
+
 	return (
 		<Box mt="8">
 			<Stack
@@ -125,37 +139,31 @@ const TabContentContainer = ({
 				direction="row"
 			>
 				<h4 className={styles.tabTitle}>{title}</h4>
-				<Button
-					trackingId="WorkspaceTeamInviteMember"
-					iconLeft={<IconSolidUserAdd />}
-					onClick={toggleInviteModal}
+				<Tooltip
+					disabled={isAdminUser}
+					trigger={
+						<EnterpriseFeatureButton
+							setting="enable_business_seats"
+							name="More than 15 team members"
+							fn={() => toggleInviteModal((shown) => !shown)}
+							disabled={!isAdminUser}
+							variant="basic"
+						>
+							<Button
+								trackingId="WorkspaceTeamInviteMember"
+								iconLeft={<IconSolidUserAdd />}
+								onClick={() => null}
+								disabled={!isAdminUser}
+							>
+								Invite users
+							</Button>
+						</EnterpriseFeatureButton>
+					}
 				>
-					Invite users
-				</Button>
+					Please contact an admin to invite users
+				</Tooltip>
 			</Stack>
 			{children}
-		</Box>
-	)
-}
-
-type TabTitleProps = {
-	label: string
-	count?: number
-}
-
-const TabTitle: React.FC<TabTitleProps> = ({ label, count }) => {
-	return (
-		<Box px="6">
-			<Stack direction="row" gap="6" align="center">
-				{label}
-				{count && (
-					<Badge
-						variant="gray"
-						size="small"
-						label={count.toString()}
-					/>
-				)}
-			</Stack>
 		</Box>
 	)
 }

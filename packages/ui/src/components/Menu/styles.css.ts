@@ -1,9 +1,10 @@
 import { style } from '@vanilla-extract/css'
 import { recipe, RecipeVariants } from '@vanilla-extract/recipes'
+
+import { sprinkles } from '../../css/sprinkles.css'
 import { vars } from '../../css/vars'
 import * as buttonStyles from '../Button/styles.css'
 import { typographyStyles } from '../Text/styles.css'
-import { sprinkles } from '../../css/sprinkles.css'
 
 export const menuList = style({
 	backgroundColor: 'white',
@@ -11,6 +12,7 @@ export const menuList = style({
 	borderRadius: vars.borderRadius[4],
 	paddingBottom: vars.space[4],
 	paddingTop: vars.space[4],
+	position: 'relative',
 	width: 'fit-content',
 	maxWidth: 320,
 	minWidth: 200,
@@ -21,10 +23,11 @@ export const menuList = style({
 export const menuItemVariants = recipe({
 	base: [
 		sprinkles({
+			alignItems: 'center',
+			display: 'flex',
+			flexDirection: 'row',
 			px: '8',
 			py: '4',
-			display: 'flex',
-			alignItems: 'center',
 		}),
 		{
 			minHeight: 20,

@@ -1,6 +1,7 @@
-import InfoTooltip from '@components/InfoTooltip/InfoTooltip'
 import Switch from '@components/Switch/Switch'
+import { toast } from '@components/Toaster'
 import {
+	useUpdateAlertDisabledMutation,
 	useUpdateErrorAlertIsDisabledMutation,
 	useUpdateLogAlertIsDisabledMutation,
 	useUpdateMetricMonitorIsDisabledMutation,
@@ -9,10 +10,7 @@ import {
 import { namedOperations } from '@graph/operations'
 import { ALERT_TYPE } from '@pages/Alerts/Alerts'
 import { useParams } from '@util/react-router/useParams'
-import { message } from 'antd'
 import React, { useState } from 'react'
-
-import styles from './AlertEnableSwitch.module.css'
 
 export const AlertEnableSwitch: React.FC<
 	React.PropsWithChildren<{ record: any }>
@@ -26,13 +24,15 @@ export const AlertEnableSwitch: React.FC<
 	const [updateMetricMonitorIsDisabled] =
 		useUpdateMetricMonitorIsDisabledMutation()
 	const [updateLogAlertIsDisabled] = useUpdateLogAlertIsDisabledMutation()
+	const [updateAlertDisabled] = useUpdateAlertDisabledMutation()
 
-	const onChange = async () => {
+	const onChange = async (_: boolean, e: React.MouseEvent) => {
+		e.preventDefault()
+
 		setLoading(true)
 		const isDisabled = !disabled
 
 		const type = record.configuration.type
-		console.log(record)
 
 		const requestBody = {
 			refetchQueries: [namedOperations.Query.GetAlertsPagePayload],
@@ -83,15 +83,25 @@ export const AlertEnableSwitch: React.FC<
 					},
 				})
 				break
+			case ALERT_TYPE.Dynamic:
+				await updateAlertDisabled({
+					...requestBody,
+					variables: {
+						alert_id: record.id,
+						project_id: project_id!,
+						disabled: isDisabled,
+					},
+				})
+				break
 			default:
 				throw new Error(`Unsupported alert type: ${type}`)
 		}
 
-		message.success(
+		toast.success(
 			isDisabled
-				? `Disabled "${record.Name}"`
-				: `Enabled "${record.Name}"`,
-			5,
+				? `Paused "${record.name || record.Name}"`
+				: `Enabled "${record.name || record.Name}"`,
+			{ duration: 5000 },
 		)
 
 		setDisabled(isDisabled)
@@ -99,23 +109,13 @@ export const AlertEnableSwitch: React.FC<
 	}
 
 	return (
-		<div className={styles.statusCell} onClick={(e) => e.stopPropagation()}>
-			<Switch
-				trackingId={`AlertEnable-${record.id}`}
-				label={disabled ? 'Disabled' : 'Enabled'}
-				loading={loading}
-				justifySpaceBetween
-				size="small"
-				checked={loading ? disabled : !disabled}
-				onChange={onChange}
-			/>
-			<InfoTooltip
-				title={
-					disabled
-						? 'This alert is not tracking events and will not notify you.'
-						: 'This alert is tracking events.'
-				}
-			/>
-		</div>
+		<Switch
+			trackingId="AlertDisableSwitch"
+			loading={loading}
+			justifySpaceBetween
+			size="default"
+			checked={loading ? disabled : !disabled}
+			onChange={onChange}
+		/>
 	)
 }

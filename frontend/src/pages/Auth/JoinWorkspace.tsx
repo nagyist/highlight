@@ -1,10 +1,9 @@
-import { Form, Stack, Text, useFormState } from '@highlight-run/ui'
-import { message } from 'antd'
+import { toast } from '@components/Toaster'
+import { Form, Stack, Text } from '@highlight-run/ui/components'
+import useLocalStorage from '@rehooks/local-storage'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useLocalStorage } from 'react-use'
 
-import { getEmailDomain } from '@/components/AutoJoinEmailsInput'
 import { Button } from '@/components/Button'
 import {
 	AppLoadingState,
@@ -18,7 +17,8 @@ import {
 import { AuthBody, AuthFooter, AuthHeader } from '@/pages/Auth/Layout'
 import { Landing } from '@/pages/Landing/Landing'
 import { ABOUT_YOU_ROUTE } from '@/routers/AppRouter/AppRouter'
-import { showIntercomMessage } from '@/util/window'
+import { getEmailDomain } from '@/util/email'
+import { showSupportMessage } from '@/util/window'
 
 import * as styles from './AdminForm.css'
 import * as authRouterStyles from './AuthRouter.css'
@@ -27,7 +27,14 @@ export const DISMISS_JOIN_WORKSPACE_LOCAL_STORAGE_KEY =
 	'highlightDismissedJoinWorkspace'
 
 export const JoinWorkspace = () => {
-	const { data, loading } = useGetWorkspacesQuery()
+	const { data, loading } = useGetWorkspacesQuery({
+		onCompleted: (data) => {
+			formStore.setValue(
+				formStore.names.workspaceId,
+				data?.joinable_workspaces?.[0]?.id,
+			)
+		},
+	})
 	const { data: adminData } = useGetAdminQuery()
 	const navigate = useNavigate()
 	const { setLoadingState } = useAppLoadingContext()
@@ -37,28 +44,29 @@ export const JoinWorkspace = () => {
 		false,
 	)
 
-	const form = useFormState({
+	const formStore = Form.useStore({
 		defaultValues: {
 			workspaceId: '',
 		},
 	})
+	const workspaceId = formStore.useValue('workspaceId')
 
-	form.useSubmit(async () => {
+	formStore.useSubmit(async (formState) => {
 		const response = await joinWorkspace({
 			variables: {
-				workspace_id: form.values.workspaceId,
+				workspace_id: formState.values.workspaceId,
 			},
 		})
 
 		if (!!response.data?.joinWorkspace) {
 			setDismissedJoinWorkspace(true)
-			message.success('Successfuly joined workspace!', 1)
+			toast.success('Successfully joined workspace!', { duration: 1000 })
 			navigate(ABOUT_YOU_ROUTE, { replace: true })
 		} else if (response.errors?.length) {
 			const error = response.errors[0].message
-			message.error(response.errors[0].message, 1)
+			toast.error(response.errors[0].message, { duration: 1000 })
 
-			showIntercomMessage(
+			showSupportMessage(
 				`I can't join a workspace. This is the error I'm getting: "${error}"`,
 			)
 		}
@@ -84,7 +92,7 @@ export const JoinWorkspace = () => {
 
 	return (
 		<Landing>
-			<Form className={authRouterStyles.container} state={form}>
+			<Form className={authRouterStyles.container} store={formStore}>
 				<AuthHeader>
 					<Text color="moderate">Join Workspace</Text>
 				</AuthHeader>
@@ -97,7 +105,6 @@ export const JoinWorkspace = () => {
 
 						<select
 							className={styles.select}
-							value={form.values.workspaceId}
 							onChange={(e) => {
 								const selectedWorkspace =
 									data?.joinable_workspaces?.find(
@@ -105,8 +112,8 @@ export const JoinWorkspace = () => {
 											workspace?.id === e.target.value,
 									)
 
-								form.setValue(
-									form.names.workspaceId,
+								formStore.setValue(
+									formStore.names.workspaceId,
 									selectedWorkspace?.id,
 								)
 							}}
@@ -130,7 +137,7 @@ export const JoinWorkspace = () => {
 					<Button
 						type="submit"
 						kind="primary"
-						disabled={!form.values.workspaceId}
+						disabled={!workspaceId}
 						onClick={() => null}
 						trackingId="join-workspace_submit"
 						loading={joinLoading}
@@ -145,7 +152,7 @@ export const JoinWorkspace = () => {
 							navigate(ABOUT_YOU_ROUTE, { replace: true })
 						}}
 					>
-						<Text color="moderate">Cancel</Text>
+						<Text color="moderate">Create My Own Workspace</Text>
 					</Button>
 				</AuthFooter>
 			</Form>

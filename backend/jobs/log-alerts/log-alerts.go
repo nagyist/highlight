@@ -3,17 +3,18 @@ package log_alerts
 import (
 	"context"
 	"fmt"
+	"github.com/highlight-run/highlight/backend/env"
 	"time"
 
 	"github.com/highlight-run/highlight/backend/alerts"
 	"github.com/highlight-run/highlight/backend/clickhouse"
+	"github.com/highlight-run/highlight/backend/lambda"
 	modelInputs "github.com/highlight-run/highlight/backend/private-graph/graph/model"
 	"github.com/highlight-run/highlight/backend/redis"
-	"github.com/highlight-run/highlight/backend/timeseries"
+	tempalerts "github.com/highlight-run/highlight/backend/temp-alerts"
 	"github.com/highlight-run/highlight/backend/util"
 	"github.com/highlight-run/workerpool"
 	"github.com/openlyinc/pointy"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/pkg/errors"
 	"github.com/sendgrid/sendgrid-go"
@@ -26,27 +27,25 @@ import (
 	"gorm.io/gorm"
 )
 
-var alertFrequencies = []int{15, 60, 300, 900, 1800}
-var maxWorkers = 40
+const maxWorkers = 40
+const alertEvalFreq = 15 * time.Second
 
-func WatchLogAlerts(ctx context.Context, DB *gorm.DB, TDB timeseries.DB, MailClient *sendgrid.Client, rh *resthooks.Resthook, redis *redis.Client, ccClient *clickhouse.Client) {
+// ingestDelay is an offset to make sure we look at ingested data
+const ingestDelay = -time.Minute
+
+func WatchLogAlerts(ctx context.Context, DB *gorm.DB, MailClient *sendgrid.Client, rh *resthooks.Resthook, redis *redis.Client, ccClient *clickhouse.Client, lambdaClient *lambda.Client) {
 	log.WithContext(ctx).Info("Starting to watch log alerts")
 
-	alertsByFrequency := &map[int][]*model.LogAlert{}
+	alertsByFrequency := &map[int64][]*model.LogAlert{}
 
 	getAlerts := func() {
-		bucketed := map[int][]*model.LogAlert{}
-		for _, freq := range alertFrequencies {
-			bucketed[freq] = []*model.LogAlert{}
-		}
+		bucketed := map[int64][]*model.LogAlert{}
 
 		alerts := getLogAlerts(ctx, DB)
 		for _, alert := range alerts {
-			for _, freq := range alertFrequencies {
-				if freq >= alert.Frequency {
-					bucketed[freq] = append(bucketed[freq], alert)
-					break
-				}
+			freq := int64(alert.Frequency)
+			if freq > 0 {
+				bucketed[freq] = append(bucketed[freq], alert)
 			}
 		}
 
@@ -62,36 +61,32 @@ func WatchLogAlerts(ctx context.Context, DB *gorm.DB, TDB timeseries.DB, MailCli
 		}
 	}()
 
-	var g errgroup.Group
-
 	alertWorkerpool := workerpool.New(maxWorkers)
 	alertWorkerpool.SetPanicHandler(util.Recover)
-	for _, freq := range alertFrequencies {
-		f := freq
-		g.Go(
-			func() error {
-				for range time.NewTicker(time.Duration(f) * time.Second).C {
-					alerts := (*alertsByFrequency)[f]
-					log.WithContext(ctx).Infof("Processing %d log alerts for frequency %d", len(alerts), f)
-					for _, alert := range alerts {
-						// copy `alert` by value so each call to processLogAlert references a different alert
-						alert := alert
-						alertWorkerpool.SubmitRecover(
-							func() {
-								err := processLogAlert(ctx, DB, TDB, MailClient, alert, rh, redis, ccClient)
-								if err != nil {
-									log.WithContext(ctx).Error(err)
-								}
-							})
-					}
-				}
-				return nil
-			})
-	}
 
-	err := g.Wait()
-	if err != nil {
-		log.WithContext(ctx).Error(err)
+	startTime := time.Now().Unix()
+	for range time.NewTicker(alertEvalFreq).C {
+		curTime := time.Now().Unix()
+		alerts := *alertsByFrequency
+		for freq, alerts := range alerts {
+			// If at least one tick has passed since the last loop,
+			// evaluate the alerts for this bucket
+			if (curTime / freq) > (startTime / freq) {
+				for _, alert := range alerts {
+					// copy `alert` by value so each call to processLogAlert references a different alert
+					alert := alert
+					alertWorkerpool.SubmitRecover(
+						func() {
+							ctx := context.Background()
+							err := processLogAlert(ctx, DB, MailClient, alert, rh, redis, ccClient, lambdaClient)
+							if err != nil {
+								log.WithContext(ctx).Error(err)
+							}
+						})
+				}
+			}
+		}
+		startTime = curTime
 	}
 }
 
@@ -106,19 +101,16 @@ func getLogAlerts(ctx context.Context, DB *gorm.DB) []*model.LogAlert {
 	return alerts
 }
 
-func processLogAlert(ctx context.Context, DB *gorm.DB, TDB timeseries.DB, MailClient *sendgrid.Client, alert *model.LogAlert, rh *resthooks.Resthook, redis *redis.Client, ccClient *clickhouse.Client) error {
-	lastTs, err := redis.GetLastLogTimestamp(ctx, alert.ProjectID)
-	if err != nil {
-		return errors.Wrap(err, "error retrieving last log timestamp")
+func processLogAlert(ctx context.Context, DB *gorm.DB, MailClient *sendgrid.Client, alert *model.LogAlert, rh *resthooks.Resthook, redis *redis.Client, ccClient *clickhouse.Client, lambdaClient *lambda.Client) error {
+	thresholdWindow := alert.Frequency
+	if alert.ThresholdWindow != nil {
+		thresholdWindow = *alert.ThresholdWindow
 	}
-	// If there's no log timestamp set, assume time.Now()
-	if lastTs.IsZero() {
-		lastTs = time.Now()
-	}
-	end := lastTs.Add(-time.Minute)
-	start := end.Add(-time.Duration(alert.Frequency) * time.Second)
 
-	count64, err := ccClient.ReadLogsTotalCount(ctx, alert.ProjectID, modelInputs.LogsParamsInput{Query: alert.Query, DateRange: &modelInputs.DateRangeRequiredInput{
+	end := time.Now().Add(ingestDelay)
+	start := end.Add(-time.Duration(thresholdWindow) * time.Second)
+
+	count64, err := ccClient.ReadLogsTotalCount(ctx, alert.ProjectID, modelInputs.QueryInput{Query: alert.Query, DateRange: &modelInputs.DateRangeRequiredInput{
 		StartDate: start,
 		EndDate:   end,
 	}})
@@ -133,13 +125,15 @@ func processLogAlert(ctx context.Context, DB *gorm.DB, TDB timeseries.DB, MailCl
 	}
 
 	log.WithContext(ctx).WithFields(log.Fields{
-		"query":     alert.Query,
-		"frequency": alert.Frequency,
-		"start":     start.Format(time.RFC3339),
-		"end":       end.Format(time.RFC3339),
-		"count":     count,
-		"threshold": alert.CountThreshold,
-		"alerting":  alertCondition,
+		"id":              alert.ID,
+		"query":           alert.Query,
+		"frequency":       alert.Frequency,
+		"start":           start.Format(time.RFC3339),
+		"end":             end.Format(time.RFC3339),
+		"count":           count,
+		"threshold":       alert.CountThreshold,
+		"thresholdWindow": thresholdWindow,
+		"alerting":        alertCondition,
 	}).Info("evaluated log alert")
 
 	if alertCondition {
@@ -169,19 +163,18 @@ func processLogAlert(ctx context.Context, DB *gorm.DB, TDB timeseries.DB, MailCl
 		if alert.Query != "" {
 			queryStr = fmt.Sprintf(`for query *%s* `, alert.Query)
 		}
-		message := fmt.Sprintf(
-			"🚨 *%s* fired!\nLog count %swas %s the threshold.\n"+
+		body := fmt.Sprintf(
+			"Log count %swas %s the threshold.\n"+
 				"_Count_: %d | _Threshold_: %d",
-			*alert.Name,
 			queryStr,
 			aboveStr,
 			count,
 			alert.CountThreshold,
 		)
 
-		log.WithContext(ctx).Info(message)
+		log.WithContext(ctx).WithField("alert_id", alert.ID).Info(fmt.Sprintf("Firing alert for %s", alert.Name))
 
-		if err := alert.SendSlackAlert(ctx, DB, &model.SendSlackAlertForLogAlertInput{Message: message, Workspace: &workspace, StartDate: start, EndDate: end}); err != nil {
+		if err := tempalerts.SendSlackLogAlert(ctx, DB, alert, &tempalerts.SendSlackAlertForLogAlertInput{Body: body, Workspace: &workspace, StartDate: start, EndDate: end}); err != nil {
 			log.WithContext(ctx).Error("error sending slack alert for metric monitor", err)
 		}
 
@@ -192,7 +185,7 @@ func processLogAlert(ctx context.Context, DB *gorm.DB, TDB timeseries.DB, MailCl
 			StartDate: start,
 			EndDate:   end,
 		}); err != nil {
-			log.WithContext(ctx).Error(err)
+			log.WithContext(ctx).WithError(err).Error("failed to send discord log alert")
 		}
 
 		emailsToNotify, err := model.GetEmailsToNotify(alert.EmailsToNotify)
@@ -200,26 +193,29 @@ func processLogAlert(ctx context.Context, DB *gorm.DB, TDB timeseries.DB, MailCl
 			log.WithContext(ctx).Error(err)
 		}
 
-		alertUrl := model.GetLogAlertURL(alert.ProjectID, alert.Query, start, end)
+		logsUrl := tempalerts.GetLogAlertURL(alert.ProjectID, alert.Query, start, end)
+		frontendURL := env.Config.FrontendUri
+		alertUrl := fmt.Sprintf("%s/%d/alerts/logs/%d", frontendURL, alert.ProjectID, alert.ID)
+
+		templateData := map[string]interface{}{
+			"alertLink":      alertUrl,
+			"alertName":      alert.Name,
+			"belowThreshold": alert.BelowThreshold,
+			"count":          count,
+			"logsLink":       logsUrl,
+			"projectName":    project.Name,
+			"query":          alert.Query,
+			"threshold":      alert.CountThreshold,
+		}
+
+		subjectLine := alert.Name
+		emailHtml, err := lambdaClient.FetchReactEmailHTML(ctx, lambda.ReactEmailTemplateLogAlert, templateData)
+		if err != nil {
+			return errors.Wrap(err, "error fetching email html")
+		}
 
 		for _, email := range emailsToNotify {
-			queryStr := ""
-			if alert.Query != "" {
-				queryStr = fmt.Sprintf(`for query <b>%s</b> `, alert.Query)
-			}
-			message = fmt.Sprintf(
-				"<b>%s</b> fired! Log count %sis currently %s the threshold.<br>"+
-					"<em>Count</em>: %d | <em>Threshold</em>: %d"+
-					"<br><br>"+
-					"<a href=\"%s\">View Logs</a>",
-				*alert.Name,
-				queryStr,
-				aboveStr,
-				count,
-				alert.CountThreshold,
-				alertUrl,
-			)
-			if err := Email.SendAlertEmail(ctx, MailClient, *email, message, "Log Alert", *alert.Name); err != nil {
+			if err := Email.SendReactEmailAlert(ctx, MailClient, *email, emailHtml, subjectLine); err != nil {
 				log.WithContext(ctx).Error(err)
 			}
 		}

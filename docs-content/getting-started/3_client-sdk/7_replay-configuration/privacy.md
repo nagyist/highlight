@@ -2,7 +2,7 @@
 title: Privacy
 slug: privacy
 createdAt: 2021-09-14T17:47:33.000Z
-updatedAt: 2022-08-03T23:29:08.000Z
+updatedAt: 2022-12-19T00:00:00.000Z
 ---
 
 ## Masking Elements
@@ -15,11 +15,11 @@ One way to sanitize your recordings is by adding the `highlight-block` CSS class
 
 The Highlight snippet will in-turn measure the dimensions of the ignored element, and when the recording is being replayed, an empty placeholder will replace the content.
 
-![Elements with the highlight-block class will show up as redacted in your recordings](https://archbee-image-uploads.s3.amazonaws.com/XPwQFz8tul7ogqGkmtA0y/s3OAcyrUrqMsWXwDqT9Zj_aff29bb-kapture2021-03-25at140125.gif)
+![](/images/redaction.gif.webp)
 
 ## Obfuscating Elements
 
-Alternatively, you can obfuscate specific HTML elements by adding the `highlight-mask` CSS class. The effect is the same of setting `enableStrictPrivacy` (the randomized text in the photo above) but applies to the specific HTML element that you mask.
+Alternatively, you can obfuscate specific HTML elements by adding the `highlight-mask` CSS class. The effect is the same of setting `privacySetting: 'strict'` (the randomized text in the photo above) but applies to the specific HTML element that you mask.
 
 ```html
 <div class="highlight-mask">This is some sensitive data <button>Important Button</button></div>
@@ -37,9 +37,33 @@ For sensitive input fields that your team would like to ignore user input for, y
 <input class="highlight-ignore" name="social security number" />
 ```
 
+## Network Request Redaction
+Interested in redacting particular requests, responses, or the data within them? Highlight will redact certain headers out of the box, but provides a few ways to customize the redaction process to suit your specific needs and preferences. Take a look at our documentation on [Recording Network Requests and Responses](./recording-network-requests-and-responses.md) to learn more.
+
+## Default Privacy Mode
+
+By default, Highlight will obfuscate all inputs and any text that matches commonly used Regex expressions of personally identifiable information. This offers a base level protection from recording info such as addresses, phone numbers, social security numbers, and more. It will not obfuscate any images or media content. It is possible that other, non PII text is obfuscated if it matches the expressions for larger number, or contact information on the site. If you want to turn this off, you can set `privacySetting` to `none` when calling [`H.init()`](../../../sdk/client.md#Hinit).
+
+Note: This mode is only available in SDK versions 8.0.0 and later.
+
+Here are a list of the [regex expressions used in default privacy mode](https://github.com/highlight/rrweb/blob/e6a375a554dac9de984a18bfb8ba6e3beb4bd961/packages/rrweb-snapshot/src/utils.ts#L267-L295):
+```
+Email: '[a-zA-Z0-9.!#$%&'*+=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)*'
+SSN: '[0-9]{3}-?[0-9]{2}-?[0-9]{4}'
+Phone number: '[+]?[(]?[0-9]{3}[)]?[-\s.]?[0-9]{3}[-\s.]?[0-9]{4,6}'
+Credit card: '[0-9]{4}-?[0-9]{4}-?[0-9]{4}-?[0-9]{4}'
+Unformatted SSN, phone number, credit card: '[0-9]{9,16}'
+Address: '[0-9]{1,5}.?[0-9]{0,3}\s[a-zA-Z]{2,30}\s[a-zA-Z]{2,15}'
+IP address: '(?:[0-9]{1,3}.){3}[0-9]{1,3}'
+```
+
+### Overriding Obfuscation
+
+In default privacy mode, there may be some innocuous text or inputs that would be helpful to record, but are obfuscated by default. For example, user created names in inputs or your company address. These HTML tags can be overridden with the `data-hl-record="true"` attribute. Currently, this attribute must be used on the recorded HTML tag itself, and any decesendants of the element may still be redacted.
+
 ## Strict Privacy Mode
 
-If you don't want to manually annotate what elements to not record then you can set `enableStrictPrivacy` to `true` when calling [`H.init()`](../../../sdk/client.md#Hinit). Strict Privacy Mode will obfuscate all text and images. The text obfuscation is not reversible and is done on the client.
+If you don't want to manually annotate what elements to not record then you can set `privacySetting` to `strict` when calling [`H.init()`](../../../sdk/client.md#Hinit). Strict Privacy Mode will obfuscate all text and images. The text obfuscation is not reversible and is done on the client.
 
 Here are some examples:
 

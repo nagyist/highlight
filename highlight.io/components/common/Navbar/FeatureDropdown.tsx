@@ -6,9 +6,16 @@ import { FaChevronDown } from 'react-icons/fa'
 import * as Icons from 'react-icons/hi'
 
 import classNames from 'classnames'
+import navStyles from './Navbar.module.scss'
 import styles from './ResourceDropdown.module.scss'
 
-const FeatureDropdown = ({ isOpen }: { isOpen?: boolean }) => {
+const FeatureDropdown = ({
+	isOpen,
+	light,
+}: {
+	isOpen?: boolean
+	light?: boolean
+}) => {
 	const [isShowing, setIsShowing] = useState(false)
 
 	const otherLinks = [
@@ -31,9 +38,15 @@ const FeatureDropdown = ({ isOpen }: { isOpen?: boolean }) => {
 			sameTab: true,
 		},
 		{
-			title: 'Integrations',
-			icon: <Icons.HiLightningBolt className={styles.copyOnLight} />,
-			link: '/integrations',
+			title: 'Traces',
+			icon: <Icons.HiSparkles className={styles.copyOnLight} />,
+			link: '/traces',
+			sameTab: true,
+		},
+		{
+			title: 'Dashboards',
+			icon: <Icons.HiChartBar className={styles.copyOnLight} />,
+			link: '/dashboards',
 			sameTab: true,
 		},
 	]
@@ -48,8 +61,10 @@ const FeatureDropdown = ({ isOpen }: { isOpen?: boolean }) => {
 						className={styles.popoverButton}
 					>
 						<a
-							className={classNames(styles.headerButton, {
-								[styles.white]: isShowing,
+							className={classNames({
+								[styles.headerButton]: !light,
+								[navStyles.headerButtonLight]: light,
+								[styles.white]: isShowing && !light,
 							})}
 						>
 							<div className="flex gap-[6.5px] items-center">

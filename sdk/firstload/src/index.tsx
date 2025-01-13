@@ -1,7 +1,3 @@
-import {
-	AmplitudeAPI,
-	setupAmplitudeIntegration,
-} from './integrations/amplitude'
 import type {
 	Highlight,
 	HighlightClassOptions,
@@ -11,19 +7,35 @@ import type {
 	HighlightPublicInterface,
 	Metadata,
 	Metric,
+	OnHighlightReadyOptions,
 	SessionDetails,
-} from '@highlight-run/client/src/types/types'
-import { MixpanelAPI, setupMixpanelIntegration } from './integrations/mixpanel'
+} from '@highlight-run/client/src/types/types.js'
+import {
+	type AmplitudeAPI,
+	setupAmplitudeIntegration,
+} from './integrations/amplitude.js'
+import {
+	type MixpanelAPI,
+	setupMixpanelIntegration,
+} from './integrations/mixpanel.js'
 
-import { FirstLoadListeners } from '@highlight-run/client/src/listeners/first-load-listeners'
-import { GenerateSecureID } from '@highlight-run/client/src/utils/secure-id'
-import { HighlightSegmentMiddleware } from './integrations/segment'
-import configureElectronHighlight from './environments/electron'
-import firstloadVersion from './__generated/version'
-import { getPreviousSessionData } from '@highlight-run/client/src/utils/sessionStorage/highlightSession'
+import { HIGHLIGHT_URL } from '@highlight-run/client/src/constants/sessions.js'
+import { FirstLoadListeners } from '@highlight-run/client/src/listeners/first-load-listeners.js'
+import { ErrorMessageType } from '@highlight-run/client/src/types/shared-types'
+import { GenerateSecureID } from '@highlight-run/client/src/utils/secure-id.js'
+import {
+	getPreviousSessionData,
+	loadCookieSessionData,
+} from '@highlight-run/client/src/utils/sessionStorage/highlightSession.js'
+import { setCookieWriteEnabled } from '@highlight-run/client/src/utils/storage'
+import type { Context, Span, SpanOptions, Tracer } from '@opentelemetry/api'
+import firstloadVersion from './__generated/version.js'
+import { listenToChromeExtensionMessage } from './browserExtension/extensionListener.js'
+import configureElectronHighlight from './environments/electron.js'
+import { HighlightSegmentMiddleware } from './integrations/segment.js'
 import { initializeFetchListener } from './listeners/fetch'
 import { initializeWebSocketListener } from './listeners/web-socket'
-import { listenToChromeExtensionMessage } from './browserExtension/extensionListener'
+import { getNoopSpan } from '@highlight-run/client/src/otel/utils.js'
 
 enum MetricCategory {
 	Device = 'Device',
@@ -33,7 +45,7 @@ enum MetricCategory {
 }
 
 const HighlightWarning = (context: string, msg: any) => {
-	console.warn(`Highlight Warning: (${context}): `, msg)
+	console.warn(`highlight.run warning: (${context}): `, msg)
 }
 
 interface HighlightWindow extends Window {
@@ -47,12 +59,22 @@ interface HighlightWindow extends Window {
 	Intercom?: any
 }
 
+const READY_WAIT_LOOP_MS = 200
+
 declare var window: HighlightWindow
 
-let script: HTMLScriptElement
+let onHighlightReadyQueue: {
+	options?: OnHighlightReadyOptions
+	func: () => void | Promise<void>
+}[] = []
+let onHighlightReadyTimeout: ReturnType<typeof setTimeout> | undefined =
+	undefined
+
 let highlight_obj: Highlight
 let first_load_listeners: FirstLoadListeners
 let init_called = false
+type Callback = (span?: Span) => any
+let getTracer: () => Tracer
 const H: HighlightPublicInterface = {
 	options: undefined,
 	init: (projectID?: string | number, options?: HighlightOptions) => {
@@ -75,50 +97,68 @@ const H: HighlightPublicInterface = {
 				return
 			}
 
-			// `init` was already called, do not reinitialize
-			if (init_called) {
-				return
+			if (!options?.skipCookieSessionDataLoad) {
+				loadCookieSessionData()
+			} else {
+				setCookieWriteEnabled(false)
 			}
-			init_called = true
-
-			script = document.createElement('script')
-			var scriptSrc = options?.scriptUrl
-				? options.scriptUrl
-				: `https://static.highlight.io/v${firstloadVersion}/index.js`
-			script.setAttribute('src', scriptSrc)
-			script.setAttribute('type', 'text/javascript')
-			document.getElementsByTagName('head')[0].appendChild(script)
 
 			let previousSession = getPreviousSessionData()
 			let sessionSecureID = GenerateSecureID()
 			if (previousSession?.sessionSecureID) {
 				sessionSecureID = previousSession.sessionSecureID
 			}
+
+			// `init` was already called, do not reinitialize
+			if (init_called) {
+				return { sessionSecureID }
+			}
+			init_called = true
+
+			initializeFetchListener()
+			initializeWebSocketListener()
+			import('@highlight-run/client/src').then(
+				async ({
+					Highlight,
+					setupBrowserTracing,
+					getTracer: otelGetTracer,
+				}) => {
+					setupBrowserTracing({
+						otlpEndpoint:
+							options?.otlpEndpoint ??
+							'https://otel.highlight.io',
+						projectId: projectID,
+						sessionSecureId: sessionSecureID,
+						environment: options?.environment ?? 'production',
+						networkRecordingOptions:
+							typeof options?.networkRecording === 'object'
+								? options.networkRecording
+								: undefined,
+						tracingOrigins: options?.tracingOrigins,
+						serviceName:
+							options?.serviceName ?? 'highlight-browser',
+					})
+					getTracer = otelGetTracer
+
+					highlight_obj = new Highlight(
+						client_options,
+						first_load_listeners,
+					)
+					initializeFetchListener()
+					initializeWebSocketListener()
+					if (!options?.manualStart) {
+						await highlight_obj.initialize()
+					}
+				},
+			)
+
 			const client_options: HighlightClassOptions = {
+				...options,
 				organizationID: projectID,
-				debug: options?.debug,
-				backendUrl: options?.backendUrl,
-				tracingOrigins: options?.tracingOrigins,
-				disableNetworkRecording: options?.disableNetworkRecording,
-				networkRecording: options?.networkRecording,
-				disableBackgroundRecording: options?.disableBackgroundRecording,
-				disableConsoleRecording: options?.disableConsoleRecording,
-				disableSessionRecording: options?.disableSessionRecording,
-				reportConsoleErrors: options?.reportConsoleErrors,
-				consoleMethodsToRecord: options?.consoleMethodsToRecord,
-				enableSegmentIntegration: options?.enableSegmentIntegration,
-				enableStrictPrivacy: options?.enableStrictPrivacy,
-				enableCanvasRecording: options?.enableCanvasRecording,
-				enablePerformanceRecording: options?.enablePerformanceRecording,
-				samplingStrategy: options?.samplingStrategy,
-				inlineImages: options?.inlineImages,
-				inlineStylesheet: options?.inlineStylesheet,
-				recordCrossOriginIframe: options?.recordCrossOriginIframe,
 				firstloadVersion,
 				environment: options?.environment || 'production',
 				appVersion: options?.version,
-				sessionShortcut: options?.sessionShortcut,
-				sessionSecureID: sessionSecureID,
+				sessionSecureID,
 			}
 			first_load_listeners = new FirstLoadListeners(client_options)
 			if (!options?.manualStart) {
@@ -126,28 +166,6 @@ const H: HighlightPublicInterface = {
 				// listeners over for client to manage
 				first_load_listeners.startListening()
 			}
-			script.addEventListener('load', () => {
-				const startFunction = () => {
-					highlight_obj = new window.HighlightIO(
-						client_options,
-						first_load_listeners,
-					)
-					if (!options?.manualStart) {
-						highlight_obj.initialize()
-					}
-				}
-
-				if ('HighlightIO' in window) {
-					startFunction()
-				} else {
-					const interval = setInterval(() => {
-						if ('HighlightIO' in window) {
-							startFunction()
-							clearInterval(interval)
-						}
-					}, 500)
-				}
-			})
 
 			if (
 				!options?.integrations?.mixpanel?.disabled &&
@@ -162,8 +180,19 @@ const H: HighlightPublicInterface = {
 			) {
 				setupAmplitudeIntegration(options.integrations.amplitude)
 			}
+
+			return { sessionSecureID }
 		} catch (e) {
 			HighlightWarning('init', e)
+		}
+	},
+	snapshot: async (element: HTMLCanvasElement) => {
+		try {
+			if (highlight_obj && highlight_obj.ready) {
+				return await highlight_obj.snapshot(element)
+			}
+		} catch (e) {
+			HighlightWarning('snapshot', e)
 		}
 	},
 	addSessionFeedback: ({
@@ -198,6 +227,21 @@ const H: HighlightPublicInterface = {
 					JSON.stringify(payload),
 				),
 			)
+		} catch (e) {
+			HighlightWarning('error', e)
+		}
+	},
+	consume: (
+		error: Error,
+		opts: {
+			message?: string
+			payload?: object
+			source?: string
+			type?: ErrorMessageType
+		},
+	) => {
+		try {
+			H.onHighlightReady(() => highlight_obj.consumeError(error, opts))
 		} catch (e) {
 			HighlightWarning('error', e)
 		}
@@ -246,32 +290,31 @@ const H: HighlightPublicInterface = {
 		}
 	},
 	start: (options) => {
-		try {
-			if (highlight_obj?.state === 'Recording') {
-				if (!options?.silent) {
-					console.warn(
-						'Highlight is already recording. Please `H.stop()` the current session before starting a new one.',
-					)
-				}
-				return
-			} else {
-				first_load_listeners.startListening()
-				var interval = setInterval(function () {
-					if (highlight_obj) {
-						clearInterval(interval)
-						highlight_obj.initialize(options)
-					}
-				}, 200)
+		if (highlight_obj?.state === 'Recording' && !options?.forceNew) {
+			if (!options?.silent) {
+				console.warn(
+					'Highlight is already recording. Please `H.stop()` the current session before starting a new one.',
+				)
 			}
-		} catch (e) {
-			HighlightWarning('start', e)
+		} else {
+			first_load_listeners.startListening()
+			H.onHighlightReady(
+				async () => {
+					await highlight_obj.initialize(options)
+				},
+				{ waitForReady: false },
+			)
 		}
 	},
-	stop: () => {
-		try {
+	stop: (options) => {
+		if (highlight_obj?.state !== 'Recording') {
+			if (!options?.silent) {
+				console.warn(
+					'Highlight is already stopped. Please call `H.start()`.',
+				)
+			}
+		} else {
 			H.onHighlightReady(() => highlight_obj.stopRecording(true))
-		} catch (e) {
-			HighlightWarning('stop', e)
 		}
 	},
 	identify: (identifier: string, metadata: Metadata = {}) => {
@@ -330,59 +373,184 @@ const H: HighlightPublicInterface = {
 			HighlightWarning('metrics', e)
 		}
 	},
+	startSpan: (
+		name: string,
+		options: SpanOptions | ((span?: Span) => any),
+		context?: Context | ((span?: Span) => any),
+		fn?: (span?: Span) => any,
+	): any => {
+		const tracer = typeof getTracer === 'function' ? getTracer() : undefined
+		if (!tracer) {
+			const noopSpan = getNoopSpan()
+
+			if (fn === undefined && context === undefined) {
+				return (options as Callback)(noopSpan)
+			} else if (fn === undefined) {
+				return (context as Callback)(noopSpan)
+			} else {
+				return fn(noopSpan)
+			}
+		}
+
+		const wrapCallback = (span: Span, callback: (span: Span) => any) => {
+			const result = callback(span)
+			if (result instanceof Promise) {
+				return result.finally(() => span.end())
+			} else {
+				span.end()
+				return result
+			}
+		}
+
+		if (fn === undefined && context === undefined) {
+			return tracer.startActiveSpan(name, (span) =>
+				wrapCallback(span, options as Callback),
+			)
+		} else if (fn === undefined) {
+			return tracer.startActiveSpan(
+				name,
+				options as SpanOptions,
+				(span) => wrapCallback(span, context as Callback),
+			)
+		} else {
+			return tracer.startActiveSpan(
+				name,
+				options as SpanOptions,
+				context as Context,
+				(span) => wrapCallback(span, fn),
+			)
+		}
+	},
+	startManualSpan: (
+		name: string,
+		options: SpanOptions | ((span: Span) => any),
+		context?: Context | ((span: Span) => any),
+		fn?: (span: Span) => any,
+	): any => {
+		const tracer = typeof getTracer === 'function' ? getTracer() : undefined
+		if (!tracer) {
+			const noopSpan = getNoopSpan()
+
+			if (fn === undefined && context === undefined) {
+				return (options as Callback)(noopSpan)
+			} else if (fn === undefined) {
+				return (context as Callback)(noopSpan)
+			} else {
+				return fn(noopSpan)
+			}
+		}
+
+		if (fn === undefined && context === undefined) {
+			return tracer.startActiveSpan(name, options as Callback)
+		} else if (fn === undefined) {
+			return tracer.startActiveSpan(
+				name,
+				options as SpanOptions,
+				context as Callback,
+			)
+		} else {
+			return tracer.startActiveSpan(
+				name,
+				options as SpanOptions,
+				context as Context,
+				fn,
+			)
+		}
+	},
 	getSessionURL: () => {
-		return new Promise<string>((resolve, reject) => {
+		return new Promise((resolve, reject) => {
 			H.onHighlightReady(() => {
-				const res = highlight_obj.getCurrentSessionURL()
-				if (res) {
-					resolve(res)
+				const secureID = highlight_obj.sessionData.sessionSecureID
+				const data = getPreviousSessionData(secureID)
+
+				if (data) {
+					resolve(
+						`https://${HIGHLIGHT_URL}/${data.projectID}/sessions/${secureID}`,
+					)
 				} else {
-					reject(new Error('Unable to get session URL'))
+					reject(new Error(`Unable to get session URL: ${secureID}`))
 				}
 			})
 		})
 	},
 	getSessionDetails: () => {
-		return new Promise<SessionDetails>((resolve, reject) => {
-			H.onHighlightReady(() => {
-				const baseUrl = highlight_obj.getCurrentSessionURL()
-				if (baseUrl) {
+		return new Promise((resolve, reject) => {
+			H.onHighlightReady(async () => {
+				try {
+					const baseUrl = await H.getSessionURL()
+					if (!baseUrl) {
+						throw new Error('Could not get session URL')
+					}
+
+					const secureID = highlight_obj.sessionData.sessionSecureID
+					const sessionData = getPreviousSessionData(secureID)
 					const currentSessionTimestamp =
-						highlight_obj.getCurrentSessionTimestamp()
+						sessionData?.sessionStartTime
+					if (!currentSessionTimestamp) {
+						throw new Error('Could not get session start timestamp')
+					}
+
 					const now = new Date().getTime()
 					const url = new URL(baseUrl)
 					const urlWithTimestamp = new URL(baseUrl)
 					urlWithTimestamp.searchParams.set(
 						'ts',
-						// The delta between when the session recording started and now.
 						((now - currentSessionTimestamp) / 1000).toString(),
 					)
 
 					resolve({
 						url: url.toString(),
 						urlWithTimestamp: urlWithTimestamp.toString(),
-					})
-				} else {
-					reject(new Error('Could not get session URL'))
+						sessionSecureID: secureID,
+					} as SessionDetails)
+				} catch (error) {
+					reject(error)
 				}
 			})
 		})
 	},
-	onHighlightReady: (func: () => void) => {
-		try {
-			if (highlight_obj && highlight_obj.ready) {
-				func()
-			} else {
-				var interval = setInterval(function () {
-					if (highlight_obj && highlight_obj.ready) {
-						clearInterval(interval)
-						func()
-					}
-				}, 200)
-			}
-		} catch (e) {
-			HighlightWarning('onHighlightReady', e)
+	getRecordingState: () => {
+		return highlight_obj?.state ?? 'NotRecording'
+	},
+	onHighlightReady: (func, options) => {
+		// Run the callback immediately if Highlight is already ready
+		if (highlight_obj && highlight_obj.ready) {
+			func()
+			return
 		}
+
+		onHighlightReadyQueue.push({ options, func })
+
+		if (onHighlightReadyTimeout !== undefined) {
+			return
+		}
+
+		const processQueue = () => {
+			const newQueue = onHighlightReadyQueue.filter((item) => {
+				if (
+					!highlight_obj ||
+					(item.options?.waitForReady !== false &&
+						!highlight_obj.ready)
+				) {
+					return true
+				}
+
+				item.func()
+				return false
+			})
+
+			onHighlightReadyQueue = newQueue
+			onHighlightReadyTimeout = undefined
+
+			if (onHighlightReadyQueue.length > 0) {
+				onHighlightReadyTimeout = setTimeout(
+					processQueue,
+					READY_WAIT_LOOP_MS,
+				)
+			}
+		}
+
+		processQueue()
 	},
 }
 
@@ -394,10 +562,25 @@ listenToChromeExtensionMessage()
 initializeFetchListener()
 initializeWebSocketListener()
 
-export type { HighlightOptions }
+// Helpers only for testing
+const __testing = {
+	reset: () => {
+		init_called = false
+		highlight_obj = undefined as any
+		onHighlightReadyQueue = []
+		onHighlightReadyTimeout = undefined
+		first_load_listeners = undefined as any
+	},
+	setHighlightObj: (obj: Partial<Highlight>) => {
+		highlight_obj = obj as Highlight
+	},
+}
+
 export {
+	configureElectronHighlight,
 	H,
 	HighlightSegmentMiddleware,
 	MetricCategory,
-	configureElectronHighlight,
+	__testing,
 }
+export type { HighlightOptions }

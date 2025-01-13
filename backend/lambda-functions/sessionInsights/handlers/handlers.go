@@ -7,9 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/highlight-run/highlight/backend/env"
 	"image/png"
 	"io"
-	"os"
 	"strconv"
 	"time"
 
@@ -17,14 +17,16 @@ import (
 	"github.com/openlyinc/pointy"
 	log "github.com/sirupsen/logrus"
 
+	"gorm.io/gorm"
+
+	"github.com/pkg/errors"
+	"github.com/sendgrid/sendgrid-go"
+	"github.com/sendgrid/sendgrid-go/helpers/mail"
+
 	"github.com/highlight-run/highlight/backend/email"
 	"github.com/highlight-run/highlight/backend/lambda"
 	"github.com/highlight-run/highlight/backend/lambda-functions/sessionInsights/utils"
 	"github.com/highlight-run/highlight/backend/model"
-	"github.com/pkg/errors"
-	"github.com/sendgrid/sendgrid-go"
-	"github.com/sendgrid/sendgrid-go/helpers/mail"
-	"gorm.io/gorm"
 )
 
 type Handlers interface {
@@ -48,12 +50,12 @@ func InitHandlers(db *gorm.DB, sendgridClient *sendgrid.Client, lambdaClient *la
 
 func NewHandlers() *handlers {
 	ctx := context.TODO()
-	db, err := model.SetupDB(ctx, os.Getenv("PSQL_DB"))
+	db, err := model.SetupDB(ctx, env.Config.SQLDatabase)
 	if err != nil {
 		log.WithContext(ctx).Fatal(errors.Wrap(err, "error setting up DB"))
 	}
 
-	sendgridClient := sendgrid.NewSendClient(os.Getenv("SENDGRID_API_KEY"))
+	sendgridClient := sendgrid.NewSendClient(env.Config.SendgridKey)
 
 	lambdaClient, err := lambda.NewLambdaClient()
 	if err != nil {
@@ -248,6 +250,9 @@ func (h *handlers) SendSessionInsightsEmails(ctx context.Context, input utils.Se
 			WHERE eoo.admin_id = a.id
 			AND eoo.category IN ('All', 'Digests', 'SessionDigests')
 		)
+		AND (
+			wa.project_ids IS NULL 
+			OR p.id = ANY(wa.project_ids))
 	`, input.ProjectId).Scan(&toAddrs).Error; err != nil {
 		return errors.Wrap(err, "error querying recipient emails")
 	}
@@ -262,21 +267,14 @@ func (h *handlers) SendSessionInsightsEmails(ctx context.Context, input utils.Se
 
 	images := map[string]string{}
 	for idx, session := range input.InterestingSessions {
-		res, err := h.lambdaClient.GetSessionScreenshot(ctx, input.ProjectId, session.Id, pointy.Int(1000000), pointy.Int(session.ChunkIndex), nil)
-		if err != nil {
-			return err
-		}
-		if res.StatusCode != 200 {
-			return errors.New(fmt.Sprintf("session screenshot lambda returned %d", res.StatusCode))
-		}
-		imageBytes, err := io.ReadAll(res.Body)
+		img, err := h.lambdaClient.GetSessionScreenshot(ctx, input.ProjectId, session.Id, pointy.Int(1000000), pointy.Int(session.ChunkIndex), nil)
 		if err != nil {
 			return err
 		}
 
 		// Resize the image to 2x what's shown in the email,
 		// preserving aspect ratio and cropping centered at the top
-		src, _ := png.Decode(bytes.NewReader(imageBytes))
+		src, _ := png.Decode(bytes.NewReader(img.Image))
 		dstImageFill := imaging.Fill(src, 852, 465, imaging.Top, imaging.Lanczos)
 		var b bytes.Buffer
 		output := bufio.NewWriter(&b)
@@ -287,14 +285,14 @@ func (h *handlers) SendSessionInsightsEmails(ctx context.Context, input utils.Se
 		images["session"+strconv.Itoa(session.Id)] = base64.StdEncoding.EncodeToString(b.Bytes())
 		input.InterestingSessions[idx].ScreenshotUrl = fmt.Sprintf("cid:session%d", session.Id)
 
-		res, err = h.lambdaClient.GetActivityGraph(ctx, session.EventCounts)
+		res, err := h.lambdaClient.GetActivityGraph(ctx, session.EventCounts)
 		if err != nil {
 			return err
 		}
 		if res.StatusCode != 200 {
 			return errors.New(fmt.Sprintf("activity graph lambda returned %d", res.StatusCode))
 		}
-		imageBytes, err = io.ReadAll(res.Body)
+		imageBytes, err := io.ReadAll(res.Body)
 		if err != nil {
 			return err
 		}
@@ -317,6 +315,7 @@ func (h *handlers) SendSessionInsightsEmails(ctx context.Context, input utils.Se
 		to := &mail.Email{Address: toAddr.Email}
 		subject := fmt.Sprintf("[Highlight] Session Insights - %s", input.ProjectName)
 		m := mail.NewV3MailInit(from, subject, to, mail.NewContent("text/html", html))
+		m.AddCategories("session-insights")
 
 		for imageId, img := range images {
 			log.WithContext(ctx).Infof("attaching image %s", imageId)

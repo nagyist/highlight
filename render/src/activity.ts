@@ -1,6 +1,6 @@
+import chromium from '@sparticuz/chromium'
 import { APIGatewayEvent } from 'aws-lambda'
 import puppeteer, { Browser } from 'puppeteer-core'
-import chromium from '@sparticuz/chromium'
 
 const WIDTH = 340
 const HEIGHT = 170
@@ -53,6 +53,7 @@ const svgToPng = async (svg: string) => {
 		browser = await puppeteer.launch({
 			channel: 'chrome',
 			headless: 'new',
+			args: ['--no-sandbox'],
 		})
 	} else {
 		browser = await puppeteer.launch({
@@ -142,7 +143,7 @@ if (process.env.DEV?.length) {
 		} as unknown as APIGatewayEvent),
 	]).then((res) => {
 		for (const r of res) {
-			console.log(r.body)
+			console.log('activity lambda', r.body)
 		}
 	})
 }

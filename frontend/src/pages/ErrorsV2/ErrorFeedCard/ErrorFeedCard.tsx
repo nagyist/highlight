@@ -1,6 +1,7 @@
 import BarChart from '@components/BarChart/BarChart'
 import { ErrorGroup, ErrorState, Maybe } from '@graph/schemas'
 import {
+	Badge,
 	Box,
 	IconSolidSparkles,
 	IconSolidUsers,
@@ -8,8 +9,8 @@ import {
 	Tag,
 	Text,
 	Tooltip,
-	vars,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
+import { vars } from '@highlight-run/ui/vars'
 import { useProjectId } from '@hooks/useProjectId'
 import { formatErrorGroupDate, getErrorGroupStats } from '@pages/ErrorsV2/utils'
 import { getErrorBody } from '@util/errors/errorUtils'
@@ -18,8 +19,10 @@ import moment from 'moment'
 import { Link } from 'react-router-dom'
 
 import * as style from './ErrorFeedCard.css'
+
+type ErrorGroupType = Maybe<Omit<ErrorGroup, 'metadata_log'>>
 interface Props {
-	errorGroup: Maybe<Omit<ErrorGroup, 'metadata_log'>>
+	errorGroup: ErrorGroupType
 	onClick?: React.MouseEventHandler<HTMLAnchorElement>
 }
 export const ErrorFeedCard = ({ errorGroup, onClick }: Props) => {
@@ -28,8 +31,12 @@ export const ErrorFeedCard = ({ errorGroup, onClick }: Props) => {
 		error_secure_id?: string
 	}>()
 	const body = getErrorBody(errorGroup?.event)
-	const createdDate = formatErrorGroupDate(errorGroup?.created_at)
-	const updatedDate = formatErrorGroupDate(errorGroup?.updated_at)
+	const firstInstance = formatErrorGroupDate(
+		errorGroup?.first_occurrence || errorGroup?.created_at,
+	)
+	const lastInstance = formatErrorGroupDate(
+		errorGroup?.last_occurrence || errorGroup?.updated_at,
+	)
 
 	const { totalCount, userCount } = getErrorGroupStats(errorGroup)
 	const snoozed =
@@ -40,11 +47,14 @@ export const ErrorFeedCard = ({ errorGroup, onClick }: Props) => {
 		<Link
 			to={
 				onClick
-					? {}
+					? {
+							pathname: location.pathname,
+							search: location.search,
+						}
 					: {
 							pathname: `/${projectId}/errors/${errorGroup?.secure_id}`,
 							search: location.search,
-					  }
+						}
 			}
 			onClick={onClick}
 		>
@@ -68,6 +78,8 @@ export const ErrorFeedCard = ({ errorGroup, onClick }: Props) => {
 					color="n12"
 					display="flex"
 					alignItems="center"
+					justifyContent="space-between"
+					gap="4"
 					cssClass={style.errorCardTitle}
 				>
 					<Text
@@ -79,6 +91,9 @@ export const ErrorFeedCard = ({ errorGroup, onClick }: Props) => {
 					>
 						{body}
 					</Text>
+					{recentlyCreated(errorGroup) && (
+						<Badge variant="yellow" label="New" size="medium" />
+					)}
 				</Box>
 				<Box display="flex" gap="12" justifyContent="space-between">
 					<Box
@@ -161,14 +176,14 @@ export const ErrorFeedCard = ({ errorGroup, onClick }: Props) => {
 						</Box>
 						<Box display="flex" gap="4" alignItems="center">
 							<Tag shape="basic" kind="secondary">
-								{updatedDate}
+								{lastInstance}
 							</Tag>
 							<Tag
 								shape="basic"
 								kind="secondary"
 								iconLeft={<IconSolidSparkles size={12} />}
 							>
-								{createdDate}
+								{firstInstance}
 							</Tag>
 						</Box>
 					</Box>
@@ -185,4 +200,9 @@ export const ErrorFeedCard = ({ errorGroup, onClick }: Props) => {
 			</Box>
 		</Link>
 	)
+}
+
+const recentlyCreated = (errorGroup: ErrorGroupType) => {
+	const createdAt = moment(errorGroup?.created_at)
+	return createdAt.isAfter(moment().subtract(3, 'day'))
 }

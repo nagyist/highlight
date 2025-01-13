@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
-import styles from '../Docs.module.scss'
 import { Listbox } from '@headlessui/react'
-import { Typography } from '../../common/Typography/Typography'
-import classNames from 'classnames'
-import SvgChevronDownIcon from '../../../public/images/ChevronDownIcon'
 import { DocumentIcon, DocumentTextIcon } from '@heroicons/react/20/solid'
+import classNames from 'classnames'
 import { useRouter } from 'next/router'
+import { useEffect, useState } from 'react'
+import SvgChevronDownIcon from '../../../public/images/ChevronDownIcon'
+import { Typography } from '../../common/Typography/Typography'
+import styles from '../Docs.module.scss'
 
 const DOCS_TYPES: Array<{
 	id: number
@@ -30,52 +30,73 @@ const DOCS_TYPES: Array<{
 	},
 	{
 		id: 2,
-		name: 'Node.js SDK Documentation',
+		name: 'Node.js SDK',
 		icon: <DocumentTextIcon />,
 		url: '/docs/sdk/nodejs',
 		baseUrl: '/docs/sdk/nodejs',
 	},
 	{
 		id: 3,
-		name: 'Next.js SDK Documentation',
+		name: 'Next.js SDK',
 		icon: <DocumentTextIcon />,
 		url: '/docs/sdk/nextjs',
 		baseUrl: '/docs/sdk/nodejs',
 	},
 	{
 		id: 4,
-		name: 'Cloudflare Worker SDK Documentation',
+		name: 'Hono SDK',
+		icon: <DocumentTextIcon />,
+		url: '/docs/sdk/hono',
+		baseUrl: '/docs/sdk/nodejs',
+	},
+	{
+		id: 5,
+		name: 'Cloudflare Worker SDK',
 		icon: <DocumentTextIcon />,
 		url: '/docs/sdk/cloudflare',
 		baseUrl: '/docs/sdk/nodejs',
 	},
 	{
-		id: 5,
-		name: 'Python SDK Documentation',
+		id: 6,
+		name: 'Python SDK',
 		icon: <DocumentTextIcon />,
 		url: '/docs/sdk/python',
 		baseUrl: '/docs/sdk/python',
 	},
 	{
-		id: 6,
-		name: 'Golang SDK Documentation',
+		id: 7,
+		name: 'Golang SDK',
 		icon: <DocumentTextIcon />,
 		url: '/docs/sdk/go',
 		baseUrl: '/docs/sdk/go',
 	},
 	{
-		id: 7,
-		name: 'Java SDK Documentation',
+		id: 8,
+		name: 'Java SDK',
 		icon: <DocumentTextIcon />,
 		url: '/docs/sdk/java',
 		baseUrl: '/docs/sdk/java',
 	},
 	{
-		id: 8,
-		name: 'Client SDK Documentation',
+		id: 9,
+		name: 'Rust SDK',
+		icon: <DocumentTextIcon />,
+		url: '/docs/sdk/rust',
+		baseUrl: '/docs/sdk/rust',
+	},
+	{
+		id: 10,
+		name: 'Client SDK',
 		icon: <DocumentTextIcon />,
 		url: '/docs/sdk/client',
 		baseUrl: '/docs/sdk/client',
+	},
+	{
+		id: 11,
+		name: 'Ruby SDK',
+		icon: <DocumentTextIcon />,
+		url: '/docs/sdk/ruby',
+		baseUrl: '/docs/sdk/ruby',
 	},
 ]
 

@@ -1,5 +1,5 @@
 import { ButtonProps } from '@components/Button'
-import { ButtonContent, buttonStyles } from '@highlight-run/ui'
+import { ButtonContent, buttonStyles } from '@highlight-run/ui/components'
 import analytics from '@util/analytics'
 import clsx from 'clsx'
 import React from 'react'
@@ -53,7 +53,8 @@ export const LinkButton: React.FC<Props> = ({
 					emphasis,
 				}),
 			)}
-			onClick={() => {
+			onClick={(e) => {
+				e.stopPropagation()
 				analytics.track(trackingId, trackingProperties)
 			}}
 		>

@@ -1,4 +1,5 @@
 ---
+toc: Overview
 title: SDK Configuration Overview
 slug: welcome-to-highlight
 ---
@@ -30,7 +31,7 @@ The [highlight.io](https://highlight.io) Javascript SDK does a lot of things. He
     <DocsCard title="Proxying requests."  href="./proxying-highlight.md">
         {"How to proxy requests through your backend for security purposes."}
     </DocsCard>
-    <DocsCard title="React Error Boundary"  href="">
+    <DocsCard title="React Error Boundary"  href="./react-error-boundary.md">
         {"How to proxy requests through your backend for security purposes."}
     </DocsCard>
 </DocsCardGroup>

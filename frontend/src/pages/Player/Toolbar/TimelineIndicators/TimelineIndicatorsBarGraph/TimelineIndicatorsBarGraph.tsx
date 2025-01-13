@@ -1,6 +1,5 @@
 import LoadingBox from '@components/LoadingBox'
-import { customEvent, EventType } from '@highlight-run/rrweb-types'
-import { Box, Text } from '@highlight-run/ui'
+import { Box, Text } from '@highlight-run/ui/components'
 import { useHTMLElementEvent } from '@hooks/useHTMLElementEvent'
 import { useWindowEvent } from '@hooks/useWindowEvent'
 import { usePlayerUIContext } from '@pages/Player/context/PlayerUIContext'
@@ -18,21 +17,20 @@ import {
 } from '@pages/Player/ReplayerContext'
 import { getEventRenderDetails } from '@pages/Player/StreamElement/StreamElement'
 import TimelineBar from '@pages/Player/Toolbar/TimelineIndicators/TimelineBar/TimelineBar'
-import TimelineZoom from '@pages/Player/Toolbar/TimelineIndicators/TimelineZoom/TimelineZoom'
 import ZoomArea from '@pages/Player/Toolbar/TimelineIndicators/ZoomArea/ZoomArea'
 import {
 	useToolbarItemsContext,
 	ZoomAreaPercent,
 } from '@pages/Player/Toolbar/ToolbarItemsContext/ToolbarItemsContext'
+import { customEvent, EventType } from '@rrweb/types'
 import { isInsideElement } from '@util/dom'
 import { serializeErrorIdentifier } from '@util/error'
 import { getErrorBody } from '@util/errors/errorUtils'
 import { clamp } from '@util/numbers'
-import { useParams } from '@util/react-router/useParams'
 import { playerTimeToSessionAbsoluteTime } from '@util/session/utils'
 import { formatTimeAsAlphanum, formatTimeAsHMS } from '@util/time'
 import clsx from 'clsx'
-import React, {
+import {
 	useCallback,
 	useEffect,
 	useLayoutEffect,
@@ -41,6 +39,8 @@ import React, {
 	useState,
 } from 'react'
 import { NumberParam, useQueryParams } from 'use-query-params'
+
+import { useSessionParams } from '@/pages/Sessions/utils'
 
 import { ToolbarControlBar } from '../../ToolbarControlBar/ToolbarControlBar'
 import * as style from './style.css'
@@ -56,7 +56,7 @@ const CONTAINER_BORDER_WIDTH = 1
 const TARGET_BUCKET_WIDTH_PERCENT = 4
 const MINOR_TICK_COUNT = 3
 const TARGET_INACTIVE_PERCENTAGE = 10
-const ZOOM_SCALING_FACTOR = 100
+export const ZOOM_SCALING_FACTOR = 100
 const MIN_ZOOM = 1.0
 const INACTIVE_TICK_FREQUENCY = 7
 
@@ -70,7 +70,7 @@ const TimelineIndicatorsBarGraph = ({
 	selectedTimelineAnnotationTypes,
 	width,
 }: Props) => {
-	const { session_secure_id } = useParams<{ session_secure_id: string }>()
+	const { sessionSecureId } = useSessionParams()
 
 	const { showPlayerAbsoluteTime, showHistogram: shouldShowHistogram } =
 		usePlayerConfiguration()
@@ -116,7 +116,6 @@ const TimelineIndicatorsBarGraph = ({
 	const timeIndicatorTextRef = useRef<HTMLElement>(null)
 	const timeIndicatorTopRef = useRef<HTMLDivElement>(null)
 	const viewportRef = useRef<HTMLDivElement>(null)
-	const viewportBbox = viewportRef.current?.getBoundingClientRect()
 
 	useLayoutEffect(() => {
 		setViewportWidth(calculateViewportWidth())
@@ -272,7 +271,7 @@ const TimelineIndicatorsBarGraph = ({
 						identifier: serializeErrorIdentifier(error),
 						timestamp: toTS(error.relativeIntervalPercentage),
 						eventType: 'Errors',
-					} as SessionEvent),
+					}) as SessionEvent,
 			),
 			...(rageClicks.map((rageClick) => ({
 				relativeIntervalPercentage: rageClick.startPercentage,
@@ -335,7 +334,7 @@ const TimelineIndicatorsBarGraph = ({
 				? playerTimeToSessionAbsoluteTime({
 						sessionStartTime: start,
 						relativeTime: t,
-				  }).toString()
+					}).toString()
 				: formatTimeAsHMS(t),
 		[showPlayerAbsoluteTime, start],
 	)
@@ -393,7 +392,6 @@ const TimelineIndicatorsBarGraph = ({
 		[viewportWidth],
 	)
 
-	const [showZoomButtons, setShowZoomButtons] = useState(false)
 	const [showIndicatorText, setShowIndicatorText] = useState(false)
 
 	useHTMLElementEvent(
@@ -454,10 +452,27 @@ const TimelineIndicatorsBarGraph = ({
 		timeIndicatorTopDiv.style.cursor = 'grabbing'
 	}, [])
 
+	const onCanvasDrag = useCallback((e: PointerEvent) => {
+		const canvasDiv = canvasRef.current
+		if (!canvasDiv) {
+			return
+		}
+
+		const el = e.target as HTMLDivElement
+		// Only set dragging when the user clicks on the canvas, but not one of the
+		// bars in the histogram.
+		if (el === canvasDiv || el.parentNode === canvasDiv) {
+			setIsDragging(true)
+		}
+	}, [])
+
 	useHTMLElementEvent(timeIndicatorHairRef.current, 'pointerdown', onDrag, {
 		passive: true,
 	})
 	useHTMLElementEvent(timeIndicatorTopRef.current, 'pointerdown', onDrag, {
+		passive: true,
+	})
+	useHTMLElementEvent(canvasRef.current, 'pointerdown', onCanvasDrag, {
 		passive: true,
 	})
 
@@ -552,7 +567,6 @@ const TimelineIndicatorsBarGraph = ({
 				return
 			}
 
-			setShowZoomButtons(isInsideViewport)
 			if (!isInsideViewport) {
 				setShowIndicatorText(false)
 				return
@@ -663,7 +677,7 @@ const TimelineIndicatorsBarGraph = ({
 		updateCameraFromZoomArea(zoomPercent)
 		// run once for session secure id
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [session_secure_id])
+	}, [sessionSecureId])
 
 	const isVisible = useCallback(
 		(...percents: number[]) => {
@@ -714,8 +728,8 @@ const TimelineIndicatorsBarGraph = ({
 			const fontWeight = text.includes('h')
 				? 500
 				: text.includes('m')
-				? 450
-				: 400
+					? 450
+					: 400
 
 			const left = timeToProgress(timestamp) * canvasWidth
 
@@ -735,8 +749,8 @@ const TimelineIndicatorsBarGraph = ({
 			const borderLeftWidth = text.includes('h')
 				? 1
 				: text.includes('m')
-				? 0.75
-				: 0.5
+					? 0.75
+					: 0.5
 
 			tickProps.push({
 				className: clsx([style.timeTick, style.timeTickMajor]),
@@ -849,7 +863,7 @@ const TimelineIndicatorsBarGraph = ({
 					!toDelete.has(idx) &&
 					(belongsToInactive[idx] !== undefined
 						? numInactiveTicks[belongsToInactive[idx]] >
-						  INACTIVE_TICK_FREQUENCY
+							INACTIVE_TICK_FREQUENCY
 							? idx % INACTIVE_TICK_FREQUENCY === 0
 							: true
 						: true),
@@ -975,8 +989,8 @@ const TimelineIndicatorsBarGraph = ({
 						style.TIME_AXIS_HEIGHT +
 						(showHistogram
 							? style.SEPARATOR_HEIGHT +
-							  style.HISTOGRAM_AREA_HEIGHT +
-							  style.SESSION_MONITOR_HEIGHT
+								style.HISTOGRAM_AREA_HEIGHT +
+								style.SESSION_MONITOR_HEIGHT
 							: 0)
 					}
 				/>
@@ -1023,9 +1037,12 @@ const TimelineIndicatorsBarGraph = ({
 								/>
 								<Box
 									as="span"
-									className={clsx(style.timeIndicatorHair, {
-										[style.hairHidden]: !showHistogram,
-									})}
+									cssClass={[
+										style.timeIndicatorHair,
+										{
+											[style.hairHidden]: !showHistogram,
+										},
+									]}
 									ref={timeIndicatorHairRef}
 								/>
 							</div>
@@ -1130,17 +1147,6 @@ const TimelineIndicatorsBarGraph = ({
 					minZoomAreaPercent={(100 * zoomAdjustment) / maxZoom}
 				/>
 			</div>
-			<TimelineZoom
-				isHidden={!showZoomButtons || !showHistogram}
-				zoom={(percent: number) =>
-					zoom(
-						(viewportBbox?.left ?? 0) +
-							TIMELINE_MARGIN +
-							viewportWidth / 2,
-						-percent / ZOOM_SCALING_FACTOR,
-					)
-				}
-			/>
 			<Box
 				ref={timeIndicatorTextRef}
 				background="n12"

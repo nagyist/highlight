@@ -6,73 +6,89 @@ import (
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/highlight-run/highlight/backend/model"
-	"github.com/highlight-run/highlight/backend/util"
 	"github.com/stretchr/testify/assert"
 	_ "gorm.io/driver/postgres"
 )
 
 func TestGetProjectFilterSettings(t *testing.T) {
-	util.RunTestWithDBWipe(t, store.db, func(t *testing.T) {
-		project := model.Project{}
-		store.db.Create(&project)
+	ctx := context.TODO()
+	defer teardown(t)
 
-		originalSettings, err := store.GetProjectFilterSettings(project)
-		assert.NoError(t, err)
-		assert.NotNil(t, originalSettings.ID)
+	workspace := model.Workspace{}
+	store.DB.Create(&workspace)
 
-		settings, err := store.GetProjectFilterSettings(project)
-		assert.NoError(t, err)
-		assert.Equal(t, settings.ID, originalSettings.ID)
+	project := model.Project{WorkspaceID: workspace.ID}
+	store.DB.Create(&project)
 
-	})
+	originalSettings, err := store.GetProjectFilterSettings(ctx, project.ID)
+	assert.NoError(t, err)
+	assert.NotNil(t, originalSettings.ID)
+
+	settings, err := store.GetProjectFilterSettings(ctx, project.ID)
+	assert.NoError(t, err)
+	assert.Equal(t, settings.ID, originalSettings.ID)
 }
 
 func TestUpdateProjectFilterSettings(t *testing.T) {
-	util.RunTestWithDBWipe(t, store.db, func(t *testing.T) {
-		project := model.Project{}
-		store.db.Create(&project)
+	ctx := context.TODO()
+	defer teardown(t)
 
-		originalSettings, err := store.UpdateProjectFilterSettings(project, UpdateProjectFilterSettingsParams{
-			FilterSessionsWithoutError: ptr.Bool(true),
-		})
-		assert.NoError(t, err)
-		assert.True(t, originalSettings.FilterSessionsWithoutError)
-		assert.Equal(t, originalSettings.ProjectID, project.ID)
+	workspace := model.Workspace{}
+	store.DB.Create(&workspace)
 
-		updatedSettings, err := store.UpdateProjectFilterSettings(project, UpdateProjectFilterSettingsParams{
-			FilterSessionsWithoutError: ptr.Bool(false),
-		})
-		assert.NoError(t, err)
-		assert.False(t, updatedSettings.FilterSessionsWithoutError)
-		assert.Equal(t, updatedSettings.ProjectID, project.ID)
-		assert.Equal(t, originalSettings.ID, updatedSettings.ID)
+	settings := model.AllWorkspaceSettings{WorkspaceID: workspace.ID}
+	store.DB.Create(&settings)
 
+	project := model.Project{WorkspaceID: workspace.ID}
+	store.DB.Create(&project)
+
+	originalSettings, err := store.UpdateProjectFilterSettings(ctx, project.ID, UpdateProjectFilterSettingsParams{
+		FilterSessionsWithoutError: ptr.Bool(true),
 	})
+	assert.NoError(t, err)
+	assert.True(t, originalSettings.FilterSessionsWithoutError)
+	assert.Equal(t, originalSettings.ProjectID, project.ID)
+
+	updatedSettings, err := store.UpdateProjectFilterSettings(ctx, project.ID, UpdateProjectFilterSettingsParams{
+		FilterSessionsWithoutError: ptr.Bool(false),
+	})
+	assert.NoError(t, err)
+	assert.False(t, updatedSettings.FilterSessionsWithoutError)
+	assert.Equal(t, updatedSettings.ProjectID, project.ID)
+	assert.Equal(t, originalSettings.ID, updatedSettings.ID)
+
 }
 
 func TestFindProjectsWithAutoResolveSetting(t *testing.T) {
-	util.RunTestWithDBWipe(t, store.db, func(t *testing.T) {
-		project1 := model.Project{}
-		store.db.Create(&project1)
+	ctx := context.TODO()
+	defer teardown(t)
 
-		project2 := model.Project{}
-		store.db.Create(&project2)
+	workspace := model.Workspace{}
+	store.DB.Create(&workspace)
 
-		_, err := store.GetProjectFilterSettings(project1)
-		assert.NoError(t, err)
-		_, err = store.UpdateProjectFilterSettings(project1, UpdateProjectFilterSettingsParams{})
-		assert.NoError(t, err)
+	settings := model.AllWorkspaceSettings{WorkspaceID: workspace.ID}
+	store.DB.Create(&settings)
 
-		_, err = store.GetProjectFilterSettings(project2)
-		assert.NoError(t, err)
-		projectWithAutoResolveSetting, err := store.UpdateProjectFilterSettings(project1, UpdateProjectFilterSettingsParams{
-			AutoResolveStaleErrorsDayInterval: ptr.Int(1),
-		})
-		assert.NoError(t, err)
+	project1 := model.Project{WorkspaceID: workspace.ID}
+	store.DB.Create(&project1)
 
-		projectFilterSettings := store.FindProjectsWithAutoResolveSetting(context.TODO())
+	project2 := model.Project{WorkspaceID: workspace.ID}
+	store.DB.Create(&project2)
 
-		assert.Len(t, projectFilterSettings, 1)
-		assert.Equal(t, projectFilterSettings[0].ID, projectWithAutoResolveSetting.ID)
+	_, err := store.GetProjectFilterSettings(ctx, project1.ID)
+	assert.NoError(t, err)
+	_, err = store.UpdateProjectFilterSettings(ctx, project1.ID, UpdateProjectFilterSettingsParams{})
+	assert.NoError(t, err)
+
+	_, err = store.GetProjectFilterSettings(ctx, project2.ID)
+	assert.NoError(t, err)
+	projectWithAutoResolveSetting, err := store.UpdateProjectFilterSettings(ctx, project1.ID, UpdateProjectFilterSettingsParams{
+		AutoResolveStaleErrorsDayInterval: ptr.Int(1),
 	})
+	assert.NoError(t, err)
+
+	projectFilterSettings, _ := store.FindProjectsWithAutoResolveSetting(ctx)
+
+	assert.Len(t, projectFilterSettings, 1)
+	assert.Equal(t, projectFilterSettings[0].ID, projectWithAutoResolveSetting.ID)
 }

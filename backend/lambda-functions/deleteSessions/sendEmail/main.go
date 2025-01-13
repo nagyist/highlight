@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/highlight-run/highlight/backend/env"
 	"github.com/highlight-run/highlight/backend/lambda-functions/deleteSessions/handlers"
 	"github.com/highlight/highlight/sdk/highlight-go"
 	hlog "github.com/highlight/highlight/sdk/highlight-go/log"
@@ -15,8 +16,14 @@ func init() {
 
 func main() {
 	highlight.SetProjectID("1jdkoe52")
-	highlight.Start()
-	defer highlight.Stop()
+	highlight.Start(
+		highlight.WithServiceName("lambda-functions--deleteSessions-sendEmail"),
+		highlight.WithServiceVersion(env.Config.Version),
+		highlight.WithEnvironment(env.EnvironmentName()),
+	)
 	hlog.Init()
-	lambda.Start(h.SendEmail)
+	lambda.StartWithOptions(
+		h.SendEmail,
+		lambda.WithEnableSIGTERM(highlight.Stop),
+	)
 }

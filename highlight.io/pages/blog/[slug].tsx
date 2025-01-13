@@ -6,8 +6,8 @@ import type {
 	GetStaticPathsResult,
 	GetStaticProps,
 } from 'next/types'
-import { ReactNode, useEffect, useRef, useState } from 'react'
-import { getBlogPaths, loadPostsFromGithub } from '.'
+import { useEffect, useRef, useState } from 'react'
+import { loadPostsFromGithub } from '.'
 
 import { ElementNode } from '@graphcms/rich-text-types'
 import { serialize } from 'next-mdx-remote/serialize'
@@ -27,8 +27,10 @@ import Footer from '../../components/common/Footer/Footer'
 import { Meta } from '../../components/common/Head/Meta'
 import { Section } from '../../components/common/Section/Section'
 import { Typography } from '../../components/common/Typography/Typography'
+import { Callout } from '../../components/Docs/Callout/Callout'
 import { HighlightCodeBlock } from '../../components/Docs/HighlightCodeBlock/HighlightCodeBlock'
 import homeStyles from '../../components/Home/Home.module.scss'
+import { getBlogPaths } from '../../shared/blog'
 
 const NUM_SUGGESTED_POSTS = 3
 
@@ -42,10 +44,7 @@ export async function getGithubPostBySlug(slug: string, githubPosts?: Post[]) {
 	return post
 }
 
-const components: Record<
-	string,
-	React.FunctionComponent<{ children: ReactNode; className?: string }>
-> = {
+const components = {
 	BlogCallToAction,
 	p: (props: any) => {
 		return <p className={styles.blogText} {...props}></p>
@@ -57,41 +56,75 @@ const components: Record<
 	h3: (props: any) => <h6 className={styles.blogText}>{props.children}</h6>,
 	h4: (props: any) => <h6 className={styles.blogText}>{props.children}</h6>,
 	h5: (props: any) => <h6 className={styles.blogText}>{props.children}</h6>,
-	ul: (props: any) => {
-		// check if the type of props.children is an array.
+	ol: (props: any) => {
+		if (!Array.isArray(props.children)) {
+			return null
+		}
+
 		return (
-			<>
-				{Array.isArray(props.children) &&
-					props?.children?.map((c: any, i: number) => {
-						return (
-							c.props &&
-							c.props.children && (
-								<ul
-									style={{
-										paddingLeft: 40,
-									}}
-								>
-									<li
-										style={{
-											listStyleType: 'disc',
-											listStylePosition: 'outside',
-										}}
-										key={i}
-									>
-										{c.props.children.map
-											? c?.props?.children?.map(
-													(e: any) => e,
-											  )
-											: c?.props?.children}
-									</li>
-								</ul>
-							)
+			<ol
+				start={props.start}
+				style={{
+					paddingLeft: 40,
+				}}
+			>
+				{props.children.map((c: any, i: number) => {
+					return (
+						c.props &&
+						c.props.children && (
+							<li
+								style={{
+									listStyleType: 'decimal',
+									listStylePosition: 'outside',
+								}}
+								key={i}
+							>
+								{c.props.children.map
+									? c.props.children.map((e: any) => e)
+									: c.props.children}
+							</li>
 						)
-					})}
-			</>
+					)
+				})}
+			</ol>
+		)
+	},
+	ul: (props: any) => {
+		if (!Array.isArray(props.children)) {
+			return null
+		}
+
+		return (
+			<ul
+				style={{
+					paddingLeft: 40,
+				}}
+			>
+				{props.children.map((c: any, i: number) => {
+					return (
+						c.props &&
+						c.props.children && (
+							<li
+								style={{
+									listStyleType: 'disc',
+									listStylePosition: 'outside',
+								}}
+								key={i}
+							>
+								{c.props.children.map
+									? c.props.children.map((e: any) => e)
+									: c.props.children}
+							</li>
+						)
+					)
+				})}
+			</ul>
 		)
 	},
 	code: (props: any) => {
+		if (props.className === 'language-hint') {
+			return <Callout content={props.children} />
+		}
 		if (
 			typeof props.children === 'string' &&
 			(props.children.match(/\n/g) || []).length
@@ -100,7 +133,7 @@ const components: Record<
 				<HighlightCodeBlock
 					language={
 						props.className
-							? props.className.split('language-').pop() ?? 'js'
+							? (props.className.split('language-').pop() ?? 'js')
 							: 'js'
 					}
 					text={props.children}
@@ -114,7 +147,7 @@ const components: Record<
 			</code>
 		)
 	},
-	table: (props) => {
+	table: (props: any) => {
 		return (
 			<div className={styles.blogTable}>
 				<Typography type="copy2">
@@ -123,7 +156,7 @@ const components: Record<
 			</div>
 		)
 	},
-}
+} as const
 
 export const getStaticPaths: GetStaticPaths = async () => {
 	let paths: GetStaticPathsResult['paths'] = []
@@ -164,11 +197,9 @@ export const getStaticProps: GetStaticProps = async ({ params }) => {
 			params.set('lname', suggestedPost.author?.lastName || '')
 			params.set('role', suggestedPost.author?.title || '')
 
-			const metaImageURL = `https://${'www.highlight.io'}/api/og/blog/${
+			suggestedPost.image.url = `/api/og/blog/${
 				suggestedPost.slug
 			}?${params.toString()}`
-
-			suggestedPost.image.url = metaImageURL
 		}
 
 		suggestedPosts.push(suggestedPost)
@@ -237,7 +268,7 @@ const PostPage = ({
 	params.set('role', post.author?.title || '')
 
 	const metaImageURL = `https://${
-		process.env.NEXT_PUBLIC_VERCEL_URL
+		process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL
 	}/api/og/blog/${post.slug}?${params.toString()}`
 
 	return (

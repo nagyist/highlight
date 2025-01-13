@@ -1,16 +1,21 @@
 import { siteUrl } from '../../utils/urls'
 import { GoChiContent } from './backend/go/chi'
+import { GoEchoContent } from './backend/go/echo'
 import { GoFiberContent } from './backend/go/fiber'
 import { GoGinContent } from './backend/go/gin'
 import { GoGqlgenContent } from './backend/go/go-gqlgen'
 import { GoMuxContent } from './backend/go/mux'
+import { JavaOtherContent } from './backend/java/other'
 import { JSApolloContent } from './backend/js/apollo'
+import { JSAWSLambdaContent } from './backend/js/aws-lambda'
 import { JSCloudflareContent } from './backend/js/cloudflare'
 import { JSExpressContent } from './backend/js/express'
 import { JSFirebaseContent } from './backend/js/firebase'
 import { JSNestContent } from './backend/js/nestjs'
 import { JSNodeContent } from './backend/js/nodejs'
 import { JStRPCContent } from './backend/js/trpc'
+import { OTLPErrorMonitoringContent } from './backend/otlp'
+import { PHPOtherContent } from './backend/php/other'
 import { PythonAWSContext } from './backend/python/aws'
 import { PythonAzureContext } from './backend/python/azure'
 import { PythonDjangoContext } from './backend/python/django'
@@ -20,36 +25,74 @@ import { PythonGCPContext } from './backend/python/gcp'
 import { PythonOtherContext } from './backend/python/other'
 import { RubyOtherContent } from './backend/ruby/other'
 import { RubyRailsContent } from './backend/ruby/rails'
+import { RustActixContent } from './backend/rust/actix'
+import { RustOtherContent } from './backend/rust/other'
+import { ElixirOtherContent } from './backend/elixir/other'
 import { AngularContent } from './frontend/angular'
+import { ElectronContext } from './frontend/electron'
 import { GatsbyContent } from './frontend/gatsby'
 import { NextContent } from './frontend/next'
 import { OtherContext } from './frontend/other'
 import { ReactContent } from './frontend/react'
+import { RemixContent } from './frontend/remix'
 import { SvelteKitContent } from './frontend/sveltekit'
 import { VueContent } from './frontend/vue'
-import { GoFiberLogContent } from './logging/go/fiber'
-import { GoOtherLogContent } from './logging/go/other'
-import { HostingVercelLogContent } from './logging/hosting/vercel'
-import { HTTPContent } from './logging/http'
-import { JSNestLogContent } from './logging/js/nestjs'
-import { JSOtherLogContent } from './logging/js/other'
-
-import { JSAWSLambdaContent } from './backend/js/aws-lambda'
 import { DockerContent } from './logging/docker'
 import { FileContent } from './logging/file'
 import { FluentForwardContent } from './logging/fluentd'
+import { GoFiberLogContent } from './logging/go/fiber'
+import { GoOtherLogContent } from './logging/go/other'
 import { HostingFlyIOLogContent } from './logging/hosting/fly-io'
+import { HostingHerokuLogContent } from './logging/hosting/heroku'
+import { HostingRenderLogContent } from './logging/hosting/render'
+import { HostingVercelLogContent } from './logging/hosting/vercel'
+import { HTTPContent } from './logging/http'
+import { JavaOtherLogContent } from './logging/java/other'
 import { JSCloudflareLoggingContent } from './logging/js/cloudflare'
+import { JSNestLogContent } from './logging/js/nestjs'
+import { JSOtherLogContent } from './logging/js/other'
+import { JSPinoHTTPJSONLogContent } from './logging/js/pino'
 import { JSWinstonHTTPJSONLogContent } from './logging/js/winston'
+import { OTLPLoggingContent } from './logging/otlp'
+import { PHPOtherLogContent } from './logging/php/other'
 import { PythonLoguruLogContent } from './logging/python/loguru'
+import { PythonOtelLogContent } from './logging/python/otel'
 import { PythonOtherLogContent } from './logging/python/other'
 import { RubyOtherLogContent } from './logging/ruby/other'
 import { RubyRailsLogContent } from './logging/ruby/rails'
+import { RustActixLogContent } from './logging/rust/actix'
+import { RustOtherLogContent } from './logging/rust/other'
+import { ElixirOtherLogContent } from './logging/elixir/other'
+import { SyslogContent } from './logging/syslog'
+import { SystemdContent } from './logging/systemd'
 import { DevDeploymentContent } from './self-host/dev-deploy'
 import { SelfHostContent } from './self-host/self-host'
+import { DotNetOTLPTracingContent } from './traces/dotnet/dot-net'
+import { DotNet4OTLPTracingContent } from './traces/dotnet/dot-net-4'
+import { GoTracesContent } from './traces/go/go'
+import { GormTracesContent } from './traces/go/gorm'
+import { JSManualTracesContent } from './traces/node-js/manual'
+import { NextJsTracesContent } from './traces/node-js/nextjs'
+import { OTLPTracesContent } from './traces/otlp'
+import { PHPTracesContent } from './traces/php'
+import { PythonAWSTracesContent } from './traces/python/aws'
+import { PythonAzureTracesContent } from './traces/python/azure'
+import { PythonDjangoTracesContent } from './traces/python/django'
+import { PythonFastAPITracesContent } from './traces/python/fastapi'
+import { PythonFlaskTracesContent } from './traces/python/flask'
+import { PythonGCPTracesContent } from './traces/python/gcp'
+import { PythonManualTracesContent } from './traces/python/manual'
+import { PythonAITracesContent } from './traces/python/python-ai'
+import { PythonLibrariesTracesContent } from './traces/python/python-libraries'
+import { RubyRailsTracesContent } from './traces/ruby/rails'
+import { RubyOtherTracesContent } from './traces/ruby/other'
+import { RustTracesContent } from './traces/rust'
+import { AWSLambdaContent } from './traces/serverless/lambda'
+import { JSHonoContent } from './backend/js/hono'
 
 export type QuickStartOptions = {
 	title: string
+	metaTitle?: string
 	subtitle: string
 	logoUrl: string
 } & {
@@ -58,6 +101,7 @@ export type QuickStartOptions = {
 
 export type QuickStartContent = {
 	title: string
+	metaTitle?: string
 	subtitle: string
 	logoUrl?: string
 	entries: Array<QuickStartStep>
@@ -79,7 +123,10 @@ export type QuickStartStep = {
 
 export enum QuickStartType {
 	Angular = 'angular',
+	AWSLambda = 'aws-lambda',
+	Electron = 'electron',
 	React = 'react',
+	Remix = 'remix',
 	SvelteKit = 'svelte-kit',
 	Next = 'next',
 	Vue = 'vue',
@@ -91,34 +138,54 @@ export enum QuickStartType {
 	PythonDjango = 'django',
 	PythonFastAPI = 'fastapi',
 	PythonLoguru = 'loguru',
+	PythonOtel = 'otel',
 	PythonOther = 'other',
 	PythonAWSFn = 'aws-lambda-python',
 	PythonAzureFn = 'azure-functions',
 	PythonGCPFn = 'google-cloud-functions',
+	PythonLibraries = 'python-libraries',
+	PythonAI = 'python-ai',
 	GoGqlgen = 'gqlgen',
 	GoFiber = 'fiber',
 	GoChi = 'chi',
+	GoEcho = 'echo',
 	GoMux = 'mux',
 	GoGin = 'gin',
+	GoGorm = 'gorm',
 	GoLogrus = 'logrus',
 	GoOther = 'other',
+	JSHono = 'hono',
 	JSApollo = 'apollo',
 	JSAWSFn = 'aws-lambda-node',
 	JSCloudflare = 'cloudflare',
 	JSExpress = 'express',
 	JSFirebase = 'firebase',
 	JSNodejs = 'nodejs',
+	JSNextjs = 'nextjs',
+	JSManual = 'manual',
 	JSNestjs = 'nestjs',
 	JSWinston = 'winston',
+	JSPino = 'pino',
 	JStRPC = 'trpc',
 	HTTPOTLP = 'curl',
+	Syslog = 'syslog',
+	Systemd = 'systemd',
 	FluentForward = 'fluent-forward',
 	Docker = 'docker',
 	File = 'file',
 	RubyOther = 'other',
 	RubyRails = 'rails',
+	RustOther = 'other',
+	RustActix = 'actix',
+	ElixirOther = 'other',
+	JavaOther = 'other',
 	HostingVercel = 'vercel',
 	HostingFlyIO = 'fly-io',
+	HostingRender = 'render',
+	HostingHeroku = 'heroku',
+	OTLP = 'otlp',
+	OTLPDotNet = 'dot-net',
+	OTLPDotNet4 = 'dot-net-4',
 }
 
 export const quickStartContent = {
@@ -134,9 +201,11 @@ export const quickStartContent = {
 			[QuickStartType.React]: ReactContent,
 			[QuickStartType.Angular]: AngularContent,
 			[QuickStartType.Next]: NextContent,
+			[QuickStartType.Remix]: RemixContent,
 			[QuickStartType.Vue]: VueContent,
 			[QuickStartType.SvelteKit]: SvelteKitContent,
 			[QuickStartType.Gatsby]: GatsbyContent,
+			[QuickStartType.Electron]: ElectronContext,
 			[QuickStartType.Other]: OtherContext,
 		},
 	},
@@ -164,6 +233,7 @@ export const quickStartContent = {
 			logoUrl: siteUrl('/images/quickstart/go.svg'),
 			[QuickStartType.GoGqlgen]: GoGqlgenContent,
 			[QuickStartType.GoFiber]: GoFiberContent,
+			[QuickStartType.GoEcho]: GoEchoContent,
 			[QuickStartType.GoChi]: GoChiContent,
 			[QuickStartType.GoMux]: GoMuxContent,
 			[QuickStartType.GoGin]: GoGinContent,
@@ -178,6 +248,7 @@ export const quickStartContent = {
 			[QuickStartType.JSCloudflare]: JSCloudflareContent,
 			[QuickStartType.JSExpress]: JSExpressContent,
 			[QuickStartType.JSFirebase]: JSFirebaseContent,
+			[QuickStartType.JSHono]: JSHonoContent,
 			[QuickStartType.JSNodejs]: JSNodeContent,
 			[QuickStartType.JSNestjs]: JSNestContent,
 			[QuickStartType.JStRPC]: JStRPCContent,
@@ -189,6 +260,49 @@ export const quickStartContent = {
 			logoUrl: siteUrl('/images/quickstart/ruby.svg'),
 			[QuickStartType.RubyRails]: RubyRailsContent,
 			[QuickStartType.RubyOther]: RubyOtherContent,
+		},
+		rust: {
+			title: 'Rust',
+			subtitle:
+				'Select your Rust framework to install error monitoring for your application.',
+			logoUrl: siteUrl('/images/quickstart/rust.svg'),
+			[QuickStartType.RustActix]: RustActixContent,
+			[QuickStartType.RustOther]: RustOtherContent,
+		},
+		elixir: {
+			title: 'Elixir',
+			subtitle:
+				'Select your Elixir framework to install error monitoring for your application.',
+			logoUrl: siteUrl('/images/quickstart/elixir.svg'),
+			[QuickStartType.ElixirOther]: ElixirOtherContent,
+		},
+		java: {
+			title: 'Java',
+			subtitle:
+				'Select your Java framework to install error monitoring for your application.',
+			logoUrl: siteUrl('/images/quickstart/java.svg'),
+			[QuickStartType.JavaOther]: JavaOtherContent,
+		},
+		php: {
+			title: 'PHP',
+			subtitle:
+				'Select your PHP framework to install error monitoring for your application.',
+			logoUrl: siteUrl('/images/quickstart/php.svg'),
+			[QuickStartType.Other]: PHPOtherContent,
+		},
+		dotnet: {
+			title: 'C# .NET',
+			subtitle: 'ASP C# .NET Applications',
+			logoUrl: siteUrl('/images/quickstart/dotnet.svg'),
+			[QuickStartType.OTLPDotNet]: DotNetOTLPTracingContent,
+			[QuickStartType.OTLPDotNet4]: DotNet4OTLPTracingContent,
+		},
+		otlp: {
+			title: 'OpenTelemetry',
+			subtitle: 'OpenTelemetry Protocol (OTLP)',
+			[QuickStartType.OTLP]: OTLPErrorMonitoringContent,
+			[QuickStartType.OTLPDotNet]: DotNetOTLPTracingContent,
+			[QuickStartType.OTLPDotNet4]: DotNet4OTLPTracingContent,
 		},
 	},
 	'backend-logging': {
@@ -202,6 +316,7 @@ export const quickStartContent = {
 			logoUrl: siteUrl('/images/quickstart/python.svg'),
 			[QuickStartType.PythonLoguru]: PythonLoguruLogContent,
 			[QuickStartType.PythonOther]: PythonOtherLogContent,
+			[QuickStartType.PythonOtel]: PythonOtelLogContent,
 		},
 		go: {
 			title: 'Go',
@@ -220,13 +335,8 @@ export const quickStartContent = {
 			[QuickStartType.JSNodejs]: JSOtherLogContent,
 			[QuickStartType.JSNestjs]: JSNestLogContent,
 			[QuickStartType.JSWinston]: JSWinstonHTTPJSONLogContent,
+			[QuickStartType.JSPino]: JSPinoHTTPJSONLogContent,
 			[QuickStartType.JSCloudflare]: JSCloudflareLoggingContent,
-		},
-		http: {
-			title: 'HTTPS curl',
-			subtitle:
-				'Get started with logging in your application via HTTP or OTLP.',
-			[QuickStartType.HTTPOTLP]: HTTPContent,
 		},
 		other: {
 			title: 'Infrastructure / Other',
@@ -235,6 +345,9 @@ export const quickStartContent = {
 			[QuickStartType.FluentForward]: FluentForwardContent,
 			[QuickStartType.File]: FileContent,
 			[QuickStartType.Docker]: DockerContent,
+			[QuickStartType.HTTPOTLP]: HTTPContent,
+			[QuickStartType.Syslog]: SyslogContent,
+			[QuickStartType.Systemd]: SystemdContent,
 		},
 		ruby: {
 			title: 'Ruby',
@@ -244,12 +357,136 @@ export const quickStartContent = {
 			[QuickStartType.RubyRails]: RubyRailsLogContent,
 			[QuickStartType.RubyOther]: RubyOtherLogContent,
 		},
+		rust: {
+			title: 'Rust',
+			subtitle:
+				'Select your Rust framework to install logging in your application.',
+			logoUrl: siteUrl('/images/quickstart/rust.svg'),
+			[QuickStartType.RustActix]: RustActixLogContent,
+			[QuickStartType.RustOther]: RustOtherLogContent,
+		},
+		elixir: {
+			title: 'Elixir',
+			subtitle:
+				'Select your Elixir framework to install logging in your application.',
+			logoUrl: siteUrl('/images/quickstart/elixir.svg'),
+			[QuickStartType.ElixirOther]: ElixirOtherLogContent,
+		},
+		java: {
+			title: 'Java',
+			subtitle:
+				'Select your Java framework to install logging in your application.',
+			logoUrl: siteUrl('/images/quickstart/java.svg'),
+			[QuickStartType.JavaOther]: JavaOtherLogContent,
+		},
+		php: {
+			title: 'PHP',
+			subtitle:
+				'Select your PHP framework to install error monitoring for your application.',
+			logoUrl: siteUrl('/images/quickstart/php.svg'),
+			[QuickStartType.Other]: PHPOtherLogContent,
+		},
 		hosting: {
 			title: 'Cloud Hosting Provider',
 			subtitle:
 				'Select your Hosting provider to setup the Highlight integration and stream logs.',
 			[QuickStartType.HostingVercel]: HostingVercelLogContent,
 			[QuickStartType.HostingFlyIO]: HostingFlyIOLogContent,
+			[QuickStartType.HostingRender]: HostingRenderLogContent,
+			[QuickStartType.HostingHeroku]: HostingHerokuLogContent,
+		},
+		dotnet: {
+			title: 'C# .NET',
+			subtitle: 'ASP C# .NET Applications',
+			logoUrl: siteUrl('/images/quickstart/dotnet.svg'),
+			[QuickStartType.OTLPDotNet]: DotNetOTLPTracingContent,
+			[QuickStartType.OTLPDotNet4]: DotNet4OTLPTracingContent,
+		},
+		otlp: {
+			title: 'OpenTelemetry',
+			subtitle: 'OpenTelemetry Protocol (OTLP)',
+			[QuickStartType.OTLP]: OTLPLoggingContent,
+			[QuickStartType.OTLPDotNet]: DotNetOTLPTracingContent,
+			[QuickStartType.OTLPDotNet4]: DotNet4OTLPTracingContent,
+		},
+	},
+	traces: {
+		title: 'Select your language',
+		subtitle:
+			'Tracing is supported with the Highlight SDKs or via the OpenTelemetry protocol (OTLP).',
+		'node-js': {
+			title: 'Node.js',
+			subtitle: 'Manually trace your Node.js application.',
+			logoUrl: siteUrl('/images/quickstart/javascript.svg'),
+			[QuickStartType.JSManual]: JSManualTracesContent,
+		},
+		'next-js': {
+			title: 'Next.js',
+			subtitle: 'Trace your Next.js application.',
+			logoUrl: siteUrl('/images/quickstart/nextjs.svg'),
+			[QuickStartType.JSNextjs]: NextJsTracesContent,
+		},
+		go: {
+			title: 'Go',
+			subtitle: 'Install tracing in your Go application.',
+			logoUrl: siteUrl('/images/quickstart/go.svg'),
+			[QuickStartType.GoOther]: GoTracesContent,
+			[QuickStartType.GoGorm]: GormTracesContent,
+		},
+		python: {
+			title: 'Python',
+			subtitle: 'Install tracing in your Python application.',
+			logoUrl: siteUrl('/images/quickstart/python.svg'),
+			[QuickStartType.PythonOther]: PythonManualTracesContent,
+			[QuickStartType.PythonAWSFn]: PythonAWSTracesContent,
+			[QuickStartType.PythonAzureFn]: PythonAzureTracesContent,
+			[QuickStartType.PythonDjango]: PythonDjangoTracesContent,
+			[QuickStartType.PythonFastAPI]: PythonFastAPITracesContent,
+			[QuickStartType.PythonFlask]: PythonFlaskTracesContent,
+			[QuickStartType.PythonGCPFn]: PythonGCPTracesContent,
+			[QuickStartType.PythonLibraries]: PythonLibrariesTracesContent,
+			[QuickStartType.PythonAI]: PythonAITracesContent,
+		},
+		php: {
+			title: 'PHP',
+			subtitle: 'Install tracing in your PHP application.',
+			logoUrl: siteUrl('/images/quickstart/php.svg'),
+			[QuickStartType.Other]: PHPTracesContent,
+		},
+		dotnet: {
+			title: 'C# .NET',
+			subtitle: 'ASP C# .NET Applications',
+			logoUrl: siteUrl('/images/quickstart/dotnet.svg'),
+			[QuickStartType.OTLPDotNet]: DotNetOTLPTracingContent,
+			[QuickStartType.OTLPDotNet4]: DotNet4OTLPTracingContent,
+		},
+		otlp: {
+			title: 'OpenTelemetry',
+			subtitle: 'OpenTelemetry Protocol (OTLP)',
+			[QuickStartType.OTLP]: OTLPTracesContent,
+			[QuickStartType.OTLPDotNet]: DotNetOTLPTracingContent,
+			[QuickStartType.OTLPDotNet4]: DotNet4OTLPTracingContent,
+		},
+		rust: {
+			title: 'Rust',
+			subtitle:
+				'Select your Rust framework to install logging in your application.',
+			logoUrl: siteUrl('/images/quickstart/rust.svg'),
+			[QuickStartType.RustOther]: RustTracesContent,
+			[QuickStartType.RustActix]: RustTracesContent,
+		},
+		serverless: {
+			title: 'Serverless',
+			subtitle: 'Install tracing in your Serverless application.',
+			logoUrl: siteUrl('/images/quickstart/serverless.svg'),
+			[QuickStartType.AWSLambda]: AWSLambdaContent,
+		},
+		ruby: {
+			title: 'Ruby',
+			subtitle: 'Install tracing in your Ruby application.',
+			logoUrl: siteUrl('/images/quickstart/ruby.svg'),
+			[QuickStartType.RubyRails]: RubyRailsTracesContent,
+			[QuickStartType.RubyOther]: RubyOtherTracesContent,
 		},
 	},
 	other: {

@@ -1,14 +1,13 @@
-import React from 'react'
-import { ComponentMeta } from '@storybook/react'
+import { Meta } from '@storybook/react'
 
-import { Heading } from './Heading'
 import { Box } from '../Box/Box'
 import { Text } from '../Text/Text'
+import { Heading } from './Heading'
 
 export default {
 	title: 'Components/Heading',
 	component: Heading,
-} as ComponentMeta<typeof Heading>
+} as Meta<typeof Heading>
 
 export const Levels = () => (
 	<>

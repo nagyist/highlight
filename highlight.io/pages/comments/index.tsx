@@ -3,11 +3,11 @@ import type { NextPage } from 'next'
 import Image from 'next/legacy/image'
 import commentStyles from '../../components/Comments/Comments.module.scss'
 import { PrimaryButton } from '../../components/common/Buttons/PrimaryButton'
-import { PrimaryLink } from '../../components/common/Buttons/SecondaryButton'
 import Navbar from '../../components/common/Navbar/Navbar'
 import { Section } from '../../components/common/Section/Section'
 import styles from '../../components/Home/Home.module.scss'
 
+import { CalendlyModal } from '../../components/common/CalendlyModal/CalendlyModal'
 import { FooterCallToAction } from '../../components/common/CallToAction/FooterCallToAction'
 import Footer from '../../components/common/Footer/Footer'
 import { Meta } from '../../components/common/Head/Meta'
@@ -52,9 +52,7 @@ const Comments: NextPage = () => {
 								<PrimaryButton href="https://app.highlight.io/sign_up">
 									Get Started For Free
 								</PrimaryButton>
-								<PrimaryLink href="https://calendly.com/d/2gt-rw5-qg5/highlight-demo-call">
-									Request A Demo
-								</PrimaryLink>
+								<CalendlyModal />
 							</div>
 						</div>
 					</div>

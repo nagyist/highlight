@@ -1,5 +1,11 @@
 import { Session } from '@graph/schemas'
 import { NetworkResourceWithID } from '@pages/Player/ResourcesContext/ResourcesContext'
+import { useCallback, useEffect } from 'react'
+import useResizeAware from 'react-resize-aware'
+import { Replayer } from 'rrweb'
+
+import * as playerStyles from '@/pages/Player/styles.css'
+import { useReplayerContext } from '@/pages/Player/ReplayerContext'
 
 export enum SessionPageSearchParams {
 	/** Automatically sets the date range for the current segment based on the value. */
@@ -43,7 +49,7 @@ export const getGraphQLResolverName = (
 ): null | string => {
 	if (
 		!REQUEST_INITIATOR_TYPES.includes(
-			resource.initiatorType as typeof REQUEST_INITIATOR_TYPES[number],
+			resource.initiatorType as (typeof REQUEST_INITIATOR_TYPES)[number],
 		)
 	) {
 		return null
@@ -66,14 +72,6 @@ export const getGraphQLResolverName = (
 }
 
 export const sessionIsBackfilled = (session?: Session) => {
-	// Temporary workaround until we backfill old identified sessions. The
-	// default value of `sessions.identified` is `false`, so the check below
-	// will return true for records that have not been updated. `client_id` was
-	// rolled out at the same time as `identified`.
-	if (!session?.client_id) {
-		return false
-	}
-
 	return Boolean(session?.identifier) && session?.identified === false
 }
 
@@ -116,5 +114,65 @@ export const getTimelineEventTooltipText = (name: string) => {
 			return 'The application became visible.'
 		default:
 			return name
+	}
+}
+
+export const useResizePlayer = (
+	replayer: Replayer | undefined,
+	playerWrapperRef: React.RefObject<HTMLDivElement>,
+	setScale: React.Dispatch<React.SetStateAction<number>>,
+) => {
+	const { viewport } = useReplayerContext()
+	const [centerColumnResizeListener, centerColumnSize] = useResizeAware()
+	const [resizeListener, sizes] = useResizeAware()
+
+	const controllerWidth = centerColumnSize.width
+		? Math.max(
+				playerStyles.MIN_CENTER_COLUMN_WIDTH,
+				centerColumnSize.width ?? 0,
+			)
+		: 0
+
+	const resizePlayer = useCallback((): void => {
+		const { width, height } = viewport ?? {}
+		const targetWidth = playerWrapperRef.current?.clientWidth
+		const targetHeight = playerWrapperRef.current?.clientHeight
+		if (!targetWidth || !targetHeight || !width || !height) {
+			return
+		}
+
+		const widthScale = (targetWidth - playerStyles.PLAYER_PADDING_X) / width
+		const heightScale =
+			(targetHeight - playerStyles.PLAYER_PADDING_Y) / height
+		const scale = Math.min(heightScale, widthScale)
+
+		if (scale <= 0 || !Number.isFinite(scale)) {
+			return
+		}
+
+		replayer?.wrapper?.setAttribute(
+			'style',
+			`transform: scale(${scale}) translate(-50%, -50%)`,
+		)
+		setScale(scale)
+	}, [playerWrapperRef, replayer?.wrapper, setScale, viewport])
+
+	// On any change to replayer, 'sizes', refresh the size of the player.
+	useEffect(() => {
+		replayer && resizePlayer()
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [sizes, replayer, viewport?.width, viewport?.height])
+
+	useEffect(() => {
+		replayer?.wrapper?.setAttribute(
+			'class',
+			`replayer-wrapper ${playerStyles.rrwebInnerWrapper}`,
+		)
+	}, [replayer?.wrapper])
+
+	return {
+		resizeListener,
+		centerColumnResizeListener,
+		controllerWidth,
 	}
 }

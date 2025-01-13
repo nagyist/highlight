@@ -1,7 +1,6 @@
 import { promises as fsp } from 'fs'
-import path from 'path'
 import { getUniqueTags, Post } from '../../components/Blog/BlogPost/BlogPost'
-import { Tag } from '../../components/Blog/Tag'
+import { getTagUrl, PostTag, Tag, TagTab } from '../../components/Blog/Tag'
 import Navbar from '../../components/common/Navbar/Navbar'
 import { Typography } from '../../components/common/Typography/Typography'
 
@@ -15,13 +14,10 @@ import { useEffect, useState } from 'react'
 import { HiOutlineSearch } from 'react-icons/hi'
 import { PostAuthor } from '../../components/Blog/Author'
 import styles from '../../components/Blog/Blog.module.scss'
-import { getTagUrl, PostTag, TagTab } from '../../components/Blog/Tag'
 import { FooterCallToAction } from '../../components/common/CallToAction/FooterCallToAction'
 import Footer from '../../components/common/Footer/Footer'
-import { removeOrderingPrefix } from '../api/docs/github'
-import { readMarkdown } from '../docs/[[...doc]]'
-
-export const BLOG_CONTENT_PATH = path.join(process.cwd(), '../blog-content')
+import { BLOG_CONTENT_PATH, getBlogPaths } from '../../shared/blog'
+import { readMarkdown } from '../../shared/doc'
 
 export async function loadTagsFromGithub(posts: Post[]) {
 	const tags: Tag[] = Array.from(
@@ -71,7 +67,7 @@ export function markdownToPost(
 		metaDescription: data.metaDescription || data.description || null,
 		metaTitle: data.metaTitle || data.title || null,
 		publishedAt: data.createdAt,
-		postedAt: data.createdAt,
+		postedAt: data.createdAt || new Date().toISOString(),
 		readingTime: data.readingTime || '12',
 		richcontent: {
 			markdown: content,
@@ -102,78 +98,23 @@ export function markdownToPost(
 	return post
 }
 
-export interface BlogPath {
-	// e.g. '[tips, sessions-search-deep-linking.md]'
-	array_path: string[]
-	// e.g. 'tips/sessions-search-deep-linking.md'
-	simple_path: string
-	// e.g. '[/tips, /getting-started/client-sdk]'
-	embedded_links: string[]
-	// e.g. /Users/jaykhatri/projects/highlight-landing/s/tips/sessions-search-deep-linking.md
-	total_path: string
-	// e.g. 'tips/sessions-search-deep-linking.md'
-	rel_path: string
-	// whether the path has an index.md file in it or a "homepage" of some sort for that directory.
-	indexPath: boolean
-	// metadata stored at the top of each md file.
-	metadata: any
-	isSdkDoc: boolean
-	content: string
-}
-
-export const getBlogPaths = async (
-	fs_api: any,
-	base: string | undefined,
-): Promise<BlogPath[]> => {
-	base = base ?? ''
-	const full_path = path.join(BLOG_CONTENT_PATH, base)
-	const read = await fs_api.readdir(full_path)
-	let paths: BlogPath[] = []
-	for (var i = 0; i < read.length; i++) {
-		const file_string = read[i]
-		let total_path = path.join(full_path, file_string)
-		const file_path = await fs_api.stat(total_path)
-		if (file_string.includes('README')) continue
-		if (file_path.isDirectory()) {
-			paths = paths.concat(
-				await getBlogPaths(fs_api, path.join(base, file_string)),
-			)
-		} else {
-			const simple_path = path.join(base, file_string)
-			const pp = removeOrderingPrefix(simple_path.replace('.md', ''))
-			const { data, links, content } = await readMarkdown(
-				fsp,
-				path.join(total_path || ''),
-			)
-			const hasRequiredMetadata = ['title'].every((item) =>
-				data.hasOwnProperty(item),
-			)
-			if (!hasRequiredMetadata) {
-				throw new Error(
-					`${total_path} does not contain all required metadata fields. Fields "title" are required. `,
-				)
-			}
-			paths.push({
-				simple_path: pp,
-				array_path: pp.split('/'),
-				embedded_links: Array.from(links),
-				total_path,
-				isSdkDoc: pp.startsWith('sdk/'),
-				rel_path: total_path.replace(BLOG_CONTENT_PATH, ''),
-				indexPath: file_string.includes('index.md'),
-				metadata: data,
-				content: content,
-			})
-		}
-	}
-	return paths
-}
-
 export const getStaticProps: GetStaticProps = async () => {
 	let posts = await loadPostsFromGithub()
 	let tags = await loadTagsFromGithub(posts)
 
-	posts.sort((a, b) => Date.parse(b.postedAt) - Date.parse(a.postedAt))
+	posts = posts
+		.sort((a, b) => Date.parse(b.postedAt) - Date.parse(a.postedAt))
+		.map((a) => {
+			if (new Date().getTime() - Date.parse(a.postedAt) < 0) {
+				console.log('hiding future post', {
+					slug: a.slug,
+					postedAt: a.postedAt,
+					parsed: Date.parse(a.postedAt),
+				})
+			}
+			return a
+		})
+		.filter((a) => new Date().getTime() - Date.parse(a.postedAt) >= 0)
 	tags = getUniqueTags(tags)
 
 	return {
@@ -244,7 +185,7 @@ export const Blog = ({
 						maxRanking: matchSorter.rankings.CONTAINS,
 					},
 				],
-		  })
+			})
 		: posts
 
 	page = Math.ceil(Math.min(page, filteredPosts.length / itemsPerPage))
@@ -309,7 +250,8 @@ export const Blog = ({
 								))}
 							</div>
 							<div
-								/* Search and Pagination */ className="flex flex-col justify-between w-full gap-4 mobile:flex-row"
+								/* Search and Pagination */
+								className="flex flex-col justify-between w-full gap-4 mobile:flex-row"
 							>
 								<div /* Search */
 									className="flex items-center flex-grow gap-1 px-2 transition-colors border rounded-lg text-copy-on-dark border-divider-on-dark focus-within:border-copy-on-light h-11"

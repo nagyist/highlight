@@ -1,3 +1,4 @@
+import { H } from '@highlight-run/next/client'
 import Cookies from 'js-cookie'
 
 const GenerateSecureID = (): string => {
@@ -41,25 +42,31 @@ export const setAttributionData = () => {
 	}
 	const prevRef = Cookies.get('referrer')
 	if (prevRef) {
-		referrer = { ...referrer, ...(JSON.parse(prevRef) as Referrer) }
+		try {
+			referrer = { ...referrer, ...(JSON.parse(prevRef) as Referrer) }
+		} catch (e) {
+			referrer = { ...referrer, pathReferrer: prevRef }
+		}
 	}
 	referrer.documentReferrer = document.referrer
 
 	const urlParams = new URLSearchParams(window.location.search)
-	if (urlParams.get('ref')) {
-		referrer = { ...referrer, referrer: urlParams.get('ref') }
+	const referrerParams = {
+		utm_source: urlParams.get('utm_source'),
+		utm_medium: urlParams.get('utm_medium'),
+		utm_campaign: urlParams.get('utm_campaign'),
+		utm_content: urlParams.get('utm_content'),
+		utm_term: urlParams.get('utm_term'),
+		device: urlParams.get('device'),
+		gclid: urlParams.get('gclid'),
+		ref: urlParams.get('ref'),
 	}
-	if (urlParams.get('utm_source')) {
-		referrer = {
-			...referrer,
-			utm_source: urlParams.get('utm_source'),
-			utm_medium: urlParams.get('utm_medium'),
-			utm_campaign: urlParams.get('utm_campaign'),
-			utm_content: urlParams.get('utm_content'),
-			utm_term: urlParams.get('utm_term'),
-			device: urlParams.get('device'),
-			gclid: urlParams.get('gclid'),
-		}
+
+	referrer = {
+		...referrer,
+		...Object.fromEntries(
+			Object.entries(referrerParams).filter(([_, value]) => !!value),
+		),
 	}
 
 	const pathRef =
@@ -70,9 +77,18 @@ export const setAttributionData = () => {
 		referrer = { ...referrer, pathReferrer: pathRef }
 	}
 
+	const domain = window.location.hostname.replace('www.', '')
+	console.debug('highlight.io', { domain, clientID, referrer })
+	identify(clientID, referrer)
 	Cookies.set('referrer', JSON.stringify(referrer), {
-		domain: 'highlight.io',
+		domain,
+		expires: 365,
 	})
 
 	return referrer
+}
+
+const identify = (identifier: string, metadata: any) => {
+	H.identify(identifier, metadata)
+	window.rudderanalytics?.identify(identifier, metadata)
 }

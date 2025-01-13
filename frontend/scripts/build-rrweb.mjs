@@ -6,13 +6,10 @@ export const run = async ({ rootDirectory }) => {
 	const args = process.argv.slice(2)
 	const watch = args.includes('--watch') || args.includes('-w')
 
-	const packageDirectory = path.join(
-		rootDirectory,
-		'../node_modules/@highlight-run/rrweb',
-	)
+	const packageDirectory = path.join(rootDirectory, '../node_modules/rrweb')
 	const packageDirectoryTypes = path.join(
 		rootDirectory,
-		'../node_modules/@highlight-run/rrweb-types',
+		'../node_modules/@rrweb/types',
 	)
 	const packageJson = JSON.parse(
 		fs.readFileSync(path.join(packageDirectory, 'package.json')),
@@ -25,23 +22,23 @@ export const run = async ({ rootDirectory }) => {
 		entryPoints: [
 			{
 				in: path.join(packageDirectory, packageJson.module),
-				out: 'rr',
+				out: 'rrweb/rr',
 			},
 			{
 				in: path.join(packageDirectoryTypes, packageJsonTypes.module),
-				out: 'rrTypes',
+				out: 'rrweb-types/rrTypes',
 			},
 			{
-				in: path.join(packageDirectory, 'dist/rrweb.min.css'),
-				out: 'rr.min',
+				in: path.join(packageDirectory, 'dist/style.min.css'),
+				out: 'rrweb/rr.min',
 			},
 		],
 		bundle: true,
 		sourcemap: false,
 		format: 'esm',
 		platform: 'browser',
-		outdir: path.join(rootDirectory, 'src/__generated/rr'),
-		minify: true,
+		outdir: path.join(rootDirectory, '../__generated/rr'),
+		minify: false,
 		target: 'esnext',
 		// external: Object.keys(packageJson.dependencies).concat(
 		//   Object.keys(packageJson.peerDependencies),

@@ -1,14 +1,14 @@
-import React from 'react'
 import {
 	Button as AriakitButton,
 	ButtonProps as AriakitButtonProps,
-} from 'ariakit/button'
-import { Props as TextProps, Text } from '../Text/Text'
+} from '@ariakit/react'
+import clsx, { ClassValue } from 'clsx'
+import React from 'react'
 
-import * as styles from './styles.css'
 import { Box } from '../Box/Box'
 import { IconProps } from '../icons'
-import clsx, { ClassValue } from 'clsx'
+import { Text, Props as TextProps } from '../Text/Text'
+import * as styles from './styles.css'
 
 export type ButtonProps = React.PropsWithChildren &
 	AriakitButtonProps &
@@ -56,6 +56,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 					cssClass,
 				)}
 				ref={ref}
+				type="button"
 				{...buttonProps}
 			>
 				<ButtonContent
@@ -101,7 +102,7 @@ export const ButtonContent: React.FC<ButtonContentProps> = ({
 					as="span"
 					display="inline-flex"
 					disabled={disabled}
-					className={styles.iconVariants({
+					cssClass={styles.iconVariants({
 						size,
 						emphasis,
 						kind,
@@ -125,7 +126,7 @@ export const ButtonContent: React.FC<ButtonContentProps> = ({
 					as="span"
 					display="inline-flex"
 					disabled={disabled}
-					className={styles.iconVariants({
+					cssClass={styles.iconVariants({
 						size,
 						emphasis,
 						kind,

@@ -6,8 +6,9 @@ import {
 	IconSolidChevronDoubleRight,
 	IconSolidExclamation,
 	Text,
-	vars,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
+import { vars } from '@highlight-run/ui/vars'
+import moment from 'moment'
 import { useRef } from 'react'
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso'
 
@@ -15,7 +16,6 @@ import LoadingBox from '@/components/LoadingBox'
 import usePlayerConfiguration from '@/pages/Player/PlayerHook/utils/usePlayerConfiguration'
 import { useReplayerContext } from '@/pages/Player/ReplayerContext'
 import { styledVerticalScrollbar } from '@/style/common.css'
-import { playerTimeToSessionAbsoluteTime } from '@/util/session/utils'
 import { MillisToMinutesAndSeconds } from '@/util/time'
 
 import * as styles from './WebSocketMessages.css'
@@ -29,8 +29,8 @@ export const WebSocketMessages = ({ events, eventsLoading }: any) => {
 	return eventsLoading ? (
 		<LoadingBox />
 	) : (
-		<Box className={styles.container}>
-			<Box className={styles.websocketHeader}>
+		<Box cssClass={styles.container}>
+			<Box cssClass={styles.websocketHeader}>
 				<Box></Box>
 				<Box color="weak" py="6" px="8" borderRight="dividerWeak">
 					<Text size="xxSmall">Data</Text>
@@ -42,7 +42,7 @@ export const WebSocketMessages = ({ events, eventsLoading }: any) => {
 					<Text size="xxSmall">Time</Text>
 				</Box>
 			</Box>
-			<Box className={styles.networkBox}>
+			<Box cssClass={styles.networkBox}>
 				<Virtuoso
 					ref={virtuoso}
 					overscan={1024}
@@ -102,22 +102,22 @@ const WebSocketRequestTypeIcon: { [k: string]: JSX.Element } = {
 	error: <IconSolidExclamation size={14} />,
 }
 
-const getWebSocketEventTime = (event: any) => {
+const getWebSocketEventTime = (event: any, sessionStart: number) => {
 	return event.type === 'open'
-		? event.startTime
+		? (event.startTimeAbs ?? event.startTime + sessionStart)
 		: event.type === 'close'
-		? event.requestEnd
-		: event.timeStamp
+			? (event.requestEndAbs ?? event.requestEnd + sessionStart)
+			: event.timeStamp
 }
 
 const getWebSocketEventMessage = (event: any) => {
 	return event.type === 'open'
 		? 'Websocket connection has been opened'
 		: event.type === 'close'
-		? 'Websocket connection has been closed'
-		: event.type === 'error'
-		? 'Error'
-		: event.message
+			? 'Websocket connection has been closed'
+			: event.type === 'error'
+				? 'Error'
+				: event.message
 }
 
 const getWebSocketEventSize = (event: any) => {
@@ -151,14 +151,18 @@ const WebSocketRow = ({
 				<Box color="secondaryContentText" px="8">
 					<Text size="small" weight="medium" lines="1">
 						{showPlayerAbsoluteTime
-							? playerTimeToSessionAbsoluteTime({
-									sessionStartTime: playerStartTime,
-									relativeTime:
-										getWebSocketEventTime(resource),
-							  })
+							? moment(
+									getWebSocketEventTime(
+										resource,
+										playerStartTime,
+									),
+								).format('h:mm:ss A')
 							: MillisToMinutesAndSeconds(
-									getWebSocketEventTime(resource),
-							  )}
+									getWebSocketEventTime(
+										resource,
+										playerStartTime,
+									) - playerStartTime,
+								)}
 					</Text>
 				</Box>
 			</Box>

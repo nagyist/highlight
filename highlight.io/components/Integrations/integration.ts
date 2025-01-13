@@ -16,6 +16,12 @@ export const INTEGRATIONS: {
 			image: '/images/companies/icons/amplitude.png',
 		},
 		{
+			name: 'Pendo',
+			description: 'Instrument highlight.io to send Pendo events.',
+			link: '/docs/general/integrations/pendo-integration',
+			image: '/images/companies/icons/pendo.png',
+		},
+		{
 			name: 'Mixpanel',
 			description: 'Instrument highlight.io to sent Mixpanel events.',
 			link: '/docs/general/integrations/mixpanel-integration',
@@ -27,6 +33,12 @@ export const INTEGRATIONS: {
 			link: '/docs/general/integrations/segment-integration',
 			image: '/images/companies/icons/segment.png',
 		},
+		{
+			name: 'Grafana',
+			description: 'Instrument highlight.io to send Grafana events.',
+			link: '/docs/general/integrations/grafana-integration/overview#how-it-works',
+			image: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/Grafana_icon.svg',
+		},
 	],
 	Messaging: [
 		{
@@ -35,14 +47,6 @@ export const INTEGRATIONS: {
 			link: '/docs/general/integrations/discord-integration',
 			image: '/images/companies/icons/discord.png',
 		},
-		{
-			name: 'Front',
-			description:
-				'View highlight.io sessions directly in your Front inbox.',
-			link: '/docs/general/integrations/front-integration',
-			image: '/images/companies/icons/front.png',
-		},
-
 		{
 			name: 'Intercom',
 			description:
@@ -92,6 +96,12 @@ export const INTEGRATIONS: {
 			link: '/docs/getting-started/backend-logging/hosting/fly-io',
 			image: '/images/companies/icons/flyio.png',
 		},
+		{
+			name: 'Render',
+			description: 'Setup highlight.io log ingestion on Render.',
+			link: '/docs/getting-started/backend-logging/hosting/render',
+			image: '/images/quickstart/render.png',
+		},
 	],
 	Productivity: [
 		{
@@ -112,6 +122,12 @@ export const INTEGRATIONS: {
 			description: 'Create GitHub issues within highlight.io.',
 			link: '/docs/general/integrations/github-integration',
 			image: '/images/companies/icons/github.png',
+		},
+		{
+			name: 'Jira',
+			description: 'Create Jira issues within highlight.io.',
+			link: '/docs/general/integrations/jira-integration',
+			image: '/images/companies/icons/jira.png',
 		},
 	],
 }

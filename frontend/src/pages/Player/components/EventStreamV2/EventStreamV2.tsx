@@ -1,7 +1,6 @@
 import LoadingBox from '@components/LoadingBox'
-import { useGetWebVitalsQuery } from '@graph/hooks'
-import { Box, Form, IconSolidSearch, useFormState } from '@highlight-run/ui'
-import { useEventTypeFilters } from '@pages/Player/components/EventStream/hooks/useEventTypeFilters'
+import { useGetSessionCommentsQuery, useGetWebVitalsQuery } from '@graph/hooks'
+import { Box, Form, IconSolidSearch } from '@highlight-run/ui/components'
 import { StreamEventV2 } from '@pages/Player/components/EventStreamV2/StreamEventV2/StreamEventV2'
 import {
 	getFilteredEvents,
@@ -12,42 +11,53 @@ import {
 	usePlayerUIContext,
 } from '@pages/Player/context/PlayerUIContext'
 import { HighlightEvent } from '@pages/Player/HighlightEvent'
+import usePlayerConfiguration from '@pages/Player/PlayerHook/utils/usePlayerConfiguration'
 import {
 	ReplayerState,
 	useReplayerContext,
 } from '@pages/Player/ReplayerContext'
 import { EmptyDevToolsCallout } from '@pages/Player/Toolbar/DevToolsWindowV2/EmptyDevToolsCallout/EmptyDevToolsCallout'
-import { Tab } from '@pages/Player/Toolbar/DevToolsWindowV2/utils'
-import { useParams } from '@util/react-router/useParams'
+import {
+	findLastActiveEventIndex,
+	Tab,
+} from '@pages/Player/Toolbar/DevToolsWindowV2/utils'
 import _ from 'lodash'
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso'
 
+import { THROTTLED_UPDATE_MS } from '@/pages/Player/PlayerHook/PlayerState'
 import { styledVerticalScrollbar } from '@/style/common.css'
 
 import * as style from './EventStreamV2.css'
 
 const EventStreamV2 = function () {
-	const { session_secure_id } = useParams<{ session_secure_id: string }>()
 	const {
+		session,
 		sessionMetadata,
+		time,
 		eventsForTimelineIndicator: replayerEvents,
 		state,
 		replayer,
-		currentEvent,
-		setCurrentEvent,
 	} = useReplayerContext()
-	const { setActiveEvent, setRightPanelView } = usePlayerUIContext()
+	const session_secure_id = session?.secure_id
+	const {
+		setActiveEvent,
+		setRightPanelView,
+		activeEventIndex,
+		setActiveEventIndex,
+		searchItem,
+		setSearchItem,
+	} = usePlayerUIContext()
 	const [isInteractingWithStreamEvents, setIsInteractingWithStreamEvents] =
 		useState(false)
 	const [events, setEvents] = useState<HighlightEvent[]>([])
-	const form = useFormState({
+	const formStore = Form.useStore({
 		defaultValues: {
-			search: '',
+			search: searchItem,
 		},
 	})
-	const searchQuery = form.getValue('search')
-	const eventTypeFilters = useEventTypeFilters()
+	const searchQuery = formStore.useValue('search')
+	const { selectedTimelineAnnotationTypes } = usePlayerConfiguration()
 	const virtuoso = useRef<VirtuosoHandle>(null)
 	const { data } = useGetWebVitalsQuery({
 		variables: {
@@ -55,9 +65,16 @@ const EventStreamV2 = function () {
 		},
 		skip: !session_secure_id,
 	})
+	const { data: commentsData } = useGetSessionCommentsQuery({
+		variables: {
+			session_secure_id: session_secure_id!,
+		},
+		skip: !session_secure_id,
+	})
 
 	useEffect(() => {
-		if (data?.web_vitals && data.web_vitals?.length > 0) {
+		const events = [...replayerEvents]
+		if (data?.web_vitals?.length) {
 			const webVitalEvent = {
 				data: {
 					payload: {
@@ -72,16 +89,57 @@ const EventStreamV2 = function () {
 				type: 5,
 				identifier: '-1',
 			}
-			setEvents([webVitalEvent, ...replayerEvents])
-		} else {
-			setEvents([...replayerEvents])
+			events.push(webVitalEvent)
 		}
-	}, [data?.web_vitals, replayerEvents])
+		if (commentsData?.session_comments) {
+			const comments = commentsData.session_comments.map((comment) => ({
+				data: {
+					payload: `${comment?.author?.email}: ${comment?.text}`,
+					tag: 'Comments',
+				},
+				timestamp:
+					sessionMetadata.startTime + (comment?.timestamp ?? 0),
+				type: 5,
+				identifier: comment?.id ?? '-1',
+			}))
+			events.push(...comments)
+		}
+		events.sort((a, b) => a.timestamp - b.timestamp)
+		setEvents(events)
+	}, [
+		commentsData?.session_comments,
+		data?.web_vitals,
+		replayerEvents,
+		sessionMetadata.startTime,
+	])
 
-	const usefulEvents = useMemo(() => events.filter(usefulEvent), [events])
-	const filteredEvents = useMemo(
-		() => getFilteredEvents(searchQuery, usefulEvents, eventTypeFilters),
-		[eventTypeFilters, searchQuery, usefulEvents],
+	const filteredEvents = useMemo(() => {
+		const usefulEvents = events.filter(usefulEvent)
+		return getFilteredEvents(
+			searchQuery!,
+			usefulEvents,
+			new Set(selectedTimelineAnnotationTypes),
+		)
+	}, [selectedTimelineAnnotationTypes, searchQuery, events])
+
+	const [lastEventIndex, setLastEventIndex] = useState(-1)
+
+	useEffect(
+		() =>
+			_.throttle(
+				() => {
+					const activeIndex = findLastActiveEventIndex(
+						time,
+						sessionMetadata.startTime,
+						filteredEvents,
+					)
+
+					setLastEventIndex(activeIndex)
+				},
+				THROTTLED_UPDATE_MS,
+				{ leading: true, trailing: false },
+			),
+		[time, sessionMetadata.startTime, filteredEvents],
 	)
 
 	// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -100,23 +158,16 @@ const EventStreamV2 = function () {
 
 	useEffect(() => {
 		if (!isInteractingWithStreamEvents) {
-			const currentEventIndex = usefulEvents.findIndex(
-				(event) => event.identifier === currentEvent,
-			)
-			scrollFunction(currentEventIndex)
+			scrollFunction(lastEventIndex)
 		}
-	}, [
-		currentEvent,
-		isInteractingWithStreamEvents,
-		scrollFunction,
-		usefulEvents,
-	])
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [lastEventIndex])
 
 	const isLoading =
 		!replayer || state === ReplayerState.Loading || events.length === 0
 
 	return (
-		<Box className={style.container}>
+		<Box cssClass={style.container}>
 			{isLoading ? (
 				<LoadingBox />
 			) : (
@@ -127,22 +178,24 @@ const EventStreamV2 = function () {
 					flexDirection="column"
 				>
 					<Box px="12" py="8">
-						<Form state={form}>
+						<Form store={formStore}>
 							<Box
 								display="flex"
 								justifyContent="space-between"
 								align="center"
 								as="label"
 								gap="6"
-								color="weak"
+								color="secondaryContentText"
 							>
 								<IconSolidSearch size={16} />
-								<Form.Input
-									name={form.names.search}
-									placeholder="Search"
-									size="xSmall"
-									outline={false}
-								/>
+								<Box width="full">
+									<Form.Input
+										name={formStore.names.search}
+										placeholder="Search"
+										size="xSmall"
+										outline={false}
+									/>
+								</Box>
 							</Box>
 						</Form>
 					</Box>
@@ -158,19 +211,19 @@ const EventStreamV2 = function () {
 							data={filteredEvents}
 							totalCount={filteredEvents.length}
 							className={styledVerticalScrollbar}
+							initialTopMostItemIndex={activeEventIndex}
 							itemContent={(index, event) => (
 								<StreamEventV2
-									e={event}
+									event={event}
 									key={index}
 									start={sessionMetadata.startTime}
 									isFirstCard={index === 0}
-									isCurrent={
-										event.identifier === currentEvent
-									}
-									onGoToHandler={(e) => {
-										setCurrentEvent(e)
+									isCurrent={index === lastEventIndex}
+									onGoToHandler={() => {
 										setActiveEvent(event)
 										setRightPanelView(RightPanelView.Event)
+										setActiveEventIndex(index)
+										setSearchItem(searchQuery)
 									}}
 								/>
 							)}

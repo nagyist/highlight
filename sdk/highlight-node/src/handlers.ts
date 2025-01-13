@@ -1,6 +1,14 @@
+import type { Attributes } from '@opentelemetry/api'
 import * as http from 'http'
 import { NodeOptions } from '.'
-import { H, HIGHLIGHT_REQUEST_HEADER } from './sdk.js'
+import { H } from './sdk.js'
+import {
+	ATTR_HTTP_REQUEST_METHOD,
+	ATTR_HTTP_ROUTE,
+	ATTR_HTTP_RESPONSE_HEADER,
+	ATTR_HTTP_REQUEST_HEADER,
+	ATTR_HTTP_RESPONSE_STATUS_CODE,
+} from '@opentelemetry/semantic-conventions'
 
 /** JSDoc */
 interface MiddlewareError extends Error {
@@ -16,32 +24,67 @@ function processErrorImpl(
 	options: NodeOptions,
 	req: { headers?: http.IncomingHttpHeaders },
 	error: Error,
+	metadata?: Attributes,
 ): void {
-	let secureSessionId: string | undefined
-	let requestId: string | undefined
-	if (req.headers && req.headers[HIGHLIGHT_REQUEST_HEADER]) {
-		;[secureSessionId, requestId] =
-			`${req.headers[HIGHLIGHT_REQUEST_HEADER]}`.split('/')
+	if (!H.isInitialized()) {
+		H.init(options)
+		H._debug('initialized H')
 	}
+
+	const { secureSessionId, requestId } = H.parseHeaders(req.headers ?? {})
 	H._debug('processError', 'extracted from headers', {
 		secureSessionId,
 		requestId,
 	})
 
-	if (!H.isInitialized()) {
-		H.init(options)
-		H._debug('initialized H')
-	}
-	H.consumeError(error, secureSessionId, requestId)
+	H.consumeError(error, secureSessionId, requestId, metadata)
 	H._debug('consumed error', error)
 }
 
 /**
+ * Express compatible middleware.
+ * Exposed as `Handlers.errorHandler`.
+ * `metadata` accepts structured tags that should be attached to every error.
+ */
+export function middleware(
+	options: NodeOptions,
+	metadata?: Attributes,
+): (
+	req: http.IncomingMessage,
+	res: http.ServerResponse,
+	next: () => void,
+) => void {
+	H._debug('setting up middleware')
+	return (
+		req: http.IncomingMessage,
+		res: http.ServerResponse,
+		next: () => void,
+	) => {
+		H._debug('middleware handling request')
+		H.runWithHeaders(
+			`${req.method?.toUpperCase()} - ${req.url}`,
+			req.headers,
+			() => next(),
+			{
+				attributes: {
+					[ATTR_HTTP_REQUEST_METHOD]: req.method,
+					[ATTR_HTTP_ROUTE]: req.url,
+					[ATTR_HTTP_RESPONSE_STATUS_CODE]: res.statusCode,
+					...(metadata ?? {}),
+				},
+			},
+		)
+	}
+}
+
+/**
  * Express compatible error handler.
- * Exposed as `Handlers.errorHandler`
+ * Exposed as `Handlers.errorHandler`.
+ * `metadata` accepts structured tags that should be attached to every error.
  */
 export function errorHandler(
 	options: NodeOptions,
+	metadata?: Attributes,
 ): (
 	error: MiddlewareError,
 	req: http.IncomingMessage,
@@ -55,9 +98,9 @@ export function errorHandler(
 		res: http.ServerResponse,
 		next: (error: MiddlewareError) => void,
 	) => {
-		H._debug('handling request')
+		H._debug('error handling request')
 		try {
-			processErrorImpl(options, req, error)
+			processErrorImpl(options, req, error, metadata)
 		} finally {
 			next(error)
 		}
@@ -68,6 +111,7 @@ export function errorHandler(
 
 /**
  * A TRPC compatible error handler for logging errors to Highlight.
+ * `metadata` accepts structured tags that should be attached to every error.
  */
 export async function trpcOnError(
 	{
@@ -75,12 +119,13 @@ export async function trpcOnError(
 		req,
 	}: { error: Error; req: { headers?: http.IncomingHttpHeaders } },
 	options: NodeOptions,
+	metadata?: Attributes,
 ): Promise<void> {
 	try {
 		if (!H.isInitialized()) {
 			H.init(options)
 		}
-		processErrorImpl(options, req, error)
+		processErrorImpl(options, req, error, metadata)
 		await H.flush()
 	} catch (e) {
 		console.warn('highlight-node trpcOnError error:', e)
@@ -90,24 +135,30 @@ export async function trpcOnError(
 declare type Headers = { [name: string]: string | undefined }
 
 const makeHandler = (
+	name: string,
 	origHandler: (...args: any) => any,
 	options: NodeOptions,
+	metadata: Attributes | undefined,
 	headersExtractor: (...args: any) => Headers | undefined,
 ) => {
 	return async (...args: any) => {
+		if (!H.isInitialized()) {
+			H.init(options)
+		}
+		const headers = headersExtractor(args)
 		try {
-			return await origHandler(...args)
+			if (headers) {
+				return H.runWithHeaders(name, headers, async () =>
+					origHandler(...args),
+				)
+			} else {
+				return origHandler(...args)
+			}
 		} catch (e) {
 			try {
 				if (e instanceof Error) {
-					if (!H.isInitialized()) {
-						H.init(options)
-					}
-					processErrorImpl(
-						options,
-						{ headers: headersExtractor(args) },
-						e,
-					)
+					processErrorImpl(options, { headers }, e, metadata)
+
 					await H.flush()
 				}
 			} catch (e) {
@@ -121,7 +172,8 @@ const makeHandler = (
 }
 
 /**
- * A wrapper for logging errors to Highlight for Firebase HTTP functions
+ * A wrapper for logging errors to Highlight for Firebase HTTP functions.
+ * `metadata` accepts structured tags that should be attached to every error.
  */
 declare type FirebaseHttpFunctionHandler = (
 	req: any,
@@ -130,28 +182,51 @@ declare type FirebaseHttpFunctionHandler = (
 export function firebaseHttpFunctionHandler(
 	origHandler: FirebaseHttpFunctionHandler,
 	options: NodeOptions,
+	metadata?: Attributes,
 ): FirebaseHttpFunctionHandler {
-	return makeHandler(origHandler, options, (req, res) => req.headers)
+	return makeHandler(
+		'firebase.http',
+		origHandler,
+		options,
+		metadata,
+		(req, res) => req.headers,
+	)
 }
 
 /**
- * A wrapper for logging errors to Highlight for Firebase callable functions
+ * A wrapper for logging errors to Highlight for Firebase callable functions.
+ * `metadata` accepts structured tags that should be attached to every error.
  */
 declare type FirebaseCallableFunctionHandler = (data: any, context: any) => any
 export function firebaseCallableFunctionHandler(
 	origHandler: FirebaseCallableFunctionHandler,
 	options: NodeOptions,
+	metadata?: Attributes,
 ): FirebaseCallableFunctionHandler {
-	return makeHandler(origHandler, options, (data, ctx) => ctx.rawRequest)
+	return makeHandler(
+		'firebase.cb',
+		origHandler,
+		options,
+		metadata,
+		(data, ctx) => ctx.rawRequest,
+	)
 }
 
 /**
- * A wrapper for logging errors to Highlight for AWS Lambda and other serverless functions
+ * A wrapper for logging errors to Highlight for AWS Lambda and other serverless functions.
+ * `metadata` accepts structured tags that should be attached to every error.
  */
 declare type ServerlessCallableFunctionHandler = (event?: any) => any
 export function serverlessFunction(
 	origHandler: ServerlessCallableFunctionHandler,
 	options: NodeOptions,
+	metadata?: Attributes,
 ): ServerlessCallableFunctionHandler {
-	return makeHandler(origHandler, options, (event) => event?.headers)
+	return makeHandler(
+		'serverless',
+		origHandler,
+		options,
+		metadata,
+		(event) => event?.headers,
+	)
 }

@@ -4,7 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"os"
+	"github.com/highlight-run/highlight/backend/env"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	clickhouseMigrate "github.com/golang-migrate/migrate/v4/database/clickhouse"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/highlight-run/highlight/backend/projectpath"
+	hmetric "github.com/highlight/highlight/sdk/highlight-go/metric"
 	e "github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
@@ -23,15 +25,33 @@ type Client struct {
 }
 
 var (
-	ServerAddr      = os.Getenv("CLICKHOUSE_ADDRESS")
-	PrimaryDatabase = os.Getenv("CLICKHOUSE_DATABASE") // typically 'default', clickhouse needs an existing database to handle connections
-	TestDatabase    = os.Getenv("CLICKHOUSE_TEST_DATABASE")
-	Username        = os.Getenv("CLICKHOUSE_USERNAME")
-	Password        = os.Getenv("CLICKHOUSE_PASSWORD")
+	ServerAddr      = env.Config.ClickhouseAddress
+	PrimaryDatabase = env.Config.ClickhouseDatabase // typically 'default', clickhouse needs an existing database to handle connections
+	TestDatabase    = env.Config.ClickhouseTestDatabase
+	Username        = env.Config.ClickhouseUsername
+	Password        = env.Config.ClickhousePassword
 )
 
+func GetPostgresConnectionString() string {
+	return fmt.Sprintf("postgresql('%s:%s', '%s', 'sessions', '%s', '%s')", env.Config.SQLDockerHost, env.Config.SQLPort, env.Config.SQLDatabase, env.Config.SQLUser, env.Config.SQLPassword)
+}
+
 func NewClient(dbName string) (*Client, error) {
-	conn, err := clickhouse.Open(getClickhouseOptions(dbName))
+	opts := getClickhouseOptions(dbName)
+	opts.MaxIdleConns = 10
+	opts.MaxOpenConns = 100
+
+	conn, err := clickhouse.Open(opts)
+
+	go func() {
+		for {
+			stats := conn.Stats()
+			log.WithContext(context.Background()).WithField("Open", stats.Open).WithField("Idle", stats.Idle).WithField("MaxOpenConns", stats.MaxOpenConns).WithField("MaxIdleConns", stats.MaxIdleConns).Debug("Clickhouse Connection Stats")
+			hmetric.Gauge(context.Background(), "clickhouse.open", float64(stats.Open), nil, 1)
+			hmetric.Gauge(context.Background(), "clickhouse.idle", float64(stats.Idle), nil, 1)
+			time.Sleep(5 * time.Second)
+		}
+	}()
 
 	return &Client{
 		conn: conn,
@@ -52,14 +72,18 @@ func RunMigrations(ctx context.Context, dbName string) {
 		log.WithContext(ctx).Fatalf("Error creating clickhouse db instance for migrations: %v", err)
 	}
 
+	migrationsPath := filepath.Join(projectpath.GetRoot(), "clickhouse", "migrations")
 	m, err := migrate.NewWithDatabaseInstance(
-		fmt.Sprintf("file:///%s/clickhouse/migrations", projectpath.GetRoot()),
+		"file://"+migrationsPath,
 		dbName,
 		driver,
 	)
 
 	if err != nil {
-		log.WithContext(ctx).Fatalf("Error creating clickhouse db instance for migrations: %v", err)
+		log.WithContext(ctx).
+			WithField("dbName", dbName).
+			WithField("migrationsPath", migrationsPath).
+			Fatalf("Error creating clickhouse db instance for migrations: %v", err)
 	}
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
@@ -96,6 +120,9 @@ func getClickhouseOptions(dbName string) *clickhouse.Options {
 			Password: Password,
 		},
 		DialTimeout: time.Duration(25) * time.Second,
+		Compression: &clickhouse.Compression{
+			Method: clickhouse.CompressionZSTD,
+		},
 	}
 
 	if useTLS() {

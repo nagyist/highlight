@@ -2,15 +2,14 @@ import ButtonLink from '@components/Button/ButtonLink/ButtonLink'
 import ElevatedCard from '@components/ElevatedCard/ElevatedCard'
 import Input from '@components/Input/Input'
 import TextHighlighter from '@components/TextHighlighter/TextHighlighter'
-import { Badge, Box } from '@highlight-run/ui'
+import { Badge, Box } from '@highlight-run/ui/components'
 import SvgSearchIcon from '@icons/SearchIcon'
 import { PLAYER_SKIP_DURATION } from '@pages/Player/utils/PlayerHooks'
 import { useGlobalContext } from '@routers/ProjectRouter/context/GlobalContext'
 import analytics from '@util/analytics'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'framer-motion'
-import React from 'react'
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useLocation } from 'react-router-dom'
 
@@ -298,23 +297,11 @@ export interface ShortcutItem {
 const isOnMac = window.navigator.userAgent.includes('Mac')
 export const cmdKey = isOnMac ? '⌘' : 'Ctrl'
 
-export const OpenCommandBarShortcut: ShortcutItem = {
-	description: `Toggle the command bar`,
-	shortcut: [cmdKey, 'K'],
-}
-
-export const OpenCommandBarShortcutAlt: ShortcutItem = {
-	description: `Toggle the command bar`,
-	shortcut: ['/'],
-}
-
 export const GeneralKeyboardShortcuts: ShortcutItem[] = [
 	{
 		description: 'Open Keyboard Shortcuts Guide',
 		shortcut: ['?'],
 	},
-	OpenCommandBarShortcut,
-	OpenCommandBarShortcutAlt,
 ]
 
 export const DevToolsShortcut: ShortcutItem = {

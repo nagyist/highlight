@@ -1,76 +1,119 @@
 package util
 
-// This schema/arch is taken from: https://github.com/99designs/gqlgen/blob/master/graphql/handler/apollotracing/tracer.go
-
 import (
 	"context"
-	"encoding/json"
+	"fmt"
+	log "github.com/sirupsen/logrus"
+	"time"
 
-	"github.com/99designs/gqlgen/graphql"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/highlight/highlight/sdk/highlight-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
-type Tracer struct {
-	graphql.HandlerExtension
-	graphql.ResponseInterceptor
-	graphql.FieldInterceptor
+const KafkaBatchWorkerOp = "KafkaBatchWorker"
 
-	serverType Runtime
+type MultiSpan struct {
+	hSpan trace.Span
 }
 
-func NewTracer(backend Runtime) Tracer {
-	return Tracer{serverType: backend}
-}
-
-func (t Tracer) ExtensionName() string {
-	return "HighlightTracer"
-}
-
-func (t Tracer) Validate(graphql.ExecutableSchema) error {
-	return nil
-}
-
-func (t Tracer) InterceptField(ctx context.Context, next graphql.Resolver) (interface{}, error) {
-	// taken from: https://docs.datadoghq.com/tracing/setup_overview/custom_instrumentation/go/#manually-creating-a-new-span
-	fc := graphql.GetFieldContext(ctx)
-	fieldSpan, ctx := tracer.StartSpanFromContext(ctx, "operation.field", tracer.ResourceName(fc.Field.Name))
-	fieldSpan.SetTag("field.type", fc.Field.Definition.Type.String())
-	if b, err := json.MarshalIndent(fc.Args, "", ""); err == nil {
-		if bs := string(b); len(bs) <= 1000 {
-			fieldSpan.SetTag("field.arguments", bs)
+func (s *MultiSpan) Finish(err ...error) {
+	if len(err) > 1 {
+		log.WithContext(context.TODO()).Warnf("Multiple errors passed to MultiSpan.Finish: %+v", err)
+	} else if len(err) > 0 && err[0] != nil {
+		if s.hSpan != nil {
+			highlight.RecordSpanError(s.hSpan, err[0])
 		}
 	}
-	start := graphql.Now()
-	res, err := next(ctx)
-	end := graphql.Now()
-	fieldSpan.SetTag("field.duration", end.Sub(start))
-	fieldSpan.Finish(tracer.WithError(err))
-
-	return res, err
+	if s.hSpan != nil {
+		highlight.EndTrace(s.hSpan)
+	}
 }
 
-func (t Tracer) InterceptResponse(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
-	var oc *graphql.OperationContext
-	if graphql.HasOperationContext(ctx) {
-		oc = graphql.GetOperationContext(ctx)
+func (s *MultiSpan) SetAttribute(key string, value interface{}) {
+	if s.hSpan != nil {
+		s.hSpan.SetAttributes(attribute.String(key, fmt.Sprintf("%v", value)))
 	}
-	// NOTE: This gets called for the first time at the highest level. Creates the 'tracing' value, calls the next handler
-	// and returns the response.
-	opName := "undefined"
-	if oc != nil {
-		opName = oc.OperationName
+}
+
+func (s *MultiSpan) SetOperationName(name string) {
+	if s.hSpan != nil {
+		s.hSpan.SetName(name)
 	}
-	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.operation", tracer.ResourceName(opName))
-	span.SetTag("backend", t.serverType)
-	defer span.Finish()
-	resp := next(ctx)
-	if resp != nil {
-		var errs []ddtrace.FinishOption
-		for _, err := range resp.Errors {
-			errs = append(errs, tracer.WithError(err))
+}
+
+type contextKey string
+
+const (
+	ContextKeyHighlightTracingDisabled contextKey = "HighlightTracingDisabled"
+)
+
+func StartSpanFromContext(ctx context.Context, operationName string, options ...SpanOption) (MultiSpan, context.Context) {
+	var cfg SpanConfig
+	for _, opt := range options {
+		opt(&cfg)
+	}
+
+	hTracingDisabled, _ := ctx.Value(ContextKeyHighlightTracingDisabled).(bool)
+	hTracingDisabled = hTracingDisabled || cfg.HighlightTracingDisabled
+	ctx = context.WithValue(ctx, ContextKeyHighlightTracingDisabled, hTracingDisabled)
+
+	var hSpan trace.Span
+	if !hTracingDisabled {
+		hSpan, _ = highlight.StartTraceWithTimestamp(ctx, operationName, time.Now(), []trace.SpanStartOption{trace.WithSpanKind(cfg.SpanKind)}, cfg.Tags...)
+		ctx = trace.ContextWithSpan(ctx, hSpan)
+	}
+
+	return MultiSpan{
+		hSpan: hSpan,
+	}, ctx
+}
+
+func StartSpan(operationName string, options ...SpanOption) MultiSpan {
+	var cfg SpanConfig
+	for _, opt := range options {
+		opt(&cfg)
+	}
+
+	var hSpan trace.Span
+	if !cfg.HighlightTracingDisabled {
+		hSpan, _ = highlight.StartTraceWithTimestamp(context.Background(), operationName, time.Now(), []trace.SpanStartOption{trace.WithSpanKind(cfg.SpanKind)}, cfg.Tags...)
+	}
+
+	return MultiSpan{
+		hSpan: hSpan,
+	}
+}
+
+type SpanConfig struct {
+	Tags                     []attribute.KeyValue
+	HighlightTracingDisabled bool
+	SpanKind                 trace.SpanKind
+}
+
+type SpanOption func(cfg *SpanConfig)
+
+func Tag(key string, name interface{}) SpanOption {
+	return func(cfg *SpanConfig) {
+		if cfg.Tags == nil {
+			cfg.Tags = []attribute.KeyValue{}
 		}
-		span.Finish(errs...)
+		cfg.Tags = append(cfg.Tags, attribute.String(key, fmt.Sprintf("%v", name)))
 	}
-	return resp
+}
+
+func ResourceName(name string) SpanOption {
+	return Tag("resource_name", name)
+}
+
+func WithHighlightTracingDisabled(disabled bool) SpanOption {
+	return func(cfg *SpanConfig) {
+		cfg.HighlightTracingDisabled = disabled
+	}
+}
+
+func WithSpanKind(kind trace.SpanKind) SpanOption {
+	return func(cfg *SpanConfig) {
+		cfg.SpanKind = kind
+	}
 }

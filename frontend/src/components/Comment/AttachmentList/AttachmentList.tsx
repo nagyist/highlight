@@ -3,11 +3,13 @@ import {
 	IconSolidClickUp,
 	IconSolidExternalLink,
 	IconSolidGithub,
+	IconSolidGitlab,
 	IconSolidHeight,
+	IconSolidJira,
 	IconSolidLinear,
 	Tag,
 	Text,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
 import React from 'react'
 
 interface AttachmentListProps {
@@ -24,6 +26,10 @@ const getIcon = (a: Maybe<ExternalAttachment>) => {
 			return <IconSolidHeight />
 		case IntegrationType.GitHub:
 			return <IconSolidGithub />
+		case IntegrationType.Jira:
+			return <IconSolidJira />
+		case IntegrationType.GitLab:
+			return <IconSolidGitlab />
 	}
 	return <></>
 }
@@ -35,8 +41,15 @@ export const getAttachmentUrl = (a: Maybe<ExternalAttachment>) => {
 		case IntegrationType.ClickUp:
 			return `https://app.clickup.com/t/${a.external_id}`
 		case IntegrationType.Height:
+			if (a.external_id.startsWith('https:')) {
+				return a.external_id
+			}
 			return `https://height.app/${a.external_id}`
 		case IntegrationType.GitHub:
+			return a.external_id
+		case IntegrationType.Jira:
+			return a.external_id
+		case IntegrationType.GitLab:
 			return a.external_id
 	}
 	return ''

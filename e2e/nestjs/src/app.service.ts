@@ -1,16 +1,58 @@
-import { Injectable } from '@nestjs/common'
-import { H } from '@highlight-run/nest'
+import { H } from '@highlight-run/nest';
+import { HttpService } from '@nestjs/axios';
+import { Injectable, Logger } from '@nestjs/common';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class AppService {
-	getHello(): string {
-		console.log('hello, world!')
-		console.warn('whoa there! ', Math.random())
-		if (Math.random() < 0.2) {
-			throw new Error(`a random error occurred! ${Math.random()}`)
-		} else if (Math.random() < 0.2) {
-			H.consumeError(new Error(`oh no! ${Math.random()}`))
-		}
-		return 'Hello World!'
-	}
+  private readonly logger = new Logger(AppService.name);
+  constructor(private readonly httpService: HttpService) {}
+
+  async findAll({
+    error,
+    empty,
+  }: {
+    error?: true;
+    empty?: true;
+  }): Promise<string[]> {
+    const { span } = H.startWithHeaders('making request now', {});
+    await firstValueFrom(
+      this.httpService.post<any[]>(
+        'https://pub.highlight.io/v1/logs/json',
+        {
+          message: 'yo!',
+          timestamp: new Date().toISOString(),
+          level: 'warning',
+        },
+        {
+          headers: {
+            'x-highlight-project': '2',
+            'x-highlight-service': 'nestjs-axios-request',
+          },
+        },
+      ),
+    );
+    span.end();
+
+    for (let i = 0; i < 10; i++) {
+      const { span: s } = H.startWithHeaders(
+        `another request ${i}`,
+        {},
+        {
+          attributes: { i },
+        },
+      );
+      console.log('hello, world!');
+      this.logger.log('hello, world!');
+      this.logger.warn('whoa there! ', Math.random());
+      s.end();
+    }
+    if (error) {
+      // error will be caught by the HighlightErrorFilter
+      throw new Error(`a random error occurred!`);
+    }
+    if (!empty) {
+      return [`Hello World!`];
+    }
+  }
 }

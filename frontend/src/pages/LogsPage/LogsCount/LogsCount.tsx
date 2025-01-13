@@ -1,76 +1,61 @@
-import LoadingBox from '@components/LoadingBox'
-import { useGetLogsTotalCountQuery } from '@graph/hooks'
-import { Box, Preset, Stack, Text } from '@highlight-run/ui'
-import { useNumericProjectId } from '@hooks/useProjectId'
-import { LOG_TIME_FORMAT } from '@pages/LogsPage/constants'
+import { Box, Stack, Text } from '@highlight-run/ui/components'
 import { formatDate } from '@pages/LogsPage/utils'
 import { formatNumber } from '@util/numbers'
 import moment from 'moment'
 import { useMemo } from 'react'
 
-import * as styles from './LogsCount.css'
+import { HistogramLoading } from '@/pages/Traces/TracesPage'
 
 const LogsCount = ({
-	query,
 	startDate,
 	endDate,
-	presets,
+	presetSelected,
+	totalCount,
+	loading,
 }: {
-	query: string
 	startDate: Date
 	endDate: Date
-	presets: Preset[]
+	presetSelected: boolean
+	totalCount: number | undefined
+	loading: boolean
 }) => {
-	const { projectId } = useNumericProjectId()
-	const { data: totalCount, loading: logCountLoading } =
-		useGetLogsTotalCountQuery({
-			variables: {
-				project_id: projectId!,
-				params: {
-					query,
-					date_range: {
-						start_date: moment(startDate).format(LOG_TIME_FORMAT),
-						end_date: moment(endDate).format(LOG_TIME_FORMAT),
-					},
-				},
-			},
-			skip: !projectId,
-		})
-
 	const dateLabel = useMemo(() => {
-		const isPreset = presets.find((preset) => {
-			return preset.startDate.getTime() === startDate.getTime()
-		})
-		if (isPreset) {
+		if (presetSelected) {
 			return `${formatDate(startDate)} to Now`
 		}
-		return `${formatDate(startDate)} to ${formatDate(endDate)}`
-	}, [endDate, presets, startDate])
+		return `${moment(startDate).format('M/D/YY h:mm:ss')} to ${formatDate(
+			endDate,
+		)}`
+	}, [endDate, startDate, presetSelected])
+
+	if (loading) {
+		return <HistogramLoading style={{ padding: '6px 0 12px 10px' }} />
+	}
 
 	return (
 		<Stack
 			direction="row"
 			gap="8"
-			px="12"
-			py="8"
+			pt="4"
+			pb="8"
+			px="10"
 			align="center"
-			cssClass={styles.container}
+			style={{ height: 32 }}
 		>
-			{logCountLoading ? (
-				<LoadingBox justifyContent="flex-start" />
-			) : (
-				totalCount && (
-					<>
+			{totalCount !== undefined ? (
+				<>
+					<Box display="flex" gap="4" flexDirection="row">
 						<Text size="xSmall" color="weak">
-							{formatNumber(totalCount.logs_total_count)} logs
+							{formatNumber(totalCount)} Log
+							{totalCount !== 1 ? 's' : ''}
 						</Text>
-						<Box br="dividerWeak" height="full" />
-						<Text size="xSmall" color="weak">
-							{dateLabel}
-						</Text>
-					</>
-				)
-			)}
+					</Box>
+					<Box br="dividerWeak" style={{ height: 20 }} />
+					<Text size="xSmall" color="weak">
+						{dateLabel}
+					</Text>
+				</>
+			) : null}
 		</Stack>
 	)
 }

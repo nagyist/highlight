@@ -1,6 +1,7 @@
-import { EventType } from '@highlight-run/rrweb'
-import { eventWithTime } from '@highlight-run/rrweb-types'
 import { HighlightEvent } from '@pages/Player/HighlightEvent'
+import { eventWithTime } from '@rrweb/types'
+import { EventType } from 'rrweb'
+import { ViewportResizeListenerArgs } from '@highlight-run/client/src/listeners/viewport-resize-listener'
 
 // used in filter() type methods to fetch events we want
 export const usefulEvent = (e: eventWithTime): boolean => {
@@ -17,18 +18,21 @@ export const usefulEvent = (e: eventWithTime): boolean => {
 export const getFilteredEvents = (
 	searchQuery: string,
 	events: HighlightEvent[],
-	eventTypeFilters: any,
+	eventTypeFilters: Set<string>,
 ) => {
 	const normalizedSearchQuery = searchQuery.toLocaleLowerCase()
 	const searchTokens = normalizedSearchQuery.split(' ')
 
 	return events.filter((event) => {
-		if (event.type === EventType.Custom) {
+		if (
+			event.type === EventType.Custom &&
+			eventTypeFilters.has(event.data.tag)
+		) {
+			if (!searchQuery) {
+				return true
+			}
 			switch (event.data.tag) {
 				case 'Identify':
-					if (!eventTypeFilters.showIdentify) {
-						return false
-					}
 					try {
 						const userObject = JSON.parse(
 							event.data.payload as string,
@@ -38,7 +42,7 @@ export const getFilteredEvents = (
 						/**
 						 * For user properties, we allow for searching by the key.
 						 */
-						const matchedKey = searchTokens.some((searchToken) => {
+						const matchedKey = searchTokens.every((searchToken) => {
 							return keys.some((key) =>
 								key.toLocaleLowerCase().includes(searchToken),
 							)
@@ -48,7 +52,7 @@ export const getFilteredEvents = (
 							matchedKey ||
 							keys.some((key) => {
 								if (typeof userObject[key] === 'string') {
-									return searchTokens.some((searchToken) => {
+									return searchTokens.every((searchToken) => {
 										return userObject[key]
 											.toLowerCase()
 											.includes(searchToken)
@@ -61,9 +65,6 @@ export const getFilteredEvents = (
 						return false
 					}
 				case 'Track':
-					if (!eventTypeFilters.showTrack) {
-						return false
-					}
 					try {
 						const trackProperties = JSON.parse(
 							event.data.payload as string,
@@ -73,7 +74,7 @@ export const getFilteredEvents = (
 						/**
 						 * For track properties, we allow for searching by the key.
 						 */
-						const matchedKey = searchTokens.some((searchToken) => {
+						const matchedKey = searchTokens.every((searchToken) => {
 							return keys.some((key) =>
 								key.toLocaleLowerCase().includes(searchToken),
 							)
@@ -83,7 +84,7 @@ export const getFilteredEvents = (
 							matchedKey ||
 							keys.some((key) => {
 								if (typeof trackProperties[key] === 'string') {
-									return searchTokens.some((searchToken) => {
+									return searchTokens.every((searchToken) => {
 										return trackProperties[key]
 											.toLowerCase()
 											.includes(searchToken)
@@ -95,20 +96,7 @@ export const getFilteredEvents = (
 					} catch (e) {
 						return false
 					}
-				case 'Viewport':
-					if (!eventTypeFilters.showViewport) {
-						return false
-					}
-					return 'viewport'.includes(normalizedSearchQuery)
-				case 'WebVital':
-					if (!eventTypeFilters.showWebVitals) {
-						return false
-					}
-					return 'web vitals'.includes(normalizedSearchQuery)
 				case 'Segment':
-					if (!eventTypeFilters.showSegment) {
-						return false
-					}
 					try {
 						const userObject = JSON.parse(
 							event.data.payload as string,
@@ -117,7 +105,7 @@ export const getFilteredEvents = (
 
 						return keys.some((key) => {
 							if (typeof userObject[key] === 'string') {
-								return searchTokens.some((searchToken) => {
+								return searchTokens.every((searchToken) => {
 									return userObject[key]
 										.toLowerCase()
 										.includes(searchToken)
@@ -128,59 +116,64 @@ export const getFilteredEvents = (
 					} catch (e) {
 						return false
 					}
-				case 'Focus':
-					if (!eventTypeFilters.showFocus) {
-						return false
-					}
-					return searchTokens.some((searchToken) => {
-						return (event.data.payload as string)
-							.toLowerCase()
-							.includes(searchToken)
-					})
-				case 'Navigate':
-					if (!eventTypeFilters.showNavigate) {
-						return false
-					}
-					return searchTokens.some((searchToken) => {
-						return (event.data.payload as string)
-							.toLowerCase()
-							.includes(searchToken)
-					})
-				case 'Referrer':
-					if (!eventTypeFilters.showReferrer) {
-						return false
-					}
-					return searchTokens.some((searchToken) => {
-						return (event.data.payload as string)
-							.toLowerCase()
-							.includes(searchToken)
-					})
-				case 'Click':
-					if (!eventTypeFilters.showClick) {
-						return false
-					}
-					return searchTokens.some((searchToken) => {
-						return (event.data.payload as string)
-							.toLowerCase()
-							.includes(searchToken)
-					})
-				case 'Reload':
-					if (!eventTypeFilters.showReload) {
-						return false
-					}
-					return searchTokens.some((searchToken) => {
-						return (event.data.payload as string)
-							.toLowerCase()
-							.includes(searchToken)
+				case 'Viewport':
+					const viewportPayload = event.data
+						.payload as ViewportResizeListenerArgs
+					const keys = Object.keys(
+						viewportPayload,
+					) as (keyof ViewportResizeListenerArgs)[]
+					return keys.some((key) => {
+						return searchTokens.every((searchToken) => {
+							return (
+								key.toLowerCase().includes(searchToken) ||
+								viewportPayload[key]
+									.toString()
+									.includes(searchToken)
+							)
+						})
 					})
 				case 'Web Vitals':
-					return eventTypeFilters.showWebVitals
-				case 'Performance':
+					const { vitals } = event.data.payload as {
+						vitals: {
+							name: string
+							value: number
+						}[]
+					}
+					return vitals.some(({ name, value }) => {
+						return searchTokens.every((searchToken) => {
+							return (
+								name.toLowerCase().includes(searchToken) ||
+								value.toString().includes(searchToken)
+							)
+						})
+					})
+				case 'Click':
+					const clickPayload = event.data.payload as {
+						clickTextContent?: string
+						clickTarget?: string
+						clickSelector?: string
+					}
+					return searchTokens.every((searchToken) => {
+						return [
+							clickPayload.clickTextContent,
+							clickPayload.clickTarget,
+							clickPayload.clickSelector,
+						].some((clickValue) => {
+							return clickValue
+								? clickValue.toLowerCase().includes(searchToken)
+								: false
+						})
+					})
+				case 'RageClicks':
+					return false
+				case 'TabHidden':
 					return false
 				default:
-					return event.data.tag
-						.toLocaleLowerCase()
-						.includes(normalizedSearchQuery)
+					return searchTokens.every((searchToken) => {
+						return (event.data.payload as string)
+							.toLowerCase()
+							.includes(searchToken)
+					})
 			}
 		}
 	})

@@ -1,15 +1,15 @@
+import { Meta } from '@storybook/react'
 import React from 'react'
-import { ComponentMeta } from '@storybook/react'
 
-import { Callout, Props as CalloutProps } from './Callout'
-import { Text } from '../Text/Text'
 import { Box } from '../Box/Box'
 import { Button } from '../Button/Button'
+import { Text } from '../Text/Text'
+import { Callout, Props as CalloutProps } from './Callout'
 
 export default {
 	title: 'Components/Callout',
 	component: Callout,
-} as ComponentMeta<typeof Callout>
+} as Meta<typeof Callout>
 
 const Content: React.FC<{
 	kind: CalloutProps['kind']

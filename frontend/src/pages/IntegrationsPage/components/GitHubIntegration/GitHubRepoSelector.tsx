@@ -1,16 +1,17 @@
-import Select from '@components/Select/Select'
-import { Form, Text } from '@highlight-run/ui'
+import { Form } from '@highlight-run/ui/components'
 import {
 	GitHubRepoSelectionKey,
 	useGitHubIntegration,
 } from '@pages/IntegrationsPage/components/GitHubIntegration/utils'
-import * as style from '@pages/IntegrationsPage/components/style.css'
 import { ContainerSelectionProps } from '@pages/IntegrationsPage/IssueTrackerIntegrations'
 import useLocalStorage from '@rehooks/local-storage'
 import { useEffect, useMemo } from 'react'
 
+import { OptionDropdown } from '@/pages/Graphing/OptionDropdown'
+
 const GitHubRepoSelector: React.FC<ContainerSelectionProps> = ({
 	setSelectionId,
+	disabled,
 }) => {
 	const { data } = useGitHubIntegration()
 
@@ -19,11 +20,7 @@ const GitHubRepoSelector: React.FC<ContainerSelectionProps> = ({
 			data?.github_repos?.map((repo) => ({
 				value: repo.name,
 				id: repo.name,
-				displayValue: (
-					<Text size="small" weight="medium">
-						{repo.name}
-					</Text>
-				),
+				name: repo.name,
 			})) || []
 		)
 	}, [data])
@@ -51,15 +48,12 @@ const GitHubRepoSelector: React.FC<ContainerSelectionProps> = ({
 	])
 
 	return (
-		<Form.NamedSection label="GitHub Repository" name="githubRepo">
-			<Select
-				aria-label="GitHub Repository"
-				placeholder="Choose a repo to create the issue in"
+		<Form.NamedSection label="Repository" name="githubRepo">
+			<OptionDropdown
 				options={githubReposOptions}
-				onChange={setGitHubRepoId}
-				value={selectedGitHubRepoId}
-				notFoundContent={<p>No repos found</p>}
-				className={style.selectContainer}
+				selection={selectedGitHubRepoId}
+				setSelection={setGitHubRepoId}
+				disabled={disabled}
 			/>
 		</Form.NamedSection>
 	)

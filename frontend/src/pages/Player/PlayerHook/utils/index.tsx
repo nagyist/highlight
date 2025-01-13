@@ -1,15 +1,16 @@
+import { toast } from '@components/Toaster'
 import { useGetErrorObjectQuery } from '@graph/hooks'
 import { ErrorObject, Session, SessionComment } from '@graph/schemas'
-import { EventType, Replayer } from '@highlight-run/rrweb'
-import { playerMetaData, SessionInterval } from '@highlight-run/rrweb-types'
 import { mui4Synder } from '@pages/Player/PlayerHook/utils/mui'
+import { playerMetaData, SessionInterval } from '@rrweb/types'
 import { clamp } from '@util/numbers'
 import { MillisToMinutesAndSeconds } from '@util/time'
-import { message } from 'antd'
 import moment from 'moment'
 import { useCallback, useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import { NavigateFunction } from 'react-router-dom'
+import { NavigateFunction, useLocation } from 'react-router-dom'
+import { EventType, Replayer } from 'rrweb'
+
+import { useRelatedResource } from '@/components/RelatedResources/hooks'
 
 import { HighlightEvent } from '../../HighlightEvent'
 import {
@@ -87,14 +88,14 @@ const getIntervalWithPercentages = (
 		idx,
 		percent: i.active
 			? // Round each interval size to a multiple of INACTIVE_THRESHOLD
-			  Math.round(
+				Math.round(
 					Math.max(
 						(i.duration * activePercent) /
 							activeDuration /
 							INACTIVE_THRESHOLD,
 						1,
 					),
-			  ) * INACTIVE_THRESHOLD
+				) * INACTIVE_THRESHOLD
 			: INACTIVE_THRESHOLD,
 	}))
 
@@ -147,6 +148,8 @@ export enum PlayerSearchParameters {
 	commentId = 'commentId',
 	/** Whether to mark the comment thread as muted.*/
 	muted = 'muted',
+	/** Whether to show the search side panel. Shown by default. */
+	search = 'search',
 }
 
 export const useLinkErrorInstance = () => {
@@ -168,10 +171,25 @@ export const useLinkErrorInstance = () => {
 
 export const useLinkLogCursor = () => {
 	const location = useLocation()
+	const { resource } = useRelatedResource()
 	const searchParams = new URLSearchParams(location.search)
-	const logCursor = searchParams.get(PlayerSearchParameters.log)
+	const logCursor =
+		resource?.type === 'session'
+			? (resource.log ?? null)
+			: searchParams.get(PlayerSearchParameters.log)
+
 	return {
 		logCursor,
+	}
+}
+
+export const useShowSearchParam = () => {
+	const location = useLocation()
+	const searchParams = new URLSearchParams(location.search)
+	const searchParam = searchParams.get(PlayerSearchParameters.search)
+
+	return {
+		showSearch: searchParam !== 'false',
 	}
 }
 
@@ -220,15 +238,21 @@ export const useSetPlayerTimestampFromSearchParam = (
 				searchParamsObject.get(PlayerSearchParameters.tsAbs)
 			) {
 				const startTimestamp = moment(sessionStartTimeMilliseconds)
-				const absoluteTimestamp = moment(
-					searchParamsObject.get(
-						PlayerSearchParameters.tsAbs,
-					) as string,
+				const tsParam = searchParamsObject.get(
+					PlayerSearchParameters.tsAbs,
 				)
-				const relativeTimestampMilliseconds = absoluteTimestamp.diff(
-					startTimestamp,
-					'milliseconds',
-				)
+
+				// Sometimes we have a timestamp in milliseconds, other times it's a
+				// formatted time string. This accounts for both cases. I believe
+				// formatted time strings are built in the client, and millisecond
+				// values are being sent in alerts.
+				const absoluteTimestamp = isNaN(Number(tsParam))
+					? tsParam
+					: Number(tsParam)
+
+				const relativeTimestampMilliseconds = moment(
+					absoluteTimestamp,
+				).diff(startTimestamp, 'milliseconds')
 
 				setTime(relativeTimestampMilliseconds)
 				setHasSearchParam(true)
@@ -248,7 +272,7 @@ export const useSetPlayerTimestampFromSearchParam = (
 						// If requestId is defined, time will be set based on the network request instead
 						if (!error.request_id) {
 							setTime(sessionTime)
-							message.success(
+							toast.success(
 								`Changed player time to where error was thrown at ${MillisToMinutesAndSeconds(
 									sessionTime,
 								)}.`,
@@ -628,13 +652,13 @@ export const changeSession = (
 	successMessageText?: string,
 ) => {
 	if (!session) {
-		message.success('No more sessions to play.')
+		toast.success('No more sessions to play.')
 		return
 	}
 
 	navigate(`/${projectId}/sessions/${session.secure_id}`)
 	if (successMessageText?.length) {
-		message.success(successMessageText)
+		toast.success(successMessageText)
 	}
 }
 

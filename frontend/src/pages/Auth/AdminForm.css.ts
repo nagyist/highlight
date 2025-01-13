@@ -1,4 +1,4 @@
-import { vars } from '@highlight-run/ui'
+import { vars } from '@highlight-run/ui/vars'
 import { style } from '@vanilla-extract/css'
 
 export const select = style({
@@ -27,6 +27,15 @@ export const select = style({
 		},
 		'&:focus': {
 			border: vars.border.secondaryPressed,
+		},
+	},
+})
+
+export const lastName = style({
+	borderTop: 0,
+	selectors: {
+		'&:focus, &:hover': {
+			borderTop: `0 !important`,
 		},
 	},
 })

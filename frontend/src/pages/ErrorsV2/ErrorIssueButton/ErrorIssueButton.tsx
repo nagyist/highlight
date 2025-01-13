@@ -8,15 +8,17 @@ import {
 import { GetErrorGroupQuery, namedOperations } from '@graph/operations'
 import { ExternalAttachment, IntegrationType } from '@graph/schemas'
 import {
+	Box,
 	IconSolidCheveronRight,
 	IconSolidClipboardCopy,
 	IconSolidDocumentAdd,
 	IconSolidExternalLink,
 	IconSolidPlusSm,
 	IconSolidTrash,
-	vars,
-} from '@highlight-run/ui'
-import { Box, Menu, Text } from '@highlight-run/ui'
+	Menu,
+	Text,
+} from '@highlight-run/ui/components'
+import { vars } from '@highlight-run/ui/vars'
 import { useProjectId } from '@hooks/useProjectId'
 import { useIsProjectIntegratedWith } from '@pages/IntegrationsPage/components/common/useIsProjectIntegratedWith'
 import { useGitHubIntegration } from '@pages/IntegrationsPage/components/GitHubIntegration/utils'
@@ -24,14 +26,19 @@ import { useLinearIntegration } from '@pages/IntegrationsPage/components/LinearI
 import {
 	CLICKUP_INTEGRATION,
 	GITHUB_INTEGRATION,
+	GITLAB_INTEGRATION,
 	HEIGHT_INTEGRATION,
+	JIRA_INTEGRATION,
 	LINEAR_INTEGRATION,
 } from '@pages/IntegrationsPage/Integrations'
 import { IssueTrackerIntegration } from '@pages/IntegrationsPage/IssueTrackerIntegrations'
 import { getErrorBody } from '@util/errors/errorUtils'
 import { copyToClipboard } from '@util/string'
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+
+import { useGitlabIntegration } from '@/pages/IntegrationsPage/components/GitlabIntegration/utils'
+import { useJiraIntegration } from '@/pages/IntegrationsPage/components/JiraIntegration/utils'
 
 import * as style from './style.css'
 interface Props {
@@ -44,6 +51,9 @@ const ErrorIssueButton = ({ errorGroup }: Props) => {
 
 	const { isLinearIntegratedWithProject, loading: isLoadingLinear } =
 		useLinearIntegration()
+
+	const { settings: jiraSettings } = useJiraIntegration()
+	const { settings: gitlabSettings } = useGitlabIntegration()
 
 	const { isIntegrated: isClickupIntegrated, loading: isLoadingClickUp } =
 		useIsProjectIntegratedWith(IntegrationType.ClickUp)
@@ -70,6 +80,8 @@ const ErrorIssueButton = ({ errorGroup }: Props) => {
 		useMemo(
 			() => [
 				[isLinearIntegratedWithProject, LINEAR_INTEGRATION],
+				[jiraSettings.isIntegrated, JIRA_INTEGRATION],
+				[gitlabSettings.isIntegrated, GITLAB_INTEGRATION],
 				[isClickupIntegrated, CLICKUP_INTEGRATION],
 				[isHeightIntegrated, HEIGHT_INTEGRATION],
 				[githubSettings.isIntegrated, GITHUB_INTEGRATION],
@@ -77,8 +89,10 @@ const ErrorIssueButton = ({ errorGroup }: Props) => {
 			[
 				isClickupIntegrated,
 				isLinearIntegratedWithProject,
+				jiraSettings.isIntegrated,
 				isHeightIntegrated,
 				githubSettings.isIntegrated,
+				gitlabSettings.isIntegrated,
 			],
 		)
 
@@ -95,6 +109,8 @@ const ErrorIssueButton = ({ errorGroup }: Props) => {
 
 	const isLoading =
 		isLoadingLinear ||
+		jiraSettings.loading ||
+		gitlabSettings.loading ||
 		isLoadingClickUp ||
 		isLoadingHeight ||
 		githubSettings.loading ||

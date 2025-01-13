@@ -15,6 +15,15 @@ func newMessageEmbed() *discordgo.MessageEmbed {
 	}
 }
 
+var RED_ALERT = 0x961e13
+var YELLOW_ALERT = 0xf2c94c
+
+var highlightEmoji = discordgo.ComponentEmoji{
+	Name:     "highlight",
+	ID:       "1094349627953778788",
+	Animated: false,
+}
+
 func (bot *Bot) SendErrorAlert(channelId string, payload integrations.ErrorAlertPayload) error {
 	fields := []*discordgo.MessageEmbedField{}
 
@@ -43,9 +52,22 @@ func (bot *Bot) SendErrorAlert(channelId string, payload integrations.ErrorAlert
 	})
 
 	embed := newMessageEmbed()
-	embed.Title = "Highlight Error Alert"
+	if payload.FirstTimeAlert {
+		embed.Title = "Highlight Error Alert (New Occurence ❇️)"
+		embed.Color = YELLOW_ALERT
+	} else {
+		embed.Title = "Highlight Error Alert"
+		embed.Color = RED_ALERT
+	}
+
 	embed.Description = payload.UserIdentifier
 	embed.Fields = fields
+
+	sessionLabel := "View Session"
+	displayMissingSessionLabel := payload.SessionSecureID == "" || payload.SessionExcluded
+	if displayMissingSessionLabel {
+		sessionLabel = "No recorded session"
+	}
 
 	messageSend := discordgo.MessageSend{
 		Embeds: []*discordgo.MessageEmbed{
@@ -55,12 +77,14 @@ func (bot *Bot) SendErrorAlert(channelId string, payload integrations.ErrorAlert
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
 					discordgo.Button{
-						Label:    "View Session",
+						Emoji:    highlightEmoji,
+						Label:    sessionLabel,
 						Style:    discordgo.LinkButton,
-						Disabled: false,
+						Disabled: displayMissingSessionLabel,
 						URL:      payload.SessionURL,
 					},
 					discordgo.Button{
+						Emoji:    highlightEmoji,
 						Label:    "View Error",
 						Style:    discordgo.LinkButton,
 						Disabled: false,
@@ -71,18 +95,21 @@ func (bot *Bot) SendErrorAlert(channelId string, payload integrations.ErrorAlert
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
 					discordgo.Button{
+						Emoji:    highlightEmoji,
 						Label:    "Resolve Error",
 						Style:    discordgo.LinkButton,
 						Disabled: false,
 						URL:      payload.ErrorResolveURL,
 					},
 					discordgo.Button{
+						Emoji:    highlightEmoji,
 						Label:    "Ignore Error",
 						Style:    discordgo.LinkButton,
 						Disabled: false,
 						URL:      payload.ErrorIgnoreURL,
 					},
 					discordgo.Button{
+						Emoji:    highlightEmoji,
 						Label:    "Snooze Error",
 						Style:    discordgo.LinkButton,
 						Disabled: false,
@@ -126,6 +153,7 @@ func (bot *Bot) SendNewUserAlert(channelId string, payload integrations.NewUserA
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
 					discordgo.Button{
+						Emoji:    highlightEmoji,
 						Label:    "View Session",
 						Style:    discordgo.LinkButton,
 						Disabled: false,
@@ -178,6 +206,7 @@ func (bot *Bot) SendNewSessionAlert(channelId string, payload integrations.NewSe
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
 					discordgo.Button{
+						Emoji:    highlightEmoji,
 						Label:    "View Session",
 						Style:    discordgo.LinkButton,
 						Disabled: false,
@@ -258,6 +287,7 @@ func (bot *Bot) SendUserPropertiesAlert(channelId string, payload integrations.U
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
 					discordgo.Button{
+						Emoji:    highlightEmoji,
 						Label:    "View Session",
 						Style:    discordgo.LinkButton,
 						Disabled: false,
@@ -294,6 +324,7 @@ func (bot *Bot) SendErrorFeedbackAlert(channelId string, payload integrations.Er
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
 					discordgo.Button{
+						Emoji:    highlightEmoji,
 						Label:    "View Comment",
 						Style:    discordgo.LinkButton,
 						Disabled: false,
@@ -337,6 +368,7 @@ func (bot *Bot) SendRageClicksAlert(channelId string, payload integrations.RageC
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
 					discordgo.Button{
+						Emoji:    highlightEmoji,
 						Label:    "View Session",
 						Style:    discordgo.LinkButton,
 						Disabled: false,
@@ -380,6 +412,7 @@ func (bot *Bot) SendMetricMonitorAlert(channelId string, payload integrations.Me
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
 					discordgo.Button{
+						Emoji:    highlightEmoji,
 						Label:    "View Monitor",
 						Style:    discordgo.LinkButton,
 						Disabled: false,
@@ -425,6 +458,7 @@ func (bot *Bot) SendLogAlert(channelId string, payload integrations.LogAlertPayl
 
 	embed := newMessageEmbed()
 	embed.Title = "Highlight Log Alert"
+	embed.Color = RED_ALERT
 	embed.Description = fmt.Sprintf("*%s* is currently %s the threshold.", payload.Name, aboveStr)
 	embed.Fields = fields
 
@@ -436,6 +470,7 @@ func (bot *Bot) SendLogAlert(channelId string, payload integrations.LogAlertPayl
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
 					discordgo.Button{
+						Emoji:    highlightEmoji,
 						Label:    "View Logs",
 						Style:    discordgo.LinkButton,
 						Disabled: false,

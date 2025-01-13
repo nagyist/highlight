@@ -1,0 +1,16 @@
+{
+	"name": "mock-otel-server",
+	"main": "src/index.ts",
+	"private": true,
+	"type": "module",
+	"packageManager": "yarn@3.5.0",
+	"dependencies": {
+		"express": "^4.19.2"
+	},
+	"scripts": {
+		"start": "tsx src/index.ts --start"
+	},
+	"devDependencies": {
+		"tsx": "^4.6.2"
+	}
+}

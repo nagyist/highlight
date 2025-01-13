@@ -1,8 +1,9 @@
-import { RecipeVariants, recipe } from '@vanilla-extract/recipes'
 import { createStyleObject } from '@capsizecss/core'
-import fontMetrics from '@capsizecss/metrics/inter'
 import plexoFontMetrics from '@capsizecss/metrics/iBMPlexMono'
+import fontMetrics from '@capsizecss/metrics/inter'
 import { globalStyle } from '@vanilla-extract/css'
+import { recipe, RecipeVariants } from '@vanilla-extract/recipes'
+
 import { themeVars } from '../../css/theme.css'
 
 // Body
@@ -33,14 +34,14 @@ export const large = createStyleObject({
 })
 
 // Monospace
-const sMonotype = createStyleObject({
-	fontSize: 14,
+export const sMonotype = createStyleObject({
+	fontSize: 13,
 	leading: 20,
 	fontMetrics: plexoFontMetrics,
 })
 const xsMonotype = createStyleObject({
 	fontSize: 11,
-	leading: 23,
+	leading: 16,
 	fontMetrics: plexoFontMetrics,
 })
 const xxsMonotype = createStyleObject({
@@ -50,8 +51,9 @@ const xxsMonotype = createStyleObject({
 })
 
 const mainFontFamily = 'Inter'
+const monospaceFontFamily = 'IBM Plex Mono'
 
-const family = {
+export const family = {
 	body: {
 		fontFamily: `${mainFontFamily}, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol`,
 	},
@@ -59,8 +61,7 @@ const family = {
 		fontFamily: `${mainFontFamily}, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, sans-serif`,
 	},
 	monospace: {
-		fontFamily:
-			'IBM Plex Mono, Menlo, DejaVu Sans Mono, Bitstream Vera Sans Mono, Courier, monospace',
+		fontFamily: `${monospaceFontFamily}, Menlo, DejaVu Sans Mono, Bitstream Vera Sans Mono, Courier, monospace`,
 	},
 } as const
 
@@ -72,10 +73,16 @@ const size = {
 	large: large,
 } as const
 
+export const fontWeights = {
+	regular: '400',
+	medium: '500',
+	bold: '600',
+} as const
+
 const weight = {
-	regular: { fontWeight: '400' },
-	medium: { fontWeight: '500' },
-	bold: { fontWeight: '600' },
+	regular: { fontWeight: fontWeights.regular },
+	medium: { fontWeight: fontWeights.medium },
+	bold: { fontWeight: fontWeights.bold },
 } as const
 
 export const typographyStyles = {
@@ -124,15 +131,15 @@ export const variants = recipe({
 	compoundVariants: [
 		{
 			variants: { family: 'monospace', size: 'small' },
-			style: sMonotype,
+			style: { ...sMonotype, letterSpacing: -0.4 },
 		},
 		{
 			variants: { family: 'monospace', size: 'xSmall' },
-			style: xsMonotype,
+			style: { ...xsMonotype, letterSpacing: -0.4 },
 		},
 		{
 			variants: { family: 'monospace', size: 'xxSmall' },
-			style: xxsMonotype,
+			style: { ...xxsMonotype, letterSpacing: -0.4 },
 		},
 	],
 
@@ -149,6 +156,6 @@ export type Variants = RecipeVariants<typeof variants>
 // global styles to be injected.
 globalStyle('body', {
 	color: themeVars.static.content.default,
-	fontFeatureSettings: "'tnum' 0", // disable tabular numbers
+	fontFeatureSettings: '"tnum" off', // disable tabular numbers
 	...typographyStyles.family.body,
 })

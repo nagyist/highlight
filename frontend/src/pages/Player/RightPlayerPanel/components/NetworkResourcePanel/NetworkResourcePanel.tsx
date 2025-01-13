@@ -7,34 +7,38 @@ import {
 	Heading,
 	IconSolidArrowCircleRight,
 	IconSolidX,
-	sprinkles,
 	Tabs,
 	Tag,
 	Text,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
+import { sprinkles } from '@highlight-run/ui/sprinkles'
 import usePlayerConfiguration from '@pages/Player/PlayerHook/utils/usePlayerConfiguration'
 import { useReplayerContext } from '@pages/Player/ReplayerContext'
 import { useResourcesContext } from '@pages/Player/ResourcesContext/ResourcesContext'
 import { NetworkResource } from '@pages/Player/Toolbar/DevToolsWindowV2/utils'
 import analytics from '@util/analytics'
-import { playerTimeToSessionAbsoluteTime } from '@util/session/utils'
 import { MillisToMinutesAndSeconds } from '@util/time'
+import moment from 'moment'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 
+import { TIME_FORMAT } from '@/components/Search/SearchForm/constants'
 import { useActiveNetworkResourceId } from '@/hooks/useActiveNetworkResourceId'
+import { useProjectId } from '@/hooks/useProjectId'
 import { NetworkResourceErrors } from '@/pages/Player/RightPlayerPanel/components/NetworkResourcePanel/NetworkResourceErrors'
 import { NetworkResourceInfo } from '@/pages/Player/RightPlayerPanel/components/NetworkResourcePanel/NetworkResourceInfo'
 import { NetworkResourceLogs } from '@/pages/Player/RightPlayerPanel/components/NetworkResourcePanel/NetworkResourceLogs'
+import { NetworkResourceTrace } from '@/pages/Player/RightPlayerPanel/components/NetworkResourcePanel/NetworkResourceTrace'
 import { WebSocketMessages } from '@/pages/Player/RightPlayerPanel/components/WebSocketMessages/WebSocketMessages'
 import { useWebSocket } from '@/pages/Player/WebSocketContext/WebSocketContext'
-
-import * as styles from './NetworkResourcePanel.css'
+import { useSessionParams } from '@/pages/Sessions/utils'
+import { TraceProvider } from '@/pages/Traces/TraceProvider'
 
 enum NetworkRequestTabs {
 	Info = 'Info',
 	Errors = 'Errors',
 	Logs = 'Logs',
+	Trace = 'Trace',
 }
 
 enum WebSocketTabs {
@@ -43,7 +47,9 @@ enum WebSocketTabs {
 }
 
 export const NetworkResourcePanel = () => {
-	const networkResourceDialog = Ariakit.useDialogState()
+	const { inPanel } = useSessionParams()
+	const networkResourceDialog = Ariakit.useDialogStore()
+	const networkResourceDialogState = networkResourceDialog.getState()
 	const { activeNetworkResourceId, setActiveNetworkResourceId } =
 		useActiveNetworkResourceId()
 
@@ -61,30 +67,35 @@ export const NetworkResourcePanel = () => {
 	useHotkeys('Escape', hide, [])
 
 	useEffect(() => {
+		if (!resources?.length) {
+			return
+		}
+
 		if (resource?.id !== undefined) {
 			networkResourceDialog.show()
 		} else {
 			hide()
 		}
-	}, [hide, networkResourceDialog, resource?.id])
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [resource?.id])
 
 	// Close the dialog and reset the active resource when the user interacts with
 	// the page outside the dialog.
-	const previousVisibleRef = React.useRef(networkResourceDialog.open)
+	const previousVisibleRef = React.useRef(networkResourceDialogState.open)
 	useEffect(() => {
 		if (
-			previousVisibleRef.current !== networkResourceDialog.open &&
-			!networkResourceDialog.open
+			previousVisibleRef.current !== networkResourceDialogState.open &&
+			!networkResourceDialogState.open
 		) {
 			hide()
 		}
 
-		previousVisibleRef.current = networkResourceDialog.open
-	}, [hide, networkResourceDialog.open])
+		previousVisibleRef.current = networkResourceDialogState.open
+	}, [hide, networkResourceDialogState.open])
 
 	return (
 		<Ariakit.Dialog
-			state={networkResourceDialog}
+			store={networkResourceDialog}
 			modal={false}
 			autoFocusOnShow={false}
 			className={sprinkles({
@@ -92,17 +103,17 @@ export const NetworkResourcePanel = () => {
 				display: 'flex',
 				flexDirection: 'column',
 				border: 'dividerWeak',
-				borderTopRightRadius: '6',
-				borderBottomRightRadius: '6',
+				borderTopRightRadius: inPanel ? undefined : '6',
+				borderBottomRightRadius: inPanel ? undefined : '6',
 				boxShadow: 'small',
 				overflow: 'hidden',
 			})}
 			style={{
-				width: '45%',
-				minWidth: 400,
-				right: 8,
-				top: 8,
-				bottom: 8,
+				width: '50%',
+				minWidth: 500,
+				right: inPanel ? 0 : 8,
+				top: inPanel ? 0 : 8,
+				bottom: inPanel ? 0 : 8,
 				zIndex: 8,
 				position: 'absolute',
 			}}
@@ -124,6 +135,10 @@ function NetworkResourceDetails({
 	resource: NetworkResource
 	hide: () => void
 }) {
+	const { projectId } = useProjectId()
+	const traceId = useMemo(() => {
+		return resource?.requestResponsePairs?.request?.id
+	}, [resource?.requestResponsePairs?.request?.id])
 	const { resources } = useResourcesContext()
 	const [activeTab, setActiveTab] = useState<NetworkRequestTabs>(
 		NetworkRequestTabs.Info,
@@ -135,15 +150,24 @@ function NetworkResourceDetails({
 	} = useReplayerContext()
 	const { activeNetworkResourceId, setActiveNetworkResourceId } =
 		useActiveNetworkResourceId()
+	const isNetworkRequest =
+		resource?.initiatorType === 'fetch' || resource?.initiatorType === 'xhr'
 
 	const networkResources = useMemo(() => {
 		return (
-			(resources.map((event) => ({
-				...event,
-				timestamp: event.startTime,
-			})) as NetworkResource[]) ?? []
+			(resources.map((event) => {
+				// startTime used in highlight.run <8.8.0 for websocket events and <7.5.4 for requests
+				const resourceStartTime = event.startTimeAbs
+					? event.startTimeAbs - startTime
+					: event.startTime
+
+				return {
+					...event,
+					timestamp: resourceStartTime,
+				}
+			}) as NetworkResource[]) ?? []
 		)
-	}, [resources])
+	}, [resources, startTime])
 
 	const resourceIdx = resources.findIndex(
 		(r) => activeNetworkResourceId === r.id,
@@ -155,14 +179,17 @@ function NetworkResourceDetails({
 
 	const { showPlayerAbsoluteTime } = usePlayerConfiguration()
 	const timestamp = useMemo(() => {
-		return new Date(resource.startTime).getTime()
-	}, [resource.startTime])
+		// startTime used in highlight.run <8.8.0 for websocket events and <7.5.4 for requests
+		return resource.startTimeAbs
+			? resource.startTimeAbs
+			: startTime + resource.startTime
+	}, [resource.startTime, resource.startTimeAbs, startTime])
 
 	useHotkeys(
 		'h',
 		() => {
 			if (canMoveBackward) {
-				analytics.track('PrevNetworkResourceKeyboardShortcut')
+				analytics.track('session_prev-network-resource_hotkey')
 				setActiveNetworkResourceId(networkResources[prev].id)
 			}
 		},
@@ -173,18 +200,25 @@ function NetworkResourceDetails({
 		'l',
 		() => {
 			if (canMoveForward) {
-				analytics.track('NextNetworkResourceKeyboardShortcut')
+				analytics.track('session_next-network-resource_hotkey')
 				setActiveNetworkResourceId(networkResources[next].id)
 			}
 		},
 		[canMoveForward, next],
 	)
 
+	useEffect(() => {
+		setActiveTab(NetworkRequestTabs.Info)
+	}, [resource.id])
+
+	useEffect(() => {
+		analytics.track('session_network-resource_view')
+	}, [resource.id])
+
 	return (
 		<>
 			<Box
-				pl="12"
-				pr="8"
+				px="8"
 				py="6"
 				display="flex"
 				alignItems="center"
@@ -234,14 +268,13 @@ function NetworkResourceDetails({
 
 				<Box display="flex" alignItems="center" gap="4">
 					<Badge
-						label={String(
+						label={
 							showPlayerAbsoluteTime
-								? playerTimeToSessionAbsoluteTime({
-										sessionStartTime: startTime,
-										relativeTime: timestamp,
-								  })
-								: MillisToMinutesAndSeconds(timestamp),
-						)}
+								? moment(resource.timestamp).format('h:mm:ss A')
+								: MillisToMinutesAndSeconds(
+										resource.relativeStartTime,
+									)
+						}
 						size="medium"
 						shape="basic"
 						variant="gray"
@@ -256,6 +289,9 @@ function NetworkResourceDetails({
 						onClick={() => {
 							setTime(timestamp)
 							hide()
+							analytics.track(
+								'session_go-to-network-resource_click',
+							)
 						}}
 					>
 						Go to
@@ -263,43 +299,59 @@ function NetworkResourceDetails({
 				</Box>
 			</Box>
 
-			<Tabs<NetworkRequestTabs>
-				tab={activeTab}
-				setTab={(tab) => setActiveTab(tab)}
-				pages={{
-					[NetworkRequestTabs.Info]: {
-						page: (
-							<NetworkResourceInfo
-								selectedNetworkResource={resource}
-								networkRecordingEnabledForSession={
-									session?.enable_recording_network_contents ||
-									false
-								}
-							/>
-						),
-					},
-					[NetworkRequestTabs.Errors]: {
-						page: (
-							<NetworkResourceErrors
-								resource={resource}
-								hide={hide}
-							/>
-						),
-					},
-					[NetworkRequestTabs.Logs]: {
-						page: (
-							<NetworkResourceLogs
-								resource={resource}
-								sessionStartTime={startTime}
-							/>
-						),
-					},
+			<Tabs
+				selectedId={activeTab}
+				onChange={(id) => {
+					setActiveTab(id as NetworkRequestTabs)
 				}}
-				noHandle
-				containerClass={styles.container}
-				tabsContainerClass={styles.tabsContainer}
-				pageContainerClass={styles.pageContainer}
-			/>
+				scrollable
+			>
+				<Tabs.List px="8" gap="12">
+					<Tabs.Tab id={NetworkRequestTabs.Info}>Info</Tabs.Tab>
+					{isNetworkRequest && (
+						<>
+							<Tabs.Tab id={NetworkRequestTabs.Errors}>
+								Errors
+							</Tabs.Tab>
+							<Tabs.Tab id={NetworkRequestTabs.Logs}>
+								Logs
+							</Tabs.Tab>
+							<Tabs.Tab id={NetworkRequestTabs.Trace}>
+								Trace
+							</Tabs.Tab>
+						</>
+					)}
+				</Tabs.List>
+				<Tabs.Panel id={NetworkRequestTabs.Info} scrollable>
+					<NetworkResourceInfo
+						selectedNetworkResource={resource}
+						networkRecordingEnabledForSession={
+							session?.enable_recording_network_contents || false
+						}
+					/>
+				</Tabs.Panel>
+				<Tabs.Panel id={NetworkRequestTabs.Errors} scrollable>
+					<NetworkResourceErrors resource={resource} />
+				</Tabs.Panel>
+				<Tabs.Panel id={NetworkRequestTabs.Logs} scrollable>
+					<NetworkResourceLogs
+						resource={resource}
+						sessionStartTime={startTime}
+					/>
+				</Tabs.Panel>
+				{isNetworkRequest && (
+					<Tabs.Panel id={NetworkRequestTabs.Trace} scrollable>
+						<TraceProvider
+							projectId={projectId}
+							traceId={traceId}
+							secureSessionId={session?.secure_id}
+							timestamp={moment(timestamp).format(TIME_FORMAT)}
+						>
+							<NetworkResourceTrace />
+						</TraceProvider>
+					</Tabs.Panel>
+				)}
+			</Tabs>
 		</>
 	)
 }
@@ -325,12 +377,19 @@ function WebSocketDetails({
 
 	const networkResources = useMemo(() => {
 		return (
-			(resources.map((event) => ({
-				...event,
-				timestamp: event.startTime,
-			})) as NetworkResource[]) ?? []
+			(resources.map((event) => {
+				// startTime used in highlight.run <8.8.0 for websocket events and <7.5.4 for requests
+				const resourceStartTime = event.startTimeAbs
+					? event.startTimeAbs - startTime
+					: event.startTime
+
+				return {
+					...event,
+					timestamp: resourceStartTime,
+				}
+			}) as NetworkResource[]) ?? []
 		)
-	}, [resources])
+	}, [resources, startTime])
 
 	const resourceIdx = resources.findIndex(
 		(r) => activeNetworkResourceId === r.id,
@@ -342,8 +401,11 @@ function WebSocketDetails({
 
 	const { showPlayerAbsoluteTime } = usePlayerConfiguration()
 	const timestamp = useMemo(() => {
-		return new Date(resource.startTime).getTime()
-	}, [resource.startTime])
+		// startTime used in highlight.run <8.8.0 for websocket events and <7.5.4 for requests
+		return resource.startTimeAbs
+			? resource.startTimeAbs - startTime
+			: new Date(resource.startTime).getTime()
+	}, [resource.startTime, resource.startTimeAbs, startTime])
 
 	const { webSocketEvents, webSocketLoading } = useWebSocket(session)
 
@@ -373,7 +435,7 @@ function WebSocketDetails({
 		'h',
 		() => {
 			if (canMoveBackward) {
-				analytics.track('PrevNetworkResourceKeyboardShortcut')
+				analytics.track('session_prev-websocket-resource_hotkey')
 				setActiveNetworkResourceId(networkResources[prev].id)
 			}
 		},
@@ -384,12 +446,16 @@ function WebSocketDetails({
 		'l',
 		() => {
 			if (canMoveForward) {
-				analytics.track('NextNetworkResourceKeyboardShortcut')
+				analytics.track('session_next-websocket-resource_hotkey')
 				setActiveNetworkResourceId(networkResources[next].id)
 			}
 		},
 		[canMoveForward, next],
 	)
+
+	useEffect(() => {
+		analytics.track('session_websocket-resource_view')
+	}, [])
 
 	return (
 		<>
@@ -442,14 +508,13 @@ function WebSocketDetails({
 
 				<Box display="flex" alignItems="center" gap="4">
 					<Badge
-						label={String(
+						label={
 							showPlayerAbsoluteTime
-								? playerTimeToSessionAbsoluteTime({
-										sessionStartTime: startTime,
-										relativeTime: timestamp,
-								  })
-								: MillisToMinutesAndSeconds(timestamp),
-						)}
+								? moment(resource.timestamp).format('h:mm:ss A')
+								: MillisToMinutesAndSeconds(
+										resource.relativeStartTime,
+									)
+						}
 						size="medium"
 						shape="basic"
 						variant="gray"
@@ -470,35 +535,30 @@ function WebSocketDetails({
 				</Box>
 			</Box>
 
-			<Tabs<WebSocketTabs>
-				tab={activeTab}
-				setTab={(tab) => setActiveTab(tab)}
-				pages={{
-					[WebSocketTabs.Headers]: {
-						page: (
-							<NetworkResourceInfo
-								selectedNetworkResource={resource}
-								networkRecordingEnabledForSession={
-									session?.enable_recording_network_contents ||
-									false
-								}
-							/>
-						),
-					},
-					[WebSocketTabs.Messages]: {
-						page: (
-							<WebSocketMessages
-								startEvent={resource}
-								eventsLoading={webSocketLoading}
-								events={selectedWebSocketEvents}
-							/>
-						),
-					},
-				}}
-				noHandle
-				tabsContainerClass={styles.tabsContainer}
-				pageContainerClass={styles.pageContainer}
-			/>
+			<Tabs
+				selectedId={activeTab}
+				onChange={(id) => setActiveTab(id as WebSocketTabs)}
+			>
+				<Tabs.List px="8" gap="12">
+					<Tabs.Tab id={WebSocketTabs.Headers}>Headers</Tabs.Tab>
+					<Tabs.Tab id={WebSocketTabs.Messages}>Messages</Tabs.Tab>
+				</Tabs.List>
+				<Tabs.Panel id={WebSocketTabs.Headers}>
+					<NetworkResourceInfo
+						selectedNetworkResource={resource}
+						networkRecordingEnabledForSession={
+							session?.enable_recording_network_contents || false
+						}
+					/>
+				</Tabs.Panel>
+				<Tabs.Panel id={WebSocketTabs.Messages}>
+					<WebSocketMessages
+						startEvent={resource}
+						eventsLoading={webSocketLoading}
+						events={selectedWebSocketEvents}
+					/>
+				</Tabs.Panel>
+			</Tabs>
 		</>
 	)
 }

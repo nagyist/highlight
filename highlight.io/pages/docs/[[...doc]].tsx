@@ -3,6 +3,10 @@ import { GetStaticPaths, GetStaticProps } from 'next/types'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BiChevronLeft, BiChevronRight } from 'react-icons/bi'
 import { FaDiscord, FaGithub, FaTwitter } from 'react-icons/fa'
+import {
+	CalendlyModal,
+	EnterpriseSelfHostCalendlyComponent,
+} from '../../components/common/CalendlyModal/CalendlyModal'
 import { Roadmap, RoadmapItem } from '../../components/common/Roadmap/Roadmap'
 import {
 	AutoplayVideo,
@@ -17,16 +21,10 @@ import {
 	QuickStartContent,
 	quickStartContent,
 } from '../../components/QuickstartContent/QuickstartContent'
-import {
-	IGNORED_DOCS_PATHS,
-	processDocPath,
-	removeOrderingPrefix,
-} from '../api/docs/github'
+import { IGNORED_DOCS_PATHS, processDocPath } from '../api/docs/github'
 
 import classNames from 'classnames'
 import { promises as fsp } from 'fs'
-import matter from 'gray-matter'
-import yaml from 'js-yaml'
 import { serialize } from 'next-mdx-remote/serialize'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
@@ -44,11 +42,14 @@ import DocSelect from '../../components/Docs/DocSelect/DocSelect'
 import { generateIdFromProps } from '../../components/Docs/DocsTypographyRenderer/DocsTypographyRenderer'
 import { HighlightCodeBlock } from '../../components/Docs/HighlightCodeBlock/HighlightCodeBlock'
 import { useMediaQuery } from '../../components/MediaQuery/MediaQuery'
+import logger from '../../highlight.logger'
 import ChevronDown from '../../public/images/ChevronDownIcon'
 import Minus from '../../public/images/MinusIcon'
+import { readMarkdown, removeOrderingPrefix } from '../../shared/doc'
+import Image from 'next/image'
 
 const DOCS_CONTENT_PATH = path.join(process.cwd(), '../docs-content')
-const DOCS_GITUB_LINK = `https://github.com/highlight/highlight/blob/main/docs-content`
+const DOCS_GITHUB_LINK = `github.com/highlight/highlight/blob/main/docs-content`
 export interface DocPath {
 	// e.g. '[tips, sessions-search-deep-linking.md]'
 	array_path: string[]
@@ -68,6 +69,13 @@ export interface DocPath {
 	content: string
 }
 
+type DocLink = {
+	metadata: any
+	simple_path: string
+	array_path: string[]
+	hasContent: boolean
+}
+
 type DocData = {
 	markdownText: MDXRemoteSerializeResult | null
 	markdownTextOG?: string
@@ -75,8 +83,13 @@ type DocData = {
 	quickstartContent?: QuickStartContent
 	slug: string
 	toc: TocEntry
-	docOptions: DocPath[]
-	metadata?: { title: string; slug: string; heading: string }
+	docOptions: DocLink[]
+	metadata?: {
+		title: string
+		metaTitle?: string
+		slug: string
+		heading: string
+	}
 	isSdkDoc?: boolean
 	docIndex: number
 	redirect?: string
@@ -314,7 +327,39 @@ interface TocEntry {
 	children: TocEntry[]
 }
 
+// Filter quickStartContent to only include the keys that are needed for the current doc
+function getFilteredQuickStartContent(
+	newContent: string,
+	quickStartContent: any,
+) {
+	const regex = /\{(\w+(?:\["[^"]+"\])+)\}/
+	const match = newContent.match(regex)
+
+	if (match) {
+		const keyString = match[1]
+		const quickStartContentMatches = keyString
+			.split(/\["|\"]/)
+			.filter((key) => key && key !== 'quickStartContent')
+
+		const getFilteredValue = (obj: any, keys: string[]) =>
+			keys.reduce((acc, key) => acc?.[key] ?? null, obj)
+
+		const filteredQuickStartContent = quickStartContentMatches.reduceRight(
+			(obj, key) => ({ [key]: obj }),
+			getFilteredValue(quickStartContent, quickStartContentMatches),
+		)
+
+		return filteredQuickStartContent
+	} else {
+		return quickStartContent
+	}
+}
+
 export const getStaticProps: GetStaticProps<DocData> = async (context) => {
+	logger.info(
+		{ params: context?.params },
+		`docs getStaticProps ${context?.params?.doc}`,
+	)
 	const docPaths = sortBySlashLength(await getDocsPaths(fsp, undefined))
 
 	// const sdkPaths = await getSdkPaths(fsp, undefined);
@@ -364,7 +409,10 @@ export const getStaticProps: GetStaticProps<DocData> = async (context) => {
 			}
 			if (d.array_path.indexOf(a) == d.array_path.length - 1) {
 				foundEntry.docPathId = docid
-				foundEntry.tocHeading = docPaths[docid].metadata.title || 'test'
+				foundEntry.tocHeading =
+					docPaths[docid].metadata.toc ||
+					docPaths[docid].metadata.title ||
+					'missing metadata.toc'
 			}
 			currentEntry = foundEntry
 		}
@@ -430,55 +478,39 @@ export const getStaticProps: GetStaticProps<DocData> = async (context) => {
 				? await serialize(newerContent, {
 						scope: {
 							path: currentDoc.rel_path,
-							quickStartContent,
+							// Only filter quickStartContent if it exists in the markdown
+							quickStartContent: newContent.includes(
+								'quickStartContent',
+							)
+								? getFilteredQuickStartContent(
+										newContent,
+										quickStartContent,
+									)
+								: null,
 							roadmapData: roadmapData,
 						},
 						mdxOptions: {
 							remarkPlugins: [remarkGfm],
 						},
-				  })
+					})
 				: null,
 			markdownTextOG: newContent,
 			slug: currentDoc.simple_path,
 			relPath: currentDoc.rel_path,
 			docIndex: currentDocIndex,
-			docOptions: docPaths,
+			docOptions: docPaths.map((d) => {
+				return {
+					metadata: d.metadata,
+					simple_path: d.simple_path,
+					array_path: d.array_path,
+					hasContent: d.content != '',
+				}
+			}),
 			isSdkDoc: currentDoc.isSdkDoc,
 			toc,
 			redirect,
 		},
 		revalidate: 60 * 30, // Cache response for 30 minutes
-	}
-}
-
-export const readMarkdown = async (fs_api: any, filePath: string) => {
-	const fileContents = await fs_api.readFile(path.join(filePath))
-	return parseMarkdown(fileContents)
-}
-
-export const parseMarkdown = (
-	fileContents: string,
-): { content: string; data: { [key: string]: any }; links: Set<string> } => {
-	const { content, data } = matter(fileContents, {
-		delimiters: ['---', '---'],
-		engines: {
-			yaml: (s: any) =>
-				yaml.load(s, { schema: yaml.JSON_SCHEMA }) as Object,
-		},
-	})
-	const regex = /(.)\[(.*?)\]\((.*?)\)/g
-	const links = new Set<string>(
-		[...content.matchAll(regex)]
-			.filter((m) => m[1] !== '!')
-			.map((m) => {
-				return m[3]
-			}),
-	)
-
-	return {
-		content,
-		data,
-		links,
 	}
 }
 
@@ -563,6 +595,10 @@ const PageRightBar = ({
 	const [activeId, setActiveId] = useState<string>()
 	useIntersectionObserver(setActiveId)
 
+	const suggestLink =
+		'https://' +
+		`${DOCS_GITHUB_LINK}${relativePath}`.replaceAll(/\/+/g, '/')
+
 	return (
 		<div className={styles.rightBarWrap}>
 			<div className={styles.resourcesSideBar}>
@@ -575,17 +611,14 @@ const PageRightBar = ({
 					<FaDiscord style={{ height: 20, width: 20 }}></FaDiscord>
 					<Typography type="copy3">Community / Support</Typography>
 				</Link>
-				<Link
+				<a
 					className={styles.socialItem}
-					href={`${DOCS_GITUB_LINK}${relativePath}`.replaceAll(
-						/\/+/g,
-						'/',
-					)}
+					href={suggestLink}
 					target="_blank"
 				>
 					<FaGithub style={{ height: 20, width: 20 }}></FaGithub>
 					<Typography type="copy3">Suggest Edits?</Typography>
-				</Link>
+				</a>
 				<Link
 					style={{ borderTop: '1px solid #30294E' }}
 					className={styles.socialItem}
@@ -651,7 +684,7 @@ const TableOfContents = ({
 	toc: TocEntry
 	openParent: boolean
 	openTopLevel?: boolean
-	docPaths: DocPath[]
+	docPaths: DocLink[]
 	onNavigate?: () => void
 }) => {
 	const hasChildren = !!toc?.children.length
@@ -769,7 +802,7 @@ const TableOfContents = ({
 
 const getBreadcrumbs = (
 	metadata: any,
-	docOptions: DocPath[],
+	docOptions: DocLink[],
 	docIndex: number,
 ) => {
 	const trail: { title: string; path: string; hasContent: boolean }[] = [
@@ -790,7 +823,7 @@ const getBreadcrumbs = (
 			trail.push({
 				title: nextBreadcrumb?.metadata?.title,
 				path: `/docs/${nextBreadcrumb?.simple_path}`,
-				hasContent: nextBreadcrumb?.content != '',
+				hasContent: nextBreadcrumb?.hasContent || false,
 			})
 		})
 	}
@@ -847,15 +880,17 @@ export default function DocPage({
 		<>
 			<Meta
 				title={
-					metadata?.title?.length
-						? metadata?.title === 'Welcome to Highlight'
-							? 'Documentation'
-							: metadata?.title
-						: ''
+					metadata?.metaTitle?.length
+						? metadata?.metaTitle
+						: metadata?.title?.length
+							? metadata?.title === 'Welcome to Highlight'
+								? 'Documentation'
+								: metadata?.title
+							: ''
 				}
 				description={description}
 				absoluteImageUrl={`https://${
-					process.env.NEXT_PUBLIC_VERCEL_URL
+					process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL
 				}/api/og/doc${relPath?.replace('.md', '')}`}
 				canonical={`/docs/${slug}`}
 			/>
@@ -967,17 +1002,21 @@ export default function DocPage({
 									),
 								)}
 						</div>
-						<h3
-							className={classNames(styles.pageTitle, {
-								[styles.sdkPageTitle]: isSdkDoc,
-							})}
+						<h1
+							className={classNames(
+								styles.pageTitle,
+								{
+									[styles.sdkPageTitle]: isSdkDoc,
+								},
+								'docH1',
+							)}
 						>
 							{metadata?.heading
 								? metadata.heading
 								: metadata?.title
-								? metadata.title
-								: ''}
-						</h3>
+									? metadata.title
+									: ''}
+						</h1>
 						{isSdkDoc ? (
 							<DocSection content={markdownTextOG || ''} />
 						) : (
@@ -987,15 +1026,21 @@ export default function DocPage({
 										<MDXRemote
 											components={{
 												AutoplayVideo,
+												CalendlyModal,
 												EmbeddedVideo,
 												MissingFrameworkCopy,
 												Roadmap,
 												RoadmapItem,
 												QuickStart,
+												Typography,
 												DocsCard,
+												EnterpriseSelfHostCalendlyComponent,
 												DocsCardGroup,
 												h1: (props) => (
-													<h4 {...props} />
+													<h1
+														{...props}
+														className="docH1"
+													/>
 												),
 												h2: (props) => {
 													const id =
@@ -1007,9 +1052,10 @@ export default function DocPage({
 															href={`#${id}`}
 															className="flex items-baseline gap-2 my-6 transition-all group"
 														>
-															<h5
+															<h2
 																id={id}
 																{...props}
+																className="docH2"
 															/>
 														</Link>
 													)
@@ -1024,18 +1070,19 @@ export default function DocPage({
 															href={`#${id}`}
 															className="flex items-baseline gap-2 my-6 transition-all group"
 														>
-															<h6
+															<h3
 																id={id}
 																{...props}
+																className="docH3"
 															/>
 														</Link>
 													)
 												},
 												h4: (props) => (
-													<h6 {...props} />
+													<h4 {...props} />
 												),
 												h5: (props) => (
-													<h6 {...props} />
+													<h5 {...props} />
 												),
 												code: (props) => {
 													// check if props.children is a string
@@ -1064,12 +1111,12 @@ export default function DocPage({
 															<HighlightCodeBlock
 																language={
 																	props.className
-																		? props.className
+																		? (props.className
 																				.split(
 																					'language-',
 																				)
 																				.pop() ??
-																		  'js'
+																			'js')
 																		: 'js'
 																}
 																text={
@@ -1111,9 +1158,20 @@ export default function DocPage({
 												img: (props) => {
 													return (
 														<picture>
-															<img
+															<Image
 																{...props}
-																alt={props.alt}
+																width={Number(
+																	props.width,
+																)}
+																height={Number(
+																	props.height,
+																)}
+																src={String(
+																	props.src,
+																)}
+																alt={String(
+																	props.alt,
+																)}
 																className="border rounded-lg border-divider-on-dark"
 															/>
 														</picture>

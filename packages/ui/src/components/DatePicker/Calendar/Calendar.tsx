@@ -1,14 +1,13 @@
-import React, { useState } from 'react'
+import {
+	DPCalendar as CalendarType,
+	useContextCalendars,
+} from '@rehookify/datepicker'
+import { FC, ReactNode, useState } from 'react'
+
 import { Box } from '../../Box/Box'
 import { Stack } from '../../Stack/Stack'
 import { Text } from '../../Text/Text'
 import { Day } from './Day'
-import {
-	Calendar as CalendarType,
-	useContextCalendars,
-} from '@rehookify/datepicker'
-import { FC, ReactNode } from 'react'
-
 import * as styles from './styles.css'
 
 interface CalendarProps {
@@ -30,7 +29,7 @@ export const Calendar: FC<CalendarProps> = ({
 	const { days, month, year } = calendar
 
 	return (
-		<Box backgroundColor="white" p="10">
+		<Box backgroundColor="white" p="10" cursor="default">
 			<Stack direction="row" align="center">
 				{prevButton}
 
@@ -62,8 +61,8 @@ export const Calendar: FC<CalendarProps> = ({
 							range: hasSelectedRange
 								? d.range
 								: isHoveringOverDisabledDay
-								? ''
-								: d.range,
+									? ''
+									: d.range,
 						}}
 						key={d.$date.toString()}
 						onMouseEnter={function () {

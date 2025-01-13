@@ -1,4 +1,3 @@
-import { DocSearch } from '@docsearch/react'
 import classNames from 'classnames'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
@@ -8,29 +7,25 @@ import { GithubPopup } from '../../GithubPopup/GithubPopup'
 import { PrimaryButton } from '../Buttons/PrimaryButton'
 import {
 	HighlightLogo,
+	HighlightLogoLight,
 	HighlightLogoWhite,
 } from '../HighlightLogo/HighlightLogo'
 import { Typography } from '../Typography/Typography'
 import styles from './Navbar.module.scss'
 import ResourceDropdown from './ResourceDropdown'
 
-import '@docsearch/css'
 import moment from 'moment'
 import Banner from '../Banner/Banner'
 import FeatureDropdown from './FeatureDropdown'
+import InkeepSearchBar from './InkeepSearchBar'
 
 const LaunchWeekBanner = () => {
-	const day = moment().diff(moment('2023-07-17T16:00:00Z'), 'days') + 1
-	if (day < 1 || day > 5) {
-		return null
-	}
-
 	const bannerMessage = (
 		<div className={styles.launchWeekText}>
-			Launch Week 2 is here.{' '}
+			Launch Week 7 is here.{' '}
 			<a
 				target="_blank"
-				href="https://www.highlight.io/launch-week-2"
+				href="https://dub.highlight.io/lw7-playlist"
 				rel="noreferrer"
 			>
 				Follow along
@@ -42,20 +37,39 @@ const LaunchWeekBanner = () => {
 	return <Banner>{bannerMessage}</Banner>
 }
 
+const PromotionBanner = () => {
+	return (
+		<Link
+			href="/otel-course-signup?utm_source=highlight-banner"
+			className="hidden md:flex text-center justify-center items-center w-full py-2.5 px-3 bg-color-primary-200 text-white hover:bg-opacity-90"
+		>
+			<Typography type="copy3">
+				Master OpenTelemetry with our free comprehensive course -{' '}
+				<span className="font-semibold underline">Start Learning</span>
+			</Typography>
+		</Link>
+	)
+}
+
 const Navbar = ({
-	hideFreeTrialText,
 	isDocsPage,
 	hideBanner,
 	fixed,
 	title,
+	bg,
+	light,
+	hideGitHubPopup,
 }: {
-	hideFreeTrialText?: boolean
 	isDocsPage?: boolean
 	hideBanner?: boolean
 	fixed?: boolean
 	title?: string
+	bg?: string
+	light?: boolean
+	hideGitHubPopup?: boolean
 }) => {
 	const [scrolled, setScrolled] = useState(false)
+	const [atTop, setAtTop] = useState(true)
 	const [isOpen, setIsOpen] = useState(false)
 	const [prevY, setPrevY] = useState(0)
 
@@ -66,8 +80,20 @@ const Navbar = ({
 		} else if (window.scrollY > 60 && prevY > currentScrollPos) {
 			setScrolled(false)
 		}
+
+		if (window.scrollY > 120) {
+			setAtTop(false)
+		} else {
+			setAtTop(true)
+		}
+
 		setPrevY(currentScrollPos)
 	}
+
+	const isLaunchWeek = moment().isBetween(
+		'2024-10-21T13:00:00Z', // 6AM PST
+		'2024-10-26T13:00:00Z',
+	)
 
 	useEffect(() => {
 		changeBackground()
@@ -76,17 +102,14 @@ const Navbar = ({
 
 	return (
 		<>
-			<GithubPopup />
-			{!hideBanner && (
-				<Link
-					href="/launch-week-2"
-					className="flex justify-center items-center w-full h-[40px] bg-color-primary-200 text-white hover:bg-opacity-90"
-				>
-					<Typography type="copy3">
-						It&apos;s Launch Week! Click here to follow along.
-					</Typography>
-				</Link>
-			)}
+			{!hideGitHubPopup && <GithubPopup />}
+			{!hideBanner ? (
+				isLaunchWeek ? (
+					<LaunchWeekBanner />
+				) : (
+					<PromotionBanner />
+				)
+			) : null}
 			<div
 				className={classNames(styles.container, {
 					[styles.hide]: scrolled && !fixed,
@@ -102,9 +125,19 @@ const Navbar = ({
 						className={classNames(
 							styles.header,
 							styles.headerInner,
+							`bg-${bg ? bg : ''} transition-all ${
+								bg && atTop ? 'bg-opacity-10' : 'bg-opacity-100'
+							}`,
+							`${
+								atTop
+									? 'border-opacity-0'
+									: 'border-opacity-100'
+							} ${
+								light ? '' : 'border-divider-on-dark'
+							} border-b-[1px] transition-color duration-300`,
+
 							{
 								[styles.openHeader]: isOpen,
-								[styles.headerBorder]: prevY != 0,
 							},
 						)}
 					>
@@ -117,6 +150,8 @@ const Navbar = ({
 							<Link href={'/'} className={styles.urlStyle}>
 								{isOpen ? (
 									<HighlightLogoWhite />
+								) : light ? (
+									<HighlightLogoLight />
 								) : (
 									<HighlightLogo />
 								)}
@@ -131,14 +166,7 @@ const Navbar = ({
 									{title}
 								</p>
 							</Typography>
-							{isDocsPage && (
-								<DocSearch
-									placeholder="Search the highlight.io docs"
-									appId="JGT9LI80J2"
-									indexName="highlight"
-									apiKey="ac336720d8f4f996abe3adee603a1c84"
-								/>
-							)}
+							{isDocsPage && <InkeepSearchBar />}
 						</div>
 						<div
 							className={styles.navMenu}
@@ -229,7 +257,7 @@ const Navbar = ({
 								</div>
 							</div>
 						)}
-						{!isDocsPage && (
+						{!isDocsPage && !light && (
 							<div
 								className={classNames(
 									styles.navContainer,
@@ -237,10 +265,16 @@ const Navbar = ({
 									styles.headerCenter,
 								)}
 							>
-								<FeatureDropdown isOpen={scrolled && !fixed} />
+								<FeatureDropdown
+									isOpen={scrolled && !fixed}
+									light={light}
+								/>
 								<Link
 									href="/integrations"
-									className={styles.headerButton}
+									className={classNames({
+										[styles.headerButtonLight]: light,
+										[styles.headerButton]: !light,
+									})}
 								>
 									<Typography type="copy2">
 										Integrations
@@ -248,13 +282,19 @@ const Navbar = ({
 								</Link>
 								<Link
 									href="/pricing"
-									className={styles.headerButton}
+									className={classNames({
+										[styles.headerButtonLight]: light,
+										[styles.headerButton]: !light,
+									})}
 								>
 									<Typography type="copy2">
 										Pricing
 									</Typography>
 								</Link>
-								<ResourceDropdown isOpen={scrolled && !fixed} />
+								<ResourceDropdown
+									isOpen={scrolled && !fixed}
+									light={light}
+								/>
 							</div>
 						)}
 						<div
@@ -268,22 +308,30 @@ const Navbar = ({
 								<Link
 									href="/docs"
 									className={classNames(
-										styles.headerButton,
 										styles.headerButtonRight,
+										{
+											[styles.headerButtonLight]: light,
+											[styles.headerButton]: !light,
+										},
 									)}
 								>
 									<Typography type="copy2">Docs</Typography>
 								</Link>
 							)}
-							<a
+							<Link
 								href="https://app.highlight.io/"
-								className={styles.headerButton}
+								className={classNames({
+									[styles.headerButtonLight]: light,
+									[styles.headerButton]: !light,
+								})}
 							>
 								<Typography type="copy2">Sign in</Typography>
-							</a>
+							</Link>
 							<PrimaryButton
 								href="https://app.highlight.io/sign_up"
-								className={styles.signUpButton}
+								className={classNames(styles.signUpButton, {
+									[styles.signUpButtonLight]: light,
+								})}
 							>
 								<Typography type="copy2" emphasis={true}>
 									Sign up
@@ -297,16 +345,30 @@ const Navbar = ({
 									className={classNames(
 										styles.socialButtonWrapper,
 										styles.socialButtonWrapperLeft,
+										{
+											[styles.socialButtonWrapperLight]:
+												light,
+										},
 									)}
 								>
 									<AiFillGithub
 										className={classNames(
 											styles.socialButton,
+											{
+												[styles.socialButtonLight]:
+													light,
+											},
 										)}
 									/>
 								</Link>
 								<div
-									className={styles.socialButtonDivider}
+									className={classNames(
+										styles.socialButtonDivider,
+										{
+											[styles.socialButtonDividerLight]:
+												light,
+										},
+									)}
 								></div>
 								<Link
 									href="https://discord.gg/yxaXEAqgwN"
@@ -315,11 +377,19 @@ const Navbar = ({
 									className={classNames(
 										styles.socialButtonWrapper,
 										styles.socialButtonWrapperRight,
+										{
+											[styles.socialButtonWrapperLight]:
+												light,
+										},
 									)}
 								>
 									<FaDiscord
 										className={classNames(
 											styles.socialButton,
+											{
+												[styles.socialButtonLight]:
+													light,
+											},
 										)}
 									/>
 								</Link>

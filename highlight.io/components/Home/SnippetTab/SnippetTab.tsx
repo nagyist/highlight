@@ -94,7 +94,7 @@ import { H } from 'highlight.run';
 
 H.init('your-api-key', {
   environment: 'production',
-  enableStrictPrivacy: false,
+  privacySetting: 'default',
 });
 
 createApp(App).mount('#app');`}
@@ -202,8 +202,11 @@ func main() {
 const app = express();
 
 const highlightOptions = {projectID: '<YOUR_PROJECT_ID>'};
+const highlightMiddleware = Handlers.middleware(highlightOptions);
 const highlightHandler = Handlers.errorHandler(highlightOptions);
 
+// This should be before any other error middleware and after all controllers
+app.use(highlightMiddleware);
 // This should be before any other error middleware and after all controllers
 app.use(highlightHandler);`}
 					/>
@@ -255,8 +258,8 @@ export const SnippetTab = () => {
 								tab.key === currentTabKey
 									? '#EBFF5E'
 									: tab.key === currentHoverKey
-									? '#23B6E2'
-									: '#72E4FC'
+										? '#23B6E2'
+										: '#72E4FC'
 							}
 							// @ts-ignore
 							secondaryColor={

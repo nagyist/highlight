@@ -4,20 +4,23 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
-	"github.com/go-chi/chi"
-	"github.com/google/uuid"
-	model2 "github.com/highlight-run/highlight/backend/model"
-	"github.com/highlight-run/highlight/backend/private-graph/graph/model"
-	"github.com/highlight-run/highlight/backend/util"
-	hlog "github.com/highlight/highlight/sdk/highlight-go/log"
-	highlightChi "github.com/highlight/highlight/sdk/highlight-go/middleware/chi"
-	log "github.com/sirupsen/logrus"
-	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	"errors"
 	"io"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/aws/smithy-go/ptr"
+	"github.com/go-chi/chi"
+	"github.com/google/uuid"
+	model2 "github.com/highlight-run/highlight/backend/model"
+	"github.com/highlight-run/highlight/backend/private-graph/graph/model"
+	hlog "github.com/highlight/highlight/sdk/highlight-go/log"
+	highlightChi "github.com/highlight/highlight/sdk/highlight-go/middleware/chi"
+	log "github.com/sirupsen/logrus"
+	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -61,6 +64,38 @@ func getJSONLogs(r *http.Request) (logs [][]byte, err error) {
 		logs = append(logs, []byte(j))
 	}
 	return
+}
+
+func getQueryStringParams(r *http.Request) (int, string, error) {
+	qs := r.URL.Query()
+	projectVerboseID := qs.Get(LogDrainProjectQueryParam)
+	if projectVerboseID == "" {
+		return 0, "", errors.New("invalid verbose id")
+	}
+	projectID, err := model2.FromVerboseID(projectVerboseID)
+	if err != nil {
+		log.WithContext(r.Context()).WithError(err).WithField("projectVerboseID", projectVerboseID).Error("failed to parse highlight project id from http logs request")
+		return 0, "", nil
+	}
+	return projectID, qs.Get(LogDrainServiceQueryParam), nil
+}
+
+func parsePinoLevel(level uint8) string {
+	switch level {
+	case 10:
+		return "trace"
+	case 20:
+		return "debug"
+	case 30:
+		return "info"
+	case 40:
+		return "warn"
+	case 50:
+		return "error"
+	case 60:
+		return "fatal"
+	}
+	return "info"
 }
 
 func HandleFirehoseLog(w http.ResponseWriter, r *http.Request) {
@@ -133,53 +168,29 @@ func HandleFirehoseLog(w http.ResponseWriter, r *http.Request) {
 			msg = data
 		}
 
-		var cloudwatchPayload struct {
-			MessageType         string
-			Owner               string
-			LogGroup            string
-			LogStream           string
-			SubscriptionFilters []string
-			LogEvents           []struct {
-				Id        string
-				Timestamp int64
-				Message   string
+		for _, payload := range []Payload{&CloudFrontJsonPayload{}, &FireLensFluentBitPayload{}, &FireLensPinoPayload{}, &FireLensPayload{}, &CloudWatchPayload{}, &JsonPayload{}} {
+			if payload.Parse(msg) {
+				for _, p := range payload.GetMessages() {
+					t := p.GetTimestamp()
+					if t == nil {
+						t = ptr.Time(time.UnixMilli(lg.Timestamp))
+					}
+					hl := hlog.Log{
+						Attributes: map[string]string{},
+						Level:      p.GetLevel(),
+					}
+					ctx := p.SetLogAttributes(r.Context(), &hl, msg)
+					hl.Message = p.GetMessage()
+					hl.Timestamp = t.UTC().Format(hlog.TimestampFormat)
+					if err := hlog.SubmitHTTPLog(ctx, tracer, projectID, hl); err != nil {
+						log.WithContext(r.Context()).WithError(err).Error("failed to submit log")
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				break
 			}
 		}
-		// try to parse the message as a cloudwatch payload
-		// if it is not, send it as a raw log message
-		if err := json.Unmarshal(msg, &cloudwatchPayload); err != nil {
-			hl := hlog.Log{
-				Message:   string(msg),
-				Timestamp: time.UnixMilli(lg.Timestamp).UTC().Format(hlog.TimestampFormat),
-				Level:     "info",
-			}
-			if err := hlog.SubmitHTTPLog(r.Context(), projectID, hl); err != nil {
-				log.WithContext(r.Context()).WithError(err).Error("failed to submit log")
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-		} else {
-			for _, event := range cloudwatchPayload.LogEvents {
-				hl := hlog.Log{
-					Message:   event.Message,
-					Timestamp: time.UnixMilli(event.Timestamp).UTC().Format(hlog.TimestampFormat),
-					Level:     "info",
-					Attributes: map[string]string{
-						"service_name": "firehose",
-						"message_type": cloudwatchPayload.MessageType,
-						"owner":        cloudwatchPayload.Owner,
-						"log_group":    cloudwatchPayload.LogGroup,
-						"log_stream":   cloudwatchPayload.LogStream,
-					},
-				}
-				if err := hlog.SubmitHTTPLog(r.Context(), projectID, hl); err != nil {
-					log.WithContext(r.Context()).WithError(err).Error("failed to submit log")
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-			}
-		}
-
 	}
 
 	w.Header().Add("content-type", "application/json")
@@ -191,6 +202,49 @@ func HandleFirehoseLog(w http.ResponseWriter, r *http.Request) {
 		Timestamp: time.Now().UnixMilli(),
 	})
 	_, _ = w.Write(js)
+	w.WriteHeader(http.StatusOK)
+}
+
+func HandlePinoLogs(w http.ResponseWriter, r *http.Request, lgJson []byte, logs *hlog.PinoLogs) {
+	projectID, serviceName, err := getQueryStringParams(r)
+	if err != nil {
+		http.Error(w, "no project query string parameter provided", http.StatusBadRequest)
+	}
+
+	// parse the logs as a list of maps to get other structured attributes (from the top level)
+	var lgAttrs struct {
+		Logs []map[string]interface{} `json:"logs"`
+	}
+	if err := json.Unmarshal(lgJson, &lgAttrs); err != nil {
+		log.WithContext(r.Context()).WithError(err).Error("invalid http logs json")
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	for idx, pinoLog := range logs.Logs {
+		var lg hlog.Log
+		lg.Attributes = make(map[string]string)
+		lg.Attributes[string(semconv.ServiceNameKey)] = serviceName
+		lg.Timestamp = time.UnixMilli(pinoLog.Time).UTC().Format(hlog.TimestampFormat)
+		lg.Message = pinoLog.Message
+		lg.Level = parsePinoLevel(pinoLog.Level)
+
+		for k, v := range lgAttrs.Logs[idx] {
+			// skip the keys that are part of the message
+			if has := map[string]bool{"level": true, "time": true, "msg": true}[k]; has {
+				continue
+			}
+			for key, value := range hlog.FormatLogAttributes(k, v) {
+				lg.Attributes[key] = value
+			}
+		}
+
+		if err := hlog.SubmitHTTPLog(r.Context(), tracer, projectID, lg); err != nil {
+			log.WithContext(r.Context()).WithError(err).Error("failed to submit log")
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 }
 
 func HandleJSONLog(w http.ResponseWriter, r *http.Request) {
@@ -202,6 +256,12 @@ func HandleJSONLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, lgJson := range logs {
+		var pinoLg hlog.PinoLogs
+		if err := json.Unmarshal(lgJson, &pinoLg); err == nil && len(pinoLg.Logs) > 0 {
+			HandlePinoLogs(w, r, lgJson, &pinoLg)
+			continue
+		}
+
 		var lg hlog.Log
 		lg.Attributes = make(map[string]string)
 		if err := json.Unmarshal(lgJson, &lg); err != nil {
@@ -217,27 +277,32 @@ func HandleJSONLog(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for k, v := range lgAttrs {
-			for key, value := range util.FormatLogAttributes(r.Context(), 0, k, v) {
+			// skip the keys that are part of the message
+			if has := map[string]bool{"message": true, "timestamp": true, "level": true}[k]; has {
+				continue
+			}
+			for key, value := range hlog.FormatLogAttributes(k, v) {
 				lg.Attributes[key] = value
 			}
 		}
 
-		attributes := make(map[string]string)
-		for _, k := range []string{
-			LogDrainProjectHeader,
-			LogDrainServiceHeader,
-		} {
-			value := r.Header.Get(k)
-			attributes[k] = value
-		}
-		projectID, err := model2.FromVerboseID(attributes[LogDrainProjectHeader])
+		var projectID int
+		var serviceName string
+
+		projectID, serviceName, err = getQueryStringParams(r)
 		if err != nil {
-			log.WithContext(r.Context()).WithError(err).WithField("projectVerboseID", attributes[LogDrainProjectHeader]).Error("failed to parse highlight project id from http logs request")
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+			if projectID, err = model2.FromVerboseID(r.Header.Get(LogDrainProjectHeader)); err != nil {
+				log.WithContext(r.Context()).WithError(err).WithField("projectVerboseID", r.Header.Get(LogDrainProjectHeader)).Error("failed to parse highlight project id from http logs request")
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if svc := r.Header.Get(LogDrainServiceHeader); svc != "" {
+				serviceName = svc
+			}
 		}
-		lg.Attributes[string(semconv.ServiceNameKey)] = attributes[LogDrainServiceHeader]
-		if err := hlog.SubmitHTTPLog(r.Context(), projectID, lg); err != nil {
+
+		lg.Attributes[string(semconv.ServiceNameKey)] = serviceName
+		if err := hlog.SubmitHTTPLog(r.Context(), tracer, projectID, lg); err != nil {
 			log.WithContext(r.Context()).WithError(err).Error("failed to submit log")
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -248,13 +313,11 @@ func HandleJSONLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleRawLog(w http.ResponseWriter, r *http.Request) {
-	qs := r.URL.Query()
-	projectVerboseID := qs.Get(LogDrainProjectQueryParam)
-	if projectVerboseID == "" {
+	projectID, serviceName, err := getQueryStringParams(r)
+	if err != nil {
 		http.Error(w, "no project query string parameter provided", http.StatusBadRequest)
 		return
 	}
-	serviceName := qs.Get(LogDrainServiceQueryParam)
 
 	requestBody, err := getBody(r)
 	if err != nil {
@@ -277,16 +340,10 @@ func HandleRawLog(w http.ResponseWriter, r *http.Request) {
 		Level:      model.LogLevelInfo.String(),
 	}
 
-	projectID, err := model2.FromVerboseID(projectVerboseID)
-	if err != nil {
-		log.WithContext(r.Context()).WithError(err).WithField("projectVerboseID", projectVerboseID).Error("failed to parse highlight project id from http logs request")
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
 	if serviceName != "" {
 		lg.Attributes[string(semconv.ServiceNameKey)] = serviceName
 	}
-	if err := hlog.SubmitHTTPLog(r.Context(), projectID, lg); err != nil {
+	if err := hlog.SubmitHTTPLog(r.Context(), tracer, projectID, lg); err != nil {
 		log.WithContext(r.Context()).WithError(err).Error("failed to submit log")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -295,7 +352,10 @@ func HandleRawLog(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func Listen(r *chi.Mux) {
+var tracer trace.Tracer
+
+func Listen(r *chi.Mux, t trace.Tracer) {
+	tracer = t
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(highlightChi.Middleware)
 		r.HandleFunc("/logs/raw", HandleRawLog)

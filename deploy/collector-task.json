@@ -28,15 +28,39 @@
 					"appProtocol": "http"
 				},
 				{
+					"name": "highlight-collector-8888-tcp",
+					"containerPort": 8888,
+					"hostPort": 8888,
+					"protocol": "tcp",
+					"appProtocol": "http"
+				},
+				{
 					"name": "highlight-collector-24224-tcp",
 					"containerPort": 24224,
 					"hostPort": 24224,
 					"protocol": "tcp"
+				},
+				{
+					"name": "highlight-collector-34302-tcp",
+					"containerPort": 34302,
+					"hostPort": 34302,
+					"protocol": "tcp"
 				}
 			],
 			"essential": true,
-			"environment": [],
-			"mountPoints": [],
+			"environment": [
+				{
+					"name": "GOMEMLIMIT",
+					"value": "12GiB"
+				}
+			],
+			"mountPoints": [
+				{
+					"sourceVolume": "opentelemetry-collector-queue",
+					"containerPath": "/data/queue",
+					"readOnly": false
+				}
+			],
 			"volumesFrom": [],
 			"logConfiguration": {
 				"logDriver": "awslogs",
@@ -49,10 +73,18 @@
 		}
 	],
 	"family": "opentelemetry-collector-service",
-	"executionRoleArn": "arn:aws:iam::173971919437:role/ecsTaskExecutionRole",
+	"executionRoleArn": "arn:aws:iam::173971919437:role/HighlightAppProd",
 	"networkMode": "awsvpc",
 	"revision": 8,
-	"volumes": [],
+	"volumes": [
+		{
+			"name": "opentelemetry-collector-queue",
+			"efsVolumeConfiguration": {
+				"fileSystemId": "fs-0a8baf8eb788f79a9",
+				"rootDirectory": "/data/queue"
+			}
+		}
+	],
 	"status": "ACTIVE",
 	"requiresAttributes": [
 		{
@@ -80,8 +112,8 @@
 	"placementConstraints": [],
 	"compatibilities": ["EC2", "FARGATE"],
 	"requiresCompatibilities": ["FARGATE"],
-	"cpu": "1024",
-	"memory": "2048",
+	"cpu": "4096",
+	"memory": "16384",
 	"runtimePlatform": {
 		"cpuArchitecture": "ARM64"
 	},

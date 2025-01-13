@@ -1,18 +1,19 @@
 import { ConsoleListener } from './console-listener'
 import { ErrorListener } from './error-listener'
 
-import { ConsoleMessage, ErrorMessage } from '../types/shared-types'
-import { ALL_CONSOLE_METHODS, ConsoleMethods } from '../types/client'
+import stringify from 'json-stringify-safe'
 import { ERRORS_TO_IGNORE, ERROR_PATTERNS_TO_IGNORE } from '../constants/errors'
 import { HighlightClassOptions } from '../index'
-import stringify from 'json-stringify-safe'
-import { DEFAULT_URL_BLOCKLIST } from './network-listener/utils/network-sanitizer'
+import { shutdown } from '../otel'
+import { ALL_CONSOLE_METHODS, ConsoleMethods } from '../types/client'
+import { ConsoleMessage, ErrorMessage } from '../types/shared-types'
+import { NetworkListener } from './network-listener/network-listener'
 import {
 	RequestResponsePair,
 	WebSocketEvent,
 	WebSocketRequest,
 } from './network-listener/utils/models'
-import { NetworkListener } from './network-listener/network-listener'
+import { DEFAULT_URL_BLOCKLIST } from './network-listener/utils/network-sanitizer'
 import {
 	matchPerformanceTimingsWithRequestResponsePair,
 	shouldNetworkRequestBeRecorded,
@@ -23,6 +24,7 @@ import {
 export class FirstLoadListeners {
 	disableConsoleRecording: boolean
 	reportConsoleErrors: boolean
+	enablePromisePatch: boolean
 	consoleMethodsToRecord: ConsoleMethods[]
 	listeners: (() => void)[]
 	errors: ErrorMessage[]
@@ -30,7 +32,6 @@ export class FirstLoadListeners {
 	// The properties below were added in 4.0.0 (Feb 2022), and are patched in by client via setupNetworkListeners()
 	options: HighlightClassOptions
 	hasNetworkRecording: boolean | undefined = true
-	_backendUrl!: string
 	disableNetworkRecording!: boolean
 	enableRecordingNetworkContents!: boolean
 	xhrNetworkContents!: RequestResponsePair[]
@@ -43,18 +44,25 @@ export class FirstLoadListeners {
 	networkBodyKeysToRedact: string[] | undefined
 	networkBodyKeysToRecord: string[] | undefined
 	networkHeaderKeysToRecord: string[] | undefined
+	lastNetworkRequestTimestamp: number
 	urlBlocklist!: string[]
+	highlightEndpoints!: string[]
+	requestResponseSanitizer?: (
+		pair: RequestResponsePair,
+	) => RequestResponsePair | null
 
 	constructor(options: HighlightClassOptions) {
 		this.options = options
 		this.disableConsoleRecording = !!options.disableConsoleRecording
 		this.reportConsoleErrors = options.reportConsoleErrors ?? false
+		this.enablePromisePatch = options.enablePromisePatch ?? false
 		this.consoleMethodsToRecord = options.consoleMethodsToRecord || [
 			...ALL_CONSOLE_METHODS,
 		]
 		this.listeners = []
 		this.errors = []
 		this.messages = []
+		this.lastNetworkRequestTimestamp = 0
 	}
 
 	isListening() {
@@ -115,8 +123,22 @@ export class FirstLoadListeners {
 			)
 		}
 		this.listeners.push(
-			ErrorListener((e: ErrorMessage) => highlightThis.errors.push(e)),
+			ErrorListener(
+				(e: ErrorMessage) => {
+					if (
+						ERRORS_TO_IGNORE.includes(e.event) ||
+						ERROR_PATTERNS_TO_IGNORE.some((pattern) =>
+							e.event.includes(pattern),
+						)
+					) {
+						return
+					}
+					highlightThis.errors.push(e)
+				},
+				{ enablePromisePatch: this.enablePromisePatch },
+			),
 		)
+		this.listeners.push(shutdown)
 		FirstLoadListeners.setupNetworkListener(this, this.options)
 	}
 
@@ -131,10 +153,12 @@ export class FirstLoadListeners {
 		sThis: FirstLoadListeners,
 		options: HighlightClassOptions,
 	): void {
-		sThis._backendUrl =
+		const _backendUrl =
 			options?.backendUrl ||
 			import.meta.env.REACT_APP_PUBLIC_GRAPH_URI ||
 			'https://pub.highlight.run'
+		const otlpEndpoint = options.otlpEndpoint || 'https://otel.highlight.io'
+		sThis.highlightEndpoints = [_backendUrl, otlpEndpoint]
 
 		sThis.xhrNetworkContents = []
 		sThis.fetchNetworkContents = []
@@ -152,7 +176,6 @@ export class FirstLoadListeners {
 			sThis.networkHeadersToRedact = []
 			sThis.networkBodyKeysToRedact = []
 			sThis.urlBlocklist = []
-			sThis.networkBodyKeysToRecord = []
 			sThis.networkBodyKeysToRecord = []
 		} else if (typeof options?.networkRecording === 'boolean') {
 			sThis.disableNetworkRecording = !options.networkRecording
@@ -189,6 +212,9 @@ export class FirstLoadListeners {
 				...sThis.urlBlocklist,
 				...DEFAULT_URL_BLOCKLIST,
 			]
+
+			sThis.requestResponseSanitizer =
+				options.networkRecording?.requestResponseSanitizer
 
 			sThis.networkHeaderKeysToRecord =
 				options.networkRecording?.headerKeysToRecord
@@ -235,13 +261,10 @@ export class FirstLoadListeners {
 					},
 					disableWebSocketRecording:
 						sThis.disableRecordingWebSocketContents,
-					headersToRedact: sThis.networkHeadersToRedact,
 					bodyKeysToRedact: sThis.networkBodyKeysToRedact,
-					backendUrl: sThis._backendUrl,
+					highlightEndpoints: sThis.highlightEndpoints,
 					tracingOrigins: sThis.tracingOrigins,
 					urlBlocklist: sThis.urlBlocklist,
-					sessionSecureID: options.sessionSecureID,
-					headerKeysToRecord: sThis.networkHeaderKeysToRecord,
 					bodyKeysToRecord: sThis.networkBodyKeysToRecord,
 				}),
 			)
@@ -267,13 +290,17 @@ export class FirstLoadListeners {
 			const offset = (recordingStartTime - documentTimeOrigin) * 2
 
 			httpResources = httpResources
-				.filter((r) =>
-					shouldNetworkRequestBeRecorded(
+				.filter((r) => {
+					if (r.responseEnd < sThis.lastNetworkRequestTimestamp) {
+						return false
+					}
+
+					return shouldNetworkRequestBeRecorded(
 						r.name,
-						sThis._backendUrl,
+						sThis.highlightEndpoints,
 						sThis.tracingOrigins,
-					),
-				)
+					)
+				})
 				.map((resource) => {
 					return {
 						...resource.toJSON(),
@@ -283,16 +310,28 @@ export class FirstLoadListeners {
 					}
 				})
 
+			sThis.lastNetworkRequestTimestamp =
+				httpResources.at(-1)?.responseEnd ||
+				sThis.lastNetworkRequestTimestamp
+
 			if (sThis.enableRecordingNetworkContents) {
+				const sanitizeOptions = {
+					headersToRedact: sThis.networkHeadersToRedact,
+					headersToRecord: sThis.networkHeaderKeysToRecord,
+					requestResponseSanitizer: sThis.requestResponseSanitizer,
+				}
+
 				httpResources = matchPerformanceTimingsWithRequestResponsePair(
 					httpResources,
 					sThis.xhrNetworkContents,
 					'xmlhttprequest',
+					sanitizeOptions,
 				)
 				httpResources = matchPerformanceTimingsWithRequestResponsePair(
 					httpResources,
 					sThis.fetchNetworkContents,
 					'fetch',
+					sanitizeOptions,
 				)
 			}
 		}

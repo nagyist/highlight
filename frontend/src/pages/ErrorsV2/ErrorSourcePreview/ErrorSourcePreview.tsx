@@ -10,6 +10,9 @@ type ErrorSourcePreviewProps = {
 	lineNumber?: StackSectionProps['lineNumber']
 	columnNumber?: StackSectionProps['columnNumber']
 	functionName?: StackSectionProps['functionName']
+	enhancementSource?: StackSectionProps['enhancementSource']
+	enhancementVersion?: StackSectionProps['enhancementVersion']
+	externalLink?: StackSectionProps['externalLink']
 	linesBefore?: StackSectionProps['linesBefore']
 	linesAfter?: StackSectionProps['linesAfter']
 	showLineNumbers?: boolean
@@ -33,7 +36,6 @@ const LANGUAGE_MAP: { [K in string]: string } = {
 
 const baseLineStyles = {
 	display: 'block',
-	padding: '0 12px',
 }
 
 const ErrorSourcePreview: React.FC<
@@ -90,7 +92,7 @@ const ErrorSourcePreview: React.FC<
 				fontSize: 13,
 				fontWeight: 500,
 				lineHeight: 20,
-				margin: 0,
+				margin: '0 0 0 0',
 			}}
 			lineProps={(ln) => {
 				return ln === lineNumber
@@ -101,10 +103,10 @@ const ErrorSourcePreview: React.FC<
 								...baseLineStyles,
 							},
 							'data-line-number': lineNumber.toString(),
-					  }
+						}
 					: {
 							style: baseLineStyles,
-					  }
+						}
 			}}
 		>
 			{text.join('\n')}

@@ -3,16 +3,19 @@
 		"allowSyntheticDefaultImports": true,
 		"declaration": true,
 		"declarationDir": "dist",
-		"esModuleInterop": true,
+		"declarationMap": true,
 		"forceConsistentCasingInFileNames": true,
-		"jsx": "react",
-		"lib": ["dom", "dom.iterable", "esnext"],
+		"lib": ["ESNext"],
 		"module": "ESNext",
-		"moduleResolution": "node",
-		"resolveJsonModule": true,
+		"target": "ESNext",
+		"moduleResolution": "Node",
 		"skipLibCheck": true,
 		"strict": true,
-		"target": "ESNext"
+		"resolveJsonModule": true,
+		"typeRoots": ["./node_modules/@types"]
 	},
-	"include": ["src"]
+	"include": ["src"],
+	"references": [{
+		"path": "../firstload"
+	}]
 }

@@ -1,1 +1,13 @@
-var e="_4qdycv1",t="_4qdycv2",r="_4qdycv3",v="_4qdycv0",d="_4qdycv5 mt0ih28t mt0ih28q _14ud0dc1";export{e as menuItem,t as menuItemActive,r as menuItemDisabled,v as menuTitle,d as sidebarScroll};
+// src/pages/SettingsRouter/SettingsRouter.css.ts
+var menuItem = "_4qdycv1";
+var menuItemActive = "_4qdycv2";
+var menuItemDisabled = "_4qdycv3";
+var menuTitle = "_4qdycv0";
+var sidebarScroll = "_4qdycv5 mt0ih28s mt0ih28p _14ud0dc1";
+export {
+  menuItem,
+  menuItemActive,
+  menuItemDisabled,
+  menuTitle,
+  sidebarScroll
+};

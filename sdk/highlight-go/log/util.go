@@ -2,27 +2,63 @@ package hlog
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	modelInputs "github.com/highlight-run/highlight/backend/private-graph/graph/model"
-	"github.com/highlight/highlight/sdk/highlight-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/highlight/highlight/sdk/highlight-go"
 )
 
 const TimestampFormat = "2006-01-02T15:04:05.000Z"
 const TimestampFormatNano = "2006-01-02T15:04:05.999999999Z"
+const LogAttributeValueLengthLimit = 2 << 15
+const MaxLogAttributesDepth uint8 = 255
+
+type PinoLog struct {
+	Level    uint8  `json:"level"`
+	Time     int64  `json:"time"`
+	PID      int64  `json:"pid"`
+	Hostname string `json:"hostname"`
+	Message  string `json:"msg"`
+}
+
+type PinoLogs struct {
+	Logs []*PinoLog `json:"logs"`
+}
 
 type Log struct {
-	Message    string `json:"message"`
+	Message    any    `json:"message"`
 	Timestamp  string `json:"timestamp"`
 	Level      string `json:"level"`
 	Attributes map[string]string
+}
+
+func (l *Log) GetMessage() string {
+	if m, ok := l.Message.(string); ok {
+		return m
+	}
+	val, _ := json.Marshal(l.Message)
+	return string(val)
+}
+
+func (l *Log) GetMessageMap() map[string]string {
+	result := make(map[string]string)
+	if m, ok := l.Message.(map[string]interface{}); ok {
+		for k, v := range m {
+			for kp, vp := range FormatLogAttributes(k, v) {
+				result[kp] = vp
+			}
+		}
+	}
+	return result
 }
 
 type VercelProxy struct {
@@ -51,6 +87,7 @@ type VercelLog struct {
 	Host         string `json:"host"`
 
 	Type       string `json:"type"`
+	Level      string `json:"level"`
 	Entrypoint string `json:"entrypoint"`
 
 	RequestId   string      `json:"requestId"`
@@ -60,133 +97,120 @@ type VercelLog struct {
 	Proxy       VercelProxy `json:"proxy"`
 }
 
-func SubmitFrontendConsoleMessages(ctx context.Context, projectID int, sessionSecureID string, messages string) error {
-	logRows, err := ParseConsoleMessages(messages)
-	if err != nil {
-		return err
-	}
-
-	if len(logRows) == 0 {
-		return nil
-	}
-
-	for _, row := range logRows {
-		span, _ := highlight.StartTrace(
-			ctx, "highlight-ctx",
-			attribute.String(highlight.SourceAttribute, modelInputs.LogSourceFrontend.String()),
-			attribute.String(highlight.ProjectIDAttribute, strconv.Itoa(projectID)),
-			attribute.String(highlight.SessionIDAttribute, sessionSecureID),
-		)
-		message := strings.Join(row.Value, " ")
-		attrs := []attribute.KeyValue{
-			LogSeverityKey.String(row.Type),
-			LogMessageKey.String(message),
-		}
-		if len(row.Trace) > 0 {
-			traceEnd := &row.Trace[len(row.Trace)-1]
-			attrs = append(
-				attrs,
-				semconv.CodeFunctionKey.String(traceEnd.FunctionName),
-				semconv.CodeNamespaceKey.String(traceEnd.Source),
-				semconv.CodeFilepathKey.String(traceEnd.FileName),
-			)
-
-			var ln int
-			if x, ok := traceEnd.LineNumber.(int); ok {
-				ln = x
-			} else if x, ok := traceEnd.LineNumber.(string); ok {
-				if i, err := strconv.ParseInt(x, 10, 32); err == nil {
-					ln = int(i)
-				}
-			}
-			if ln != 0 {
-				attrs = append(attrs, semconv.CodeLineNumberKey.Int(ln))
-			}
-
-			var cn int
-			if x, ok := traceEnd.ColumnNumber.(int); ok {
-				cn = x
-			} else if x, ok := traceEnd.ColumnNumber.(string); ok {
-				if i, err := strconv.ParseInt(x, 10, 32); err == nil {
-					cn = int(i)
-				}
-			}
-			if cn != 0 {
-				attrs = append(attrs, semconv.CodeColumnKey.Int(cn))
-			}
-			stackTrace := message
-			for _, t := range row.Trace {
-				if t.Source != "" {
-					stackTrace += "\n" + t.Source
-				} else {
-					stackTrace += fmt.Sprintf("\n\tat %s (%s:%+v:%+v)", t.FunctionName, t.FileName, t.LineNumber, t.ColumnNumber)
-				}
-			}
-			attrs = append(attrs, semconv.ExceptionStacktraceKey.String(stackTrace))
-		}
-
-		span.AddEvent(highlight.LogEvent, trace.WithAttributes(attrs...), trace.WithTimestamp(time.UnixMilli(row.Time)))
-		if row.Type == "error" {
-			span.SetStatus(codes.Error, message)
-		}
-		highlight.EndTrace(span)
-	}
-
-	return nil
+var reservedVercelLogAttributes = map[string]bool{
+	"vercel.timestamp": true, "vercel.proxy.timestamp": true, "vercel.message": true,
 }
 
-func submitVercelLog(ctx context.Context, projectID int, log VercelLog) {
-	span, _ := highlight.StartTrace(
-		ctx, "highlight-ctx",
-		attribute.String(highlight.SourceAttribute, "SubmitVercelLogs"),
+func submitVercelLog(ctx context.Context, tracer trace.Tracer, projectID int, serviceName string, log VercelLog) {
+	ctx = context.WithValue(ctx, highlight.ContextKeys.SessionSecureID, log.RequestId)
+	ctx = context.WithValue(ctx, highlight.ContextKeys.RequestID, log.RequestId)
+
+	t := time.UnixMilli(log.Timestamp)
+	span, _ := highlight.StartTraceWithTracer(
+		ctx, tracer, highlight.LogSpanName, t,
+		[]trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindClient)},
 		attribute.String(highlight.ProjectIDAttribute, strconv.Itoa(projectID)),
+		semconv.ServiceNameKey.String(serviceName),
 	)
 	defer highlight.EndTrace(span)
 
-	attrs := []attribute.KeyValue{
-		LogSeverityKey.String(log.Type),
-		LogMessageKey.String(log.Message),
+	var level string
+	if log.Type == "stdout" {
+		level = "INFO"
+	} else if log.Type == "stderr" {
+		level = "ERROR"
+	} else if log.Level == "warning" {
+		level = "WARN"
+	} else {
+		level = strings.ToUpper(log.Level)
 	}
-	attrs = append(
-		attrs,
+
+	attrs := []attribute.KeyValue{
+		LogSeverityKey.String(level),
+		LogMessageKey.String(log.Message),
+		semconv.ServiceVersionKey.String(log.DeploymentId),
 		semconv.CodeNamespaceKey.String(log.Source),
 		semconv.CodeFilepathKey.String(log.Path),
 		semconv.CodeFunctionKey.String(log.Entrypoint),
 		semconv.HostNameKey.String(log.Host),
-		semconv.HTTPMethodKey.Int64(log.StatusCode),
-	)
+	}
 
-	span.AddEvent(highlight.LogEvent, trace.WithAttributes(attrs...), trace.WithTimestamp(time.UnixMilli(log.Timestamp)))
+	if log.Proxy.Method != "" {
+		attrs = append(attrs, semconv.HTTPMethodKey.String(log.Proxy.Method))
+	}
+
+	if log.StatusCode != 0 {
+		attrs = append(attrs, semconv.HTTPStatusCodeKey.Int64(log.StatusCode))
+	}
+
+	if len(log.Proxy.UserAgent) > 0 {
+		attrs = append(attrs, semconv.HTTPUserAgentKey.String(strings.Join(log.Proxy.UserAgent, ",")))
+	}
+
+	if bytes, err := json.Marshal(&log); err == nil {
+		logMap := map[string]interface{}{}
+		if err := json.Unmarshal(bytes, &logMap); err == nil {
+			for k, v := range FormatLogAttributes("vercel", logMap) {
+				if !reservedVercelLogAttributes[k] && v != "" {
+					attrs = append(attrs, attribute.String(k, v))
+				}
+			}
+		}
+	}
+
+	span.AddEvent(highlight.LogEvent, trace.WithAttributes(attrs...), trace.WithTimestamp(t))
 	if log.Type == "error" {
 		span.SetStatus(codes.Error, log.Message)
 	}
 }
 
-func SubmitVercelLogs(ctx context.Context, projectID int, logs []VercelLog) {
+func SubmitVercelLogs(ctx context.Context, tracer trace.Tracer, projectID int, serviceName string, logs []VercelLog) {
 	if len(logs) == 0 {
 		return
 	}
 
 	for _, log := range logs {
-		submitVercelLog(ctx, projectID, log)
+		submitVercelLog(ctx, tracer, projectID, serviceName, log)
 	}
 }
 
-func SubmitHTTPLog(ctx context.Context, projectID int, lg Log) error {
-	span, _ := highlight.StartTrace(
-		ctx, "highlight-ctx",
-		attribute.String(highlight.SourceAttribute, "SubmitHTTPLog"),
-		attribute.String(highlight.ProjectIDAttribute, strconv.Itoa(projectID)),
-	)
-	defer highlight.EndTrace(span)
-
+func SubmitHTTPLog(ctx context.Context, tracer trace.Tracer, projectID int, lg Log) error {
 	attrs := []attribute.KeyValue{
 		LogSeverityKey.String(lg.Level),
-		LogMessageKey.String(lg.Message),
+		LogMessageKey.String(lg.GetMessage()),
 	}
 	for k, v := range lg.Attributes {
 		attrs = append(attrs, attribute.String(k, v))
 	}
+	if m := lg.GetMessageMap(); m != nil {
+		for k, v := range m {
+			attrs = append(attrs, attribute.String(k, v))
+		}
+	}
+
+	var sessionID, requestID string
+	for _, opt := range []struct {
+		key string
+		val *string
+	}{
+		{highlight.SessionIDAttribute, &sessionID},
+		{highlight.DeprecatedSessionIDAttribute, &sessionID},
+		{"secure_session_id", &sessionID},
+		{highlight.RequestIDAttribute, &requestID},
+		{highlight.DeprecatedRequestIDAttribute, &requestID},
+		{"trace_id", &requestID},
+		{"traceId", &requestID},
+		{"traceID", &requestID},
+	} {
+		if *opt.val != "" {
+			continue
+		}
+		if val, ok := lg.Attributes[opt.key]; ok && val != "" {
+			*opt.val = val
+		}
+	}
+	ctx = context.WithValue(ctx, highlight.ContextKeys.SessionSecureID, sessionID)
+	ctx = context.WithValue(ctx, highlight.ContextKeys.RequestID, requestID)
 
 	var t time.Time
 	var err error
@@ -197,9 +221,64 @@ func SubmitHTTPLog(ctx context.Context, projectID int, lg Log) error {
 			return err
 		}
 	}
+
+	span, _ := highlight.StartTraceWithTracer(
+		ctx, tracer, highlight.LogSpanName, t,
+		[]trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindClient)},
+		attribute.String(highlight.ProjectIDAttribute, strconv.Itoa(projectID)),
+	)
+	defer highlight.EndTrace(span)
 	span.AddEvent(highlight.LogEvent, trace.WithAttributes(attrs...), trace.WithTimestamp(t))
 	if lg.Level == "error" {
-		span.SetStatus(codes.Error, lg.Message)
+		span.SetStatus(codes.Error, lg.GetMessage())
 	}
 	return nil
+}
+
+// parenKeySyntax matches a parenthesis pattern, i.e. `cs(Referrer)`
+var parenKeySyntax = regexp.MustCompile(`(.+)\((.+)\)`)
+
+func formatLogAttributes(k string, v interface{}, depth uint8) map[string]string {
+	if depth >= MaxLogAttributesDepth {
+		return nil
+	}
+	if strings.Contains(k, "(") {
+		k = parenKeySyntax.ReplaceAllString(k, "$1.$2")
+	}
+	if vStr, ok := v.(string); ok {
+		if len(vStr) > LogAttributeValueLengthLimit {
+			vStr = vStr[:LogAttributeValueLengthLimit] + "..."
+		}
+		return map[string]string{k: vStr}
+	}
+	if vInt, ok := v.(int64); ok {
+		return map[string]string{k: strconv.FormatInt(vInt, 10)}
+	}
+	if vFlt, ok := v.(float64); ok {
+		return map[string]string{k: strconv.FormatFloat(vFlt, 'f', -1, 64)}
+	}
+	if vSlice, ok := v.([]interface{}); ok && len(vSlice) > 0 {
+		m := make(map[string]string)
+		for idx, sliceV := range vSlice {
+			sliceKey := fmt.Sprintf("%s.%d", k, idx)
+			for k2, v2 := range formatLogAttributes(sliceKey, sliceV, depth+1) {
+				m[k2] = v2
+			}
+		}
+		return m
+	}
+	if vMap, ok := v.(map[string]interface{}); ok && len(vMap) > 0 {
+		m := make(map[string]string)
+		for mapKey, mapV := range vMap {
+			for k2, v2 := range formatLogAttributes(mapKey, mapV, depth+1) {
+				m[fmt.Sprintf("%s.%s", k, k2)] = v2
+			}
+		}
+		return m
+	}
+	return nil
+}
+
+func FormatLogAttributes(k string, v interface{}) map[string]string {
+	return formatLogAttributes(k, v, 0)
 }

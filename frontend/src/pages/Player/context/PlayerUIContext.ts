@@ -1,16 +1,19 @@
-import { ErrorObject } from '@graph/schemas'
 import { HighlightEvent } from '@pages/Player/HighlightEvent'
 import { createContext } from '@util/context/context'
 import React from 'react'
 
 export enum RightPanelView {
-	Error = 'ERROR',
 	Comments = 'COMMENTS',
 	Session = 'SESSION',
 	Event = 'EVENT',
 }
 
-export type RightPlayerTab = 'Events' | 'Metadata' | 'AI Insights'
+export enum RightPlayerTab {
+	Events = 'Events',
+	Metadata = 'Metadata',
+	AIInsights = 'AI Insights',
+}
+
 interface PlayerUIContext {
 	isPlayerFullscreen: boolean
 	setIsPlayerFullscreen: React.Dispatch<React.SetStateAction<boolean>>
@@ -23,13 +26,15 @@ interface PlayerUIContext {
 	setActiveEvent: React.Dispatch<
 		React.SetStateAction<HighlightEvent | undefined>
 	>
-	rightPanelView: RightPanelView
-	setRightPanelView: React.Dispatch<React.SetStateAction<RightPanelView>>
 
-	activeError?: ErrorObject
-	setActiveError: React.Dispatch<
-		React.SetStateAction<ErrorObject | undefined>
-	>
+	activeEventIndex?: number
+	setActiveEventIndex: React.Dispatch<React.SetStateAction<number>>
+
+	searchItem?: string
+	setSearchItem: React.Dispatch<React.SetStateAction<string | undefined>>
+
+	rightPanelView: RightPanelView
+	setRightPanelView: (newValue: RightPanelView) => void
 }
 
 export const [usePlayerUIContext, PlayerUIContextProvider] =

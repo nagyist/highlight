@@ -1,3 +1,4 @@
+import { toast } from '@components/Toaster'
 import {
 	AppLoadingState,
 	useAppLoadingContext,
@@ -8,9 +9,8 @@ import {
 } from '@graph/hooks'
 import { namedOperations } from '@graph/operations'
 import { EmailOptOutCategory } from '@graph/schemas'
-import { Ariakit, Heading, Stack, Text } from '@highlight-run/ui'
+import { Heading, Stack, Text } from '@highlight-run/ui/components'
 import { GlobalContextProvider } from '@routers/ProjectRouter/context/GlobalContext'
-import { message } from 'antd'
 import { useEffect } from 'react'
 import { StringParam, useQueryParams } from 'use-query-params'
 
@@ -18,7 +18,6 @@ import BorderBox from '@/components/BorderBox/BorderBox'
 import { Header } from '@/components/Header/Header'
 import LeadAlignLayout from '@/components/layout/LeadAlignLayout'
 import { ToggleRow } from '@/components/ToggleRow/ToggleRow'
-import { showIntercomBubble } from '@/util/window'
 
 type Props = {
 	token?: string | null
@@ -110,14 +109,14 @@ export const EmailOptOutPanel = ({ token, admin_id }: Props) => {
 										},
 									})
 										.then(() => {
-											message.success(
+											toast.success(
 												`Opted ${
 													isOptIn ? 'in to' : 'out of'
 												} ${c.type} emails.`,
 											)
 										})
 										.catch((reason: any) => {
-											message.error(String(reason))
+											toast.error(String(reason))
 										})
 								},
 								optOutAll,
@@ -145,14 +144,14 @@ export const EmailOptOutPanel = ({ token, admin_id }: Props) => {
 										},
 									})
 										.then(() => {
-											message.success(
+											toast.success(
 												`Opted ${
 													isOptIn ? 'in to' : 'out of'
 												} ${c.type} emails.`,
 											)
 										})
 										.catch((reason: any) => {
-											message.error(String(reason))
+											toast.error(String(reason))
 										})
 								},
 								optOutAll,
@@ -171,15 +170,6 @@ export const EmailOptOutPage = () => {
 		token: StringParam,
 	})
 
-	const commandBarDialog = Ariakit.useDialogState()
-
-	useEffect(() => {
-		// Show the Intercom message after 5 seconds in case the user needs help.
-		setTimeout(() => {
-			showIntercomBubble()
-		}, 5000)
-	}, [])
-
 	return (
 		<GlobalContextProvider
 			value={{
@@ -187,7 +177,6 @@ export const EmailOptOutPage = () => {
 				toggleShowKeyboardShortcutsGuide: () => {},
 				showBanner: false,
 				toggleShowBanner: () => {},
-				commandBarDialog,
 			}}
 		>
 			<Header />

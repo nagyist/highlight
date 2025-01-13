@@ -4,17 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/highlight-run/highlight/backend/env"
 	"os"
+
+	"golang.org/x/sync/errgroup"
+
+	"github.com/samber/lo"
 
 	"github.com/highlight-run/highlight/backend/payload"
 	"github.com/highlight-run/highlight/backend/storage"
-	"github.com/samber/lo"
-	"golang.org/x/sync/errgroup"
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/highlight-run/highlight/backend/model"
 	"github.com/pkg/errors"
+
+	"github.com/highlight-run/highlight/backend/model"
+	modelInputs "github.com/highlight-run/highlight/backend/private-graph/graph/model"
 )
 
 const BatchSize = 100
@@ -30,7 +35,7 @@ func createFile(name string) (*os.File, error) {
 func main() {
 	ctx := context.Background()
 	log.WithContext(ctx).Info("ZANE_MIGRATION setting up db")
-	db, err := model.SetupDB(ctx, os.Getenv("PSQL_DB"))
+	db, err := model.SetupDB(ctx, env.Config.SQLDatabase)
 	if err != nil {
 		log.WithContext(ctx).Fatalf("ZANE_MIGRATION error setting up db: %+v", err)
 	}
@@ -156,7 +161,7 @@ func main() {
 					if err := writer.Close(); err != nil {
 						log.WithContext(ctx).Error(errors.Wrap(err, "ZANE_MIGRATION error closing TimelineIndicatorEvents writer"))
 					}
-					if _, err := storageClient.PushCompressedFile(context.Background(), sessionId, projectId, f, storage.TimelineIndicatorEvents); err != nil {
+					if _, err := storageClient.PushCompressedFile(context.Background(), sessionId, projectId, f, storage.TimelineIndicatorEvents, modelInputs.RetentionPeriodSixMonths); err != nil {
 						return errors.Wrap(err, "error pushing to s3")
 					}
 					if err := f.Close(); err != nil {

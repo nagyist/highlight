@@ -1,19 +1,13 @@
 import { StaticImageData } from 'next/legacy/image'
 import Basedash from '../../public/images/companies/basedash.png'
 import Knock from '../../public/images/companies/knock.png'
-import Impira from '../../public/images/companies/impira.png'
-import Secoda from '../../public/images/companies/secoda.svg'
-import Portal from '../../public/images/companies/portal.png'
 import Mage from '../../public/images/companies/mage.png'
-import Airplane from '../../public/images/companies/airplane.png'
+import Portal from '../../public/images/companies/portal.png'
 
 import BasedashAvatar from '../../public/images/avatars/basedash.jpg'
 import KnockAvatar from '../../public/images/avatars/knock.jpg'
-import ImpiraAvatar from '../../public/images/avatars/impira.jpg'
-import SecodaAvatar from '../../public/images/avatars/secoda.jpg'
-import PortalAvatar from '../../public/images/avatars/portal.jpg'
 import MageAvatar from '../../public/images/avatars/mage.jpg'
-import AirplaneAvatar from '../../public/images/avatars/airplane.jpg'
+import PortalAvatar from '../../public/images/avatars/portal.jpg'
 
 export interface Review {
 	companyLogo: StaticImageData
@@ -35,16 +29,6 @@ export const REVIEWS: Review[] = [
 			image: BasedashAvatar,
 			name: 'Max Musing',
 			role: 'Founder & CEO',
-		},
-	},
-	{
-		companyLogo: Impira,
-		scale: 1,
-		text: `Before Highlight, I was flying blind, but now I can see exactly where users are succeeding, failing, and running into issues.`,
-		author: {
-			image: ImpiraAvatar,
-			name: 'Lorilyn McCue',
-			role: 'Head of Product',
 		},
 	},
 	{

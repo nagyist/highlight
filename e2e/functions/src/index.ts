@@ -1,5 +1,5 @@
-import * as functions from 'firebase-functions'
 import { Handlers } from '@highlight-run/node'
+import * as functions from 'firebase-functions'
 
 export const helloWorld = functions.https.onRequest(
 	Handlers.firebaseHttpFunctionHandler(
@@ -17,6 +17,11 @@ export const hey = functions.https.onCall(
 			// ... your handler code here
 			return { result: 'useful call result!' }
 		},
-		{ projectID: '1' },
+		{
+			projectID: '1',
+			serviceName: 'my-firebase-app',
+			serviceVersion: '1.0.0',
+			environment: 'e2e-test',
+		},
 	),
 )

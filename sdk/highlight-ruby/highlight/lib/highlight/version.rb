@@ -1,3 +1,3 @@
 module Highlight
-  VERSION = "0.1.1"
+  VERSION = '0.5.4'.freeze
 end

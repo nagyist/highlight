@@ -1,15 +1,15 @@
-import Select from '@components/Select/Select'
 import { useGetHeightListsQuery } from '@graph/hooks'
-import { Form } from '@highlight-run/ui'
+import { Form } from '@highlight-run/ui/components'
 import { ContainerSelectionProps } from '@pages/IntegrationsPage/IssueTrackerIntegrations'
 import useLocalStorage from '@rehooks/local-storage'
 import { useParams } from '@util/react-router/useParams'
 import { useEffect, useMemo } from 'react'
 
-import * as style from '../style.css'
+import { OptionDropdown } from '@/pages/Graphing/OptionDropdown'
 
 const HeightListSelector: React.FC<ContainerSelectionProps> = ({
 	setSelectionId,
+	disabled,
 }) => {
 	const { project_id } = useParams<{ project_id: string }>()
 	const { data, loading } = useGetHeightListsQuery({
@@ -23,7 +23,7 @@ const HeightListSelector: React.FC<ContainerSelectionProps> = ({
 				return {
 					value: list.id,
 					id: list.id,
-					displayValue: list.name,
+					name: list.name,
 				}
 			}) || []
 		)
@@ -45,16 +45,12 @@ const HeightListSelector: React.FC<ContainerSelectionProps> = ({
 	}, [selectedHeightListId, heightListOptions, setHeightListId])
 
 	return (
-		<Form.NamedSection label="Height List" name="heightList">
-			<Select
-				aria-label="Height List"
-				placeholder="Choose a list to create the task in"
+		<Form.NamedSection label="List" name="heightList">
+			<OptionDropdown
 				options={heightListOptions}
-				onChange={setHeightListId}
-				value={'' + selectedHeightListId}
-				notFoundContent={<p>No lists found</p>}
-				loading={loading}
-				className={style.selectContainer}
+				selection={selectedHeightListId}
+				setSelection={setHeightListId}
+				disabled={disabled || loading}
 			/>
 		</Form.NamedSection>
 	)

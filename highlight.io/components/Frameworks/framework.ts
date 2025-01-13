@@ -17,6 +17,12 @@ export const FRAMEWORKS: {
 			image: '/images/companies/icons/nextjs.svg',
 		},
 		{
+			name: 'Remix',
+			description: 'Set up highlight.io with your Remix application.',
+			link: '/docs/getting-started/client-sdk/remix',
+			image: '/images/companies/icons/remix.png',
+		},
+		{
 			name: 'Vue.js',
 			description: 'Set up highlight.io with your Vue application.',
 			link: '/docs/getting-started/client-sdk/vuejs',
@@ -69,6 +75,12 @@ export const FRAMEWORKS: {
 			link: '/docs/getting-started/backend-sdk/ruby/overview',
 			image: '/images/companies/icons/rails.svg',
 		},
+		{
+			name: 'Rust',
+			description: 'Set up error monitoring in Rust.',
+			link: '/docs/getting-started/backend-sdk/rust/overview',
+			image: '/images/companies/icons/rust.svg',
+		},
 	],
 	Logging: [
 		{
@@ -94,6 +106,12 @@ export const FRAMEWORKS: {
 			description: 'Set up logging in Ruby on Rails.',
 			link: '/docs/getting-started/backend-logging/ruby/overview',
 			image: '/images/companies/icons/rails.svg',
+		},
+		{
+			name: 'Rust',
+			description: 'Set up logging in Rust.',
+			link: '/docs/getting-started/backend-logging/rust/overview',
+			image: '/images/companies/icons/rust.svg',
 		},
 	],
 	Protocols: [

@@ -1,13 +1,12 @@
 import { NetworkRecordingOptions } from '../../types/client'
 import { FetchListener } from './utils/fetch-listener'
 import { RequestResponsePair } from './utils/models'
-import { sanitizeRequest, sanitizeResponse } from './utils/network-sanitizer'
-import { XHRListener } from './utils/xhr-listener'
 import {
 	WebSocketEventListenerCallback,
 	WebSocketListener,
 	WebSocketRequestListenerCallback,
 } from './utils/web-socket-listener'
+import { XHRListener } from './utils/xhr-listener'
 
 export type NetworkListenerCallback = (
 	requestResponsePair: RequestResponsePair,
@@ -19,13 +18,11 @@ type NetworkListenerArguments = {
 	webSocketRequestCallback: WebSocketRequestListenerCallback
 	webSocketEventCallback: WebSocketEventListenerCallback
 	disableWebSocketRecording: boolean
-	headersToRedact: string[]
 	bodyKeysToRedact: string[]
-	backendUrl: string
+	highlightEndpoints: string[]
 	tracingOrigins: boolean | (string | RegExp)[]
 	urlBlocklist: string[]
-	sessionSecureID: string
-} & Pick<NetworkRecordingOptions, 'bodyKeysToRecord' | 'headerKeysToRecord'>
+} & Pick<NetworkRecordingOptions, 'bodyKeysToRecord'>
 
 export const NetworkListener = ({
 	xhrCallback,
@@ -33,46 +30,25 @@ export const NetworkListener = ({
 	webSocketRequestCallback,
 	webSocketEventCallback,
 	disableWebSocketRecording,
-	headersToRedact,
 	bodyKeysToRedact,
-	backendUrl,
+	highlightEndpoints,
 	tracingOrigins,
 	urlBlocklist,
-	sessionSecureID,
 	bodyKeysToRecord,
-	headerKeysToRecord,
 }: NetworkListenerArguments) => {
 	const removeXHRListener = XHRListener(
-		(requestResponsePair) => {
-			xhrCallback(
-				sanitizeRequestResponsePair(
-					requestResponsePair,
-					headersToRedact,
-					headerKeysToRecord,
-				),
-			)
-		},
-		backendUrl,
+		xhrCallback,
+		highlightEndpoints,
 		tracingOrigins,
 		urlBlocklist,
-		sessionSecureID,
 		bodyKeysToRedact,
 		bodyKeysToRecord,
 	)
 	const removeFetchListener = FetchListener(
-		(requestResponsePair) => {
-			fetchCallback(
-				sanitizeRequestResponsePair(
-					requestResponsePair,
-					headersToRedact,
-					headerKeysToRecord,
-				),
-			)
-		},
-		backendUrl,
+		fetchCallback,
+		highlightEndpoints,
 		tracingOrigins,
 		urlBlocklist,
-		sessionSecureID,
 		bodyKeysToRedact,
 		bodyKeysToRecord,
 	)
@@ -82,24 +58,12 @@ export const NetworkListener = ({
 				webSocketRequestCallback,
 				webSocketEventCallback,
 				urlBlocklist,
-		  )
+			)
 		: () => {}
 
 	return () => {
 		removeXHRListener()
 		removeFetchListener()
 		removeWebSocketListener()
-	}
-}
-
-const sanitizeRequestResponsePair = (
-	{ request, response, ...rest }: RequestResponsePair,
-	headersToRedact: string[],
-	headersToRecord?: string[],
-): RequestResponsePair => {
-	return {
-		request: sanitizeRequest(request, headersToRedact, headersToRecord),
-		response: sanitizeResponse(response, headersToRedact, headersToRecord),
-		...rest,
 	}
 }

@@ -1,25 +1,30 @@
-import { ErrorMessage } from '../types/shared-types'
-import stringify from 'json-stringify-safe'
 import ErrorStackParser from 'error-stack-parser'
+import stringify from 'json-stringify-safe'
+import { ErrorMessage } from '../types/shared-types'
 
 interface HighlightPromise<T> extends Promise<T> {
 	promiseCreationError: Error
-	getStack(): Error
+	getStack(): Error | undefined
 }
 
 function handleError(
 	callback: (e: ErrorMessage) => void,
 	event: any,
 	source: string | undefined,
-	error: Error,
+	error?: Error,
 ) {
 	let res: ErrorStackParser.StackFrame[] = []
 	try {
-		res = ErrorStackParser.parse(error)
-	} catch {}
-
+		res = ErrorStackParser.parse(error ?? event)
+	} catch (e) {
+		res = ErrorStackParser.parse(new Error())
+	}
+	let payload: Object = {}
 	if (event instanceof Error) {
 		event = event.message
+		if (event.cause) {
+			payload = { 'exception.cause': event.cause }
+		}
 	}
 	const framesToUse = removeHighlightFrameIfExists(res)
 	callback({
@@ -33,10 +38,14 @@ function handleError(
 			: 0,
 		stackTrace: framesToUse,
 		timestamp: new Date().toISOString(),
+		payload: payload ? stringify(payload) : undefined,
 	})
 }
 
-export const ErrorListener = (callback: (e: ErrorMessage) => void) => {
+export const ErrorListener = (
+	callback: (e: ErrorMessage) => void,
+	{ enablePromisePatch }: { enablePromisePatch: boolean },
+) => {
 	if (typeof window === 'undefined') return () => {}
 
 	const initialOnError = (window.onerror = (
@@ -46,9 +55,7 @@ export const ErrorListener = (callback: (e: ErrorMessage) => void) => {
 		colno: number | undefined,
 		error: Error | undefined,
 	): void => {
-		if (error) {
-			handleError(callback, event, source, error)
-		}
+		handleError(callback, event, source, error)
 	})
 
 	const initialOnUnhandledRejection = (window.onunhandledrejection = (
@@ -64,31 +71,40 @@ export const ErrorListener = (callback: (e: ErrorMessage) => void) => {
 					hPromise.getStack(),
 				)
 			} else {
-				handleError(callback, event.reason, event.type, Error())
+				handleError(callback, event.reason, event.type)
 			}
 		}
 	})
 
-	const initialPromise = window.Promise.constructor
-	window.Promise.constructor = function (
-		executor: (
-			resolve: (value: any | PromiseLike<any>) => void,
-			reject: (reason?: any) => void,
-		) => void,
-	) {
-		initialPromise(executor)
-		// @ts-ignore
-		this.promiseCreationError = new Error()
-	}
+	const initialPromise = window.Promise
+	const highlightPromise = class Promise<T> extends initialPromise<T> {
+		private readonly promiseCreationError: Error
 
-	// @ts-ignore
-	window.Promise.prototype.getStack = function () {
-		// @ts-ignore
-		return this.promiseCreationError
-	}
+		constructor(
+			executor: (
+				resolve: (value: T | PromiseLike<T>) => void,
+				reject: (reason?: Error) => void,
+			) => void,
+		) {
+			super(executor)
+			this.promiseCreationError = new Error()
+		}
 
+		getStack() {
+			return this.promiseCreationError
+		}
+
+		static shouldPatch() {
+			// @ts-ignore
+			const zoneUndefined = typeof window.Zone === 'undefined'
+			return enablePromisePatch && zoneUndefined
+		}
+	}
+	if (highlightPromise.shouldPatch()) {
+		window.Promise = highlightPromise
+	}
 	return () => {
-		window.Promise.constructor = initialPromise
+		window.Promise = initialPromise
 		window.onunhandledrejection = initialOnUnhandledRejection
 		window.onerror = initialOnError
 	}
@@ -103,9 +119,9 @@ const removeHighlightFrameIfExists = (
 
 	const firstFrame = frames[0]
 	if (
-		(firstFrame.functionName === 'console.error' &&
-			firstFrame.fileName?.includes('highlight.run')) ||
-		firstFrame.functionName === 'new HighlightPromise'
+		firstFrame.fileName?.includes('highlight.run') ||
+		firstFrame.fileName?.includes('highlight.io') ||
+		firstFrame.functionName === 'new highlightPromise'
 	) {
 		return frames.slice(1)
 	}

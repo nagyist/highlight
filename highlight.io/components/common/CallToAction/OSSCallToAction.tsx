@@ -1,10 +1,7 @@
-import React from 'react'
+import classNames from 'classnames'
 import styles from '../../Home/Home.module.scss'
 import { PrimaryButton } from '../Buttons/PrimaryButton'
-import { AiFillGithub } from 'react-icons/ai'
-import { FaDiscord } from 'react-icons/fa'
 import { Typography } from '../Typography/Typography'
-import classNames from 'classnames'
 
 export const OSSCallToAction = () => {
 	return (
@@ -19,46 +16,29 @@ export const OSSCallToAction = () => {
 				}}
 			>
 				<h3 className="text-center leading-normal">
-					Join our{' '}
-					<span className={styles.highlightedText}>open source</span>{' '}
-					community.
+					Master OpenTelemetry with our{' '}
+					<span className={styles.highlightedText}>
+						Free Comprehensive Course
+					</span>
 				</h3>
 				<div className="text-center px-2 md:px-16 mt-6">
 					<Typography type="copy1" className="leading-relaxed">
-						Have a feature request? Or want to help build the future
-						of Highlight?
-						<br />
-						Check us out and join the fun!
+						From fundamentals to advanced implementations, learn how
+						OpenTelemetry can transform your engineering team&apos;s
+						observability practices. Ideal for engineering leaders
+						and developers building production-ready monitoring
+						solutions.
 					</Typography>
 				</div>
 				<div className="flex justify-center mt-8">
 					<div className="flex flex-col lg:flex-row justify-center gap-4 w-full px-5 md:w-auto">
 						<PrimaryButton
-							href="https://github.com/highlight/highlight"
-							className="md:max-w-[145px]"
+							href="/otel-course-signup?utm_source=highlight-oss-cta"
+							className="md:max-w-[180px]"
 						>
 							<div className="flex justify-center items-center gap-3">
-								<AiFillGithub className="w-6 h-6 mb-[1px]" />
 								<Typography type="copy2" emphasis={true}>
-									GitHub
-								</Typography>
-							</div>
-						</PrimaryButton>
-						<PrimaryButton
-							href="https://discord.gg/yxaXEAqgwN"
-							className={classNames(
-								styles.hollowButton,
-								'md:max-w-[145px]',
-							)}
-						>
-							<div className="flex items-center gap-3 ">
-								<FaDiscord className="w-6 h-6" />
-								<Typography
-									type="copy2"
-									emphasis={true}
-									className=""
-								>
-									Discord
+									Start Learning
 								</Typography>
 							</div>
 						</PrimaryButton>

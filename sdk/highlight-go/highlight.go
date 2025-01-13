@@ -10,17 +10,82 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+
+	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 )
 
+type config struct {
+	otlpEndpoint       string
+	projectID          string
+	resourceAttributes []attribute.KeyValue
+	samplingRateMap    map[trace.SpanKind]float64
+}
+
 var (
-	flushInterval time.Duration
 	interruptChan chan bool
 	signalChan    chan os.Signal
-	wg            sync.WaitGroup
-	otlpEndpoint  string
-	projectID     string
+	conf          = &config{
+		otlpEndpoint: OTLPDefaultEndpoint,
+		samplingRateMap: map[trace.SpanKind]float64{
+			trace.SpanKindUnspecified: 1.,
+		},
+	}
 )
+
+type Option interface {
+	apply(conf *config)
+}
+
+type option func(conf *config)
+
+func (fn option) apply(conf *config) {
+	fn(conf)
+}
+
+func WithProjectID(projectID string) Option {
+	return option(func(conf *config) {
+		conf.projectID = projectID
+	})
+}
+
+func WithSamplingRate(samplingRate float64) Option {
+	return option(func(conf *config) {
+		conf.samplingRateMap = map[trace.SpanKind]float64{
+			trace.SpanKindUnspecified: samplingRate,
+		}
+	})
+}
+
+func WithSamplingRateMap(rates map[trace.SpanKind]float64) Option {
+	return option(func(conf *config) {
+		conf.samplingRateMap = rates
+	})
+}
+
+func WithServiceName(serviceName string) Option {
+	return option(func(conf *config) {
+		attr := semconv.ServiceNameKey.String(serviceName)
+		conf.resourceAttributes = append(conf.resourceAttributes, attr)
+	})
+}
+
+func WithServiceVersion(serviceVersion string) Option {
+	return option(func(conf *config) {
+		attr := semconv.ServiceVersionKey.String(serviceVersion)
+		conf.resourceAttributes = append(conf.resourceAttributes, attr)
+	})
+}
+
+func WithEnvironment(environment string) Option {
+	return option(func(conf *config) {
+		attr := semconv.DeploymentEnvironmentKey.String(environment)
+		conf.resourceAttributes = append(conf.resourceAttributes, attr)
+	})
+}
 
 // contextKey represents the keys that highlight may store in the users' context
 // we append every contextKey with Highlight to avoid collisions
@@ -58,10 +123,6 @@ var (
 	otlp       *OTLP
 )
 
-const (
-	consumeErrorWorkerStopped = "highlight worker stopped"
-)
-
 // Logger is an interface that implements Log and Logf
 type Logger interface {
 	Error(v ...interface{})
@@ -86,19 +147,21 @@ func init() {
 
 	signal.Notify(signalChan, syscall.SIGABRT, syscall.SIGTERM, syscall.SIGINT)
 	SetOTLPEndpoint(OTLPDefaultEndpoint)
-	SetFlushInterval(2 * time.Second)
 	SetDebugMode(deadLog{})
 }
 
 // Start is used to start the Highlight client's collection service.
-func Start() {
-	StartWithContext(context.Background())
+func Start(opts ...Option) {
+	StartWithContext(context.Background(), opts...)
 }
 
 // StartWithContext is used to start the Highlight client's collection
 // service, but allows the user to pass in their own context.Context.
 // This allows the user kill the highlight worker by canceling their context.CancelFunc.
-func StartWithContext(ctx context.Context) {
+func StartWithContext(ctx context.Context, opts ...Option) {
+	for _, opt := range opts {
+		opt.apply(conf)
+	}
 	stateMutex.Lock()
 	defer stateMutex.Unlock()
 	if state == started {
@@ -113,14 +176,7 @@ func StartWithContext(ctx context.Context) {
 	go func() {
 		for {
 			select {
-			case <-time.After(flushInterval):
-				wg.Add(1)
-				if err := otlp.tracerProvider.ForceFlush(ctx); err != nil {
-					logger.Errorf("error flushing otlp exporter: %s", err)
-				}
-				wg.Done()
 			case <-interruptChan:
-				shutdown()
 				return
 			case <-signalChan:
 				shutdown()
@@ -133,14 +189,10 @@ func StartWithContext(ctx context.Context) {
 	}()
 }
 
-// Stop sends an interrupt signal to the main process, closing the channels and returning the goroutines.
+// Stop flushes and shuts down the SDK.
 func Stop() {
-	stateMutex.RLock()
-	defer stateMutex.RUnlock()
-	if state == stopped || state == idle {
-		return
-	}
 	interruptChan <- true
+	shutdown()
 }
 
 func IsRunning() bool {
@@ -150,14 +202,13 @@ func IsRunning() bool {
 // SetFlushInterval allows you to override the amount of time in which the
 // Highlight client will collect errors before sending them to our backend.
 // - newFlushInterval is an integer representing seconds
-func SetFlushInterval(newFlushInterval time.Duration) {
-	flushInterval = newFlushInterval
-}
+// Deprecated - this is managed by the opentelemetry SDK.
+func SetFlushInterval(_ time.Duration) {}
 
 // SetOTLPEndpoint allows you to override the otlp address used for sending errors and traces.
 // Use the root http url. Eg: https://otel.highlight.io:4318
 func SetOTLPEndpoint(newOtlpEndpoint string) {
-	otlpEndpoint = newOtlpEndpoint
+	conf.otlpEndpoint = newOtlpEndpoint
 }
 
 func SetDebugMode(l Logger) {
@@ -165,11 +216,11 @@ func SetDebugMode(l Logger) {
 }
 
 func SetProjectID(id string) {
-	projectID = id
+	conf.projectID = id
 }
 
 func GetProjectID() string {
-	return projectID
+	return conf.projectID
 }
 
 // InterceptRequest calls InterceptRequestWithContext using the request object's context
@@ -180,25 +231,31 @@ func InterceptRequest(r *http.Request) context.Context {
 // InterceptRequestWithContext captures the highlight session and request ID
 // for a particular request from the request headers, adding the values to the provided context.
 func InterceptRequestWithContext(ctx context.Context, r *http.Request) context.Context {
-	highlightReqDetails := r.Header.Get("X-Highlight-Request")
-	ids := strings.Split(highlightReqDetails, "/")
-	if len(ids) < 2 {
-		return ctx
+	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(r.Header))
+
+	// The trace will be considered remote if we were able to extract a span
+	// context from the request headers. Ignore the header on remote spans.
+	if !trace.SpanFromContext(ctx).SpanContext().IsRemote() {
+		highlightReqDetails := r.Header.Get("X-Highlight-Request")
+		ids := strings.Split(highlightReqDetails, "/")
+		if len(ids) >= 2 {
+			ctx = context.WithValue(ctx, ContextKeys.SessionSecureID, ids[0])
+			ctx = context.WithValue(ctx, ContextKeys.RequestID, ids[1])
+		}
 	}
-	ctx = context.WithValue(ctx, ContextKeys.SessionSecureID, ids[0])
-	ctx = context.WithValue(ctx, ContextKeys.RequestID, ids[1])
+
 	return ctx
 }
 
 func validateRequest(ctx context.Context) (sessionSecureID string, requestID string, err error) {
-	stateMutex.RLock()
-	defer stateMutex.RUnlock()
-	if state == stopped {
-		err = errors.New(consumeErrorWorkerStopped)
-		return
+	if v := ctx.Value(string(ContextKeys.SessionSecureID)); v != nil {
+		sessionSecureID = v.(string)
 	}
 	if v := ctx.Value(ContextKeys.SessionSecureID); v != nil {
 		sessionSecureID = v.(string)
+	}
+	if v := ctx.Value(string(ContextKeys.RequestID)); v != nil {
+		requestID = v.(string)
 	}
 	if v := ctx.Value(ContextKeys.RequestID); v != nil {
 		requestID = v.(string)
@@ -216,5 +273,4 @@ func shutdown() {
 		otlp.shutdown()
 	}
 	state = stopped
-	wg.Wait()
 }

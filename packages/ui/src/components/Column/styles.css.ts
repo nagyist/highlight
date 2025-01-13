@@ -1,5 +1,6 @@
 import { style, styleVariants } from '@vanilla-extract/css'
 import { createSprinkles, defineProperties } from '@vanilla-extract/sprinkles'
+
 import { mediaQueries } from '../../css/breakpoints'
 import { Space } from '../../css/spaces'
 
@@ -55,7 +56,10 @@ const negativeMarginValues: { [K in Space]: string } = {
 	'24': '-24px',
 	'28': '-28px',
 	'32': '-32px',
+	'36': '-36px',
 	'40': '-40px',
+	'44': '-44px',
+	'48': '-48px',
 } as const
 
 export const negativeMargins = {

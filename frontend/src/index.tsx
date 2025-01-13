@@ -1,6 +1,7 @@
-import 'antd/dist/antd.css'
-import '@highlight-run/rrweb/dist/rrweb.min.css'
 import '@fontsource/poppins'
+import '@highlight-run/ui/styles.css'
+import 'rrweb/dist/style.css'
+import './__generated/antd.css'
 import './index.css'
 import './style/tailwind.css'
 
@@ -8,6 +9,7 @@ import { ApolloError, ApolloProvider } from '@apollo/client'
 import { AuthContextProvider, AuthRole } from '@authentication/AuthContext'
 import { ErrorState } from '@components/ErrorState/ErrorState'
 import { LoadingPage } from '@components/Loading/Loading'
+import { Toaster } from '@components/Toaster'
 import {
 	AppLoadingContext,
 	AppLoadingState,
@@ -19,7 +21,7 @@ import {
 	useGetAdminRoleLazyQuery,
 	useGetProjectLazyQuery,
 } from '@graph/hooks'
-import { Admin } from '@graph/schemas'
+import { Admin, WorkspaceAdminRole } from '@graph/schemas'
 import { ErrorBoundary } from '@highlight-run/react'
 import useLocalStorage from '@rehooks/local-storage'
 import { AppRouter } from '@routers/AppRouter/AppRouter'
@@ -29,7 +31,6 @@ import { auth } from '@util/auth'
 import { showHiringMessage } from '@util/console/hiringMessage'
 import { client } from '@util/graph'
 import { isOnPrem } from '@util/onPrem/onPremUtils'
-import { loadIntercom } from '@util/window'
 import { H, HighlightOptions } from 'highlight.run'
 import { parse, stringify } from 'query-string'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
@@ -46,11 +47,24 @@ import {
 import { QueryParamProvider } from 'use-query-params'
 import { ReactRouter6Adapter } from 'use-query-params/adapters/react-router-6'
 
-import { PUBLIC_GRAPH_URI } from '@/constants'
+import { OTLP_ENDPOINT, PUBLIC_GRAPH_URI } from '@/constants'
 import { SIGN_IN_ROUTE } from '@/pages/Auth/AuthRouter'
+import { authRedirect } from '@/pages/Auth/utils'
 import { onlyAllowHighlightStaff } from '@/util/authorization/authorizationUtils'
+import { omit } from 'lodash'
 
 document.body.className = 'highlight-light-theme'
+
+const determinePrivacySetting = () => {
+	const value = Math.random() * 10
+	if (value < 1) {
+		return 'strict' // 10%
+	} else if (value < 4) {
+		return 'none' // 30%
+	} else {
+		return 'default' // 60%
+	}
+}
 
 analytics.initialize()
 const dev = import.meta.env.DEV
@@ -66,7 +80,7 @@ const options: HighlightOptions = {
 		: undefined,
 	backendUrl: PUBLIC_GRAPH_URI,
 	manualStart: true,
-	enableStrictPrivacy: Math.floor(Math.random() * 8) === 0,
+	privacySetting: determinePrivacySetting(),
 	networkRecording: {
 		enabled: true,
 		recordHeadersAndBody: true,
@@ -83,12 +97,7 @@ const options: HighlightOptions = {
 			'web-socket-events-compressed',
 		],
 	},
-	tracingOrigins: [
-		'highlight.io',
-		'highlight.run',
-		'localhost',
-		'localhost:8082',
-	],
+	tracingOrigins: ['pri.highlight.io', 'localhost:8082/private'],
 	integrations: {
 		amplitude: {
 			apiKey: 'fb83ae15d6122ef1b3f0ecdaa3393fea',
@@ -101,18 +110,18 @@ const options: HighlightOptions = {
 	enableCanvasRecording: true,
 	samplingStrategy: {
 		canvas: 1,
-		canvasMaxSnapshotDimension: 480,
 		canvasFactor: 0.5,
+		canvasMaxSnapshotDimension: 480,
 	},
 	inlineStylesheet: true,
 	inlineImages: true,
 	sessionShortcut: 'alt+1,command+`,alt+esc',
-	version: import.meta.env.REACT_APP_COMMIT_SHA || undefined,
+	version: import.meta.env.REACT_APP_COMMIT_SHA ?? '1.0.0',
+	serviceName: 'frontend',
+	otlpEndpoint: OTLP_ENDPOINT,
 }
 const favicon = document.querySelector("link[rel~='icon']") as any
 if (dev) {
-	options.scriptUrl = 'http://localhost:8080/dist/index.js'
-
 	options.integrations = undefined
 
 	const sampleEnvironmentNames = ['john', 'jay', 'anthony', 'cameron', 'boba']
@@ -125,7 +134,11 @@ if (dev) {
 	if (favicon) {
 		favicon.href = `/favicon-localhost.ico`
 	}
-} else if (window.location.href.includes('onrender')) {
+} else if (
+	window.location.href.includes('onrender') ||
+	window.location.href.includes('preview') ||
+	shouldDebugLog
+) {
 	if (favicon) {
 		favicon.href = `/favicon-pr.ico`
 	}
@@ -136,7 +149,6 @@ H.init(import.meta.env.REACT_APP_FRONTEND_ORG ?? 1, options)
 analytics.track('attribution', getAttributionData())
 if (!isOnPrem) {
 	H.start()
-	loadIntercom()
 }
 
 showHiringMessage()
@@ -171,6 +183,7 @@ const App = () => {
 							>
 								<AuthenticationRoleRouter />
 							</QueryParamProvider>
+							<Toaster />
 						</BrowserRouter>
 					</AppLoadingContext>
 				</SkeletonTheme>
@@ -225,6 +238,7 @@ const AuthenticationRoleRouter = () => {
 		adminError: ApolloError | undefined,
 		adminData: Admin | undefined | null,
 		adminRole: string | undefined,
+		roleData: WorkspaceAdminRole | undefined,
 		called: boolean,
 		loading: boolean,
 		refetch: typeof wRefetch | typeof pRefetch | typeof sRefetch
@@ -233,6 +247,7 @@ const AuthenticationRoleRouter = () => {
 		adminError = adminWError
 		adminData = adminWData?.admin_role?.admin
 		adminRole = adminWData?.admin_role?.role
+		roleData = adminWData?.admin_role ?? undefined
 		called = wCalled
 		loading = wLoading
 		refetch = wRefetch
@@ -241,6 +256,7 @@ const AuthenticationRoleRouter = () => {
 		adminError = adminPError
 		adminData = adminPData?.admin_role_by_project?.admin
 		adminRole = adminPData?.admin_role_by_project?.role
+		roleData = adminPData?.admin_role_by_project ?? undefined
 		called = pCalled
 		loading = pLoading
 		refetch = pRefetch
@@ -263,13 +279,27 @@ const AuthenticationRoleRouter = () => {
 	const isAuthLoading = authRole === AuthRole.LOADING
 	const isLoggedIn = authRole === AuthRole.AUTHENTICATED
 
-	useEffect(() => {
-		if (adminData && user) {
-			setAuthRole(AuthRole.AUTHENTICATED)
-		} else if (adminError) {
-			setAuthRole(AuthRole.UNAUTHENTICATED)
-		}
-	}, [adminData, adminError, user])
+	auth.onAuthStateChanged(
+		async (user) => {
+			if (!firebaseInitialized.current) {
+				// Only call this logic when we are initializing Firebase, otherwise,
+				// let the signIn/signOut handlers set it.
+				setUser(user)
+
+				if (!user) {
+					// If Firebase initialized without a user they need to authenticate,
+					// so set them as unauthenticated and disable the loading state.
+					setAuthRole(AuthRole.UNAUTHENTICATED)
+					setLoadingState(AppLoadingState.LOADED)
+				}
+			}
+
+			firebaseInitialized.current = true
+		},
+		(error) => {
+			H.consumeError(error)
+		},
+	)
 
 	const fetchAdmin = useCallback(async () => {
 		if (loading || !user) {
@@ -291,10 +321,17 @@ const AuthenticationRoleRouter = () => {
 	}, [called, getAdminQuery, loading, projectId, refetch, user, workspaceId])
 
 	useEffect(() => {
+		if (adminData && user) {
+			setAuthRole(AuthRole.AUTHENTICATED)
+		} else if (adminError) {
+			setAuthRole(AuthRole.UNAUTHENTICATED)
+		}
+	}, [adminData, adminError, user])
+
+	useEffect(() => {
 		const fetch = async () => {
 			if (user) {
 				await fetchAdmin()
-				setLoadingState(AppLoadingState.LOADED)
 			}
 		}
 		fetch()
@@ -303,31 +340,6 @@ const AuthenticationRoleRouter = () => {
 		// different parts of the app) or when the Firebase user changes.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [getAdminQuery, user])
-
-	useEffect(() => {
-		return auth.onAuthStateChanged(
-			async (user) => {
-				if (!firebaseInitialized.current) {
-					// Only call this logic when we are initializing Firebase, otherwise,
-					// let the signIn/signOut handlers set it.
-					setUser(user)
-
-					if (!user) {
-						// If Firebase initialized without a user they need to authenticate,
-						// so set them as unauthenticated and disable the loading state.
-						setAuthRole(AuthRole.UNAUTHENTICATED)
-						setLoadingState(AppLoadingState.LOADED)
-					}
-				}
-
-				firebaseInitialized.current = true
-			},
-			(error) => {
-				H.consumeError(error)
-			},
-		)
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [])
 
 	useEffect(() => {
 		// Wait until auth is finished loading otherwise this request can fail.
@@ -346,7 +358,16 @@ const AuthenticationRoleRouter = () => {
 
 				analytics.identify(adminData.id, {
 					'Project ID': data.project?.id,
-					'Workspace ID': data.workspace?.id,
+					'Workspace ID': data.project?.workspace?.id,
+					...Object.entries(omit(adminData, ['__typename'])).reduce(
+						(acc, [key, value]) => {
+							if (value) {
+								acc[key] = value.toString()
+							}
+							return acc
+						},
+						{} as Record<string, string>,
+					),
 				})
 			},
 		})
@@ -358,16 +379,19 @@ const AuthenticationRoleRouter = () => {
 		true,
 	)
 
+	const isProjectLevelMember = !!roleData?.projectIds?.length
+
 	return (
 		<AuthContextProvider
 			value={{
 				role: authRole,
-				admin: isLoggedIn ? adminData ?? undefined : undefined,
+				admin: isLoggedIn ? (adminData ?? undefined) : undefined,
 				workspaceRole: adminRole || undefined,
 				isAuthLoading,
 				isLoggedIn,
 				isHighlightAdmin:
 					onlyAllowHighlightStaff(adminData) && enableStaffView,
+				isProjectLevelMember,
 				fetchAdmin,
 				signIn: async (user: typeof auth.currentUser) => {
 					analytics.track('Authenticated')
@@ -381,12 +405,14 @@ const AuthenticationRoleRouter = () => {
 					analytics.track('Sign out')
 					setUser(null)
 					setAuthRole(AuthRole.UNAUTHENTICATED)
+					authRedirect.clear()
 				},
 			}}
 		>
 			<Helmet>
 				<title>highlight.io</title>
 			</Helmet>
+			<div id="portal"></div>
 			{adminError && user ? (
 				<ErrorState
 					message={

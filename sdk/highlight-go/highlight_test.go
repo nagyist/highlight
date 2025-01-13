@@ -3,12 +3,15 @@ package highlight
 import (
 	"context"
 	"fmt"
-	"github.com/99designs/gqlgen/graphql"
-	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/attribute"
-	"testing"
-
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+	"net/http/httptest"
+	"testing"
 )
 
 // TestConsumeError tests every case for ConsumeError
@@ -39,7 +42,7 @@ func TestConsumeError(t *testing.T) {
 	Stop()
 }
 
-// TestConsumeError tests every case for RecordMetric
+// TestRecordMetric tests every case for RecordMetric
 func TestRecordMetric(t *testing.T) {
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, ContextKeys.SessionSecureID, "0")
@@ -67,33 +70,75 @@ func TestRecordMetric(t *testing.T) {
 	Stop()
 }
 
-func TestTracer(t *testing.T) {
+func TestRecordLog(t *testing.T) {
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, ContextKeys.SessionSecureID, "0")
-	ctx = context.WithValue(ctx, ContextKeys.RequestID, "0")
-	ctx = graphql.WithOperationContext(ctx, &graphql.OperationContext{
-		Operation:     &ast.OperationDefinition{},
-		OperationName: "test-operation",
-		RawQuery:      "test-query",
-	})
-	ctx = graphql.WithFieldContext(ctx, &graphql.FieldContext{
-		Field: graphql.CollectedField{
-			Field: &ast.Field{Name: "test-field"},
-		},
-	})
-	tr := NewGraphqlTracer("test")
-	t.Run("test basic intercept", func(t *testing.T) {
-		Start()
-		if res := tr.InterceptResponse(ctx, func(ctx context.Context) *graphql.Response {
-			return graphql.ErrorResponse(ctx, "foo error")
-		}); res == nil {
-			t.Errorf("got invalid response from intercept response")
+	ctx = context.WithValue(ctx, ContextKeys.SessionSecureID, "1")
+	ctx = context.WithValue(ctx, ContextKeys.RequestID, "2")
+	record := log.Record{}
+	record.SetBody(log.StringValue("hello"))
+	tests := map[string]struct {
+		logInput struct {
+			record log.Record
+			tags   []log.KeyValue
 		}
-		if field, err := tr.InterceptField(ctx, func(ctx context.Context) (res interface{}, err error) {
-			return &graphql.Response{}, nil
-		}); field == nil || err != nil {
-			t.Errorf("got invalid response from intercept field")
-		}
-	})
+		contextInput      context.Context
+		expectedFlushSize int
+	}{
+		"test": {expectedFlushSize: 1, contextInput: ctx, logInput: struct {
+			record log.Record
+			tags   []log.KeyValue
+		}{
+			record: record, tags: []log.KeyValue{},
+		}},
+	}
+
+	for name, input := range tests {
+		t.Run(name, func(t *testing.T) {
+			Start()
+			err := RecordLog(input.contextInput, input.logInput.record, input.logInput.tags...)
+			assert.NoError(t, err)
+		})
+	}
 	Stop()
+}
+
+func TestOtelHeaderRequestPropagation(t *testing.T) {
+	propagator := propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	)
+	otel.SetTextMapPropagator(propagator)
+
+	customTraceID, _ := trace.TraceIDFromHex("0123456789abcdef0123456789abcdef")
+	spanID, _ := trace.SpanIDFromHex("0123456789abcdef")
+	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: customTraceID,
+		SpanID:  spanID,
+		Remote:  true,
+	})
+	ctx := trace.ContextWithSpanContext(context.Background(), spanContext)
+
+	tracer := otel.Tracer("test")
+	ctx, span := tracer.Start(ctx, "test-span")
+	defer span.End()
+
+	req := httptest.NewRequest("GET", "http://example.com", nil)
+	req.Header.Set("X-Highlight-Request", "123/456")
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+
+	newCtx := InterceptRequest(req)
+
+	assert.Equal(t, trace.SpanFromContext(newCtx).SpanContext().TraceID(), customTraceID)
+	assert.Equal(t, newCtx.Value(ContextKeys.SessionSecureID), nil)
+	assert.Equal(t, newCtx.Value(ContextKeys.RequestID), nil)
+}
+
+func TestInterceptHighlightHeaderRequestPropagation(t *testing.T) {
+	req := httptest.NewRequest("GET", "http://example.com", nil)
+	req.Header.Set("X-Highlight-Request", "123/456")
+
+	newCtx := InterceptRequest(req)
+
+	assert.Equal(t, newCtx.Value(ContextKeys.SessionSecureID), "123")
+	assert.Equal(t, newCtx.Value(ContextKeys.RequestID), "456")
 }

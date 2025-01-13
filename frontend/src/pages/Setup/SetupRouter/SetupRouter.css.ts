@@ -1,5 +1,5 @@
-import { vars } from '@highlight-run/ui'
-import { themeVars } from '@highlight-run/ui/src/css/theme.css'
+import { themeVars } from '@highlight-run/ui/theme'
+import { vars } from '@highlight-run/ui/vars'
 import { style } from '@vanilla-extract/css'
 
 export const menuItem = style({
@@ -54,4 +54,14 @@ export const copyProjectIdIdButton = style({
 	justifyContent: 'space-between',
 	padding: '0 8px',
 	width: 325,
+})
+
+export const selectContainer = style({
+	width: 240,
+	color: `${vars.theme.static.content.default} !important`,
+	selectors: {
+		'&:hover': {
+			background: vars.theme.interactive.overlay.secondary.hover,
+		},
+	},
 })
