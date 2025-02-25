@@ -1,5 +1,6 @@
 package io.highlight.sdk.common;
 
+import java.util.Objects;
 import java.util.function.Consumer;
 
 import io.opentelemetry.api.common.Attributes;
@@ -9,8 +10,30 @@ import io.opentelemetry.api.common.AttributesBuilder;
  * Represents the options for highlighting in a project, including project ID,
  * backend URL, environment, version, and default attributes.
  */
-public record HighlightOptions(String projectId, String backendUrl, String enviroment, String version, boolean metric,
-		Attributes defaultAttributes) {
+public final class HighlightOptions {
+
+	private final String projectId;
+	private final String backendUrl;
+
+	private final String enviroment;
+	private final String version;
+
+	private final String serviceName;
+
+	private final boolean metric;
+
+	private final Attributes defaultAttributes;
+
+	public HighlightOptions(String projectId, String backendUrl, String enviroment, String version, String serviceName,
+			boolean metric, Attributes defaultAttributes) {
+		this.projectId = projectId;
+		this.backendUrl = backendUrl;
+		this.enviroment = enviroment;
+		this.version = version;
+		this.serviceName = serviceName;
+		this.metric = metric;
+		this.defaultAttributes = defaultAttributes;
+	}
 
 	/**
 	 * Returns a new builder for constructing {@link HighlightOptions} with the
@@ -21,6 +44,62 @@ public record HighlightOptions(String projectId, String backendUrl, String envir
 	 */
 	public static Builder builder(String projectId) {
 		return new Builder(projectId);
+	}
+
+	public String projectId() {
+		return projectId;
+	}
+
+	public String backendUrl() {
+		return backendUrl;
+	}
+
+	public String enviroment() {
+		return enviroment;
+	}
+
+	public String version() {
+		return version;
+	}
+
+	public String serviceName() {
+		return serviceName;
+	}
+
+	public boolean metric() {
+		return metric;
+	}
+
+	public Attributes defaultAttributes() {
+		return defaultAttributes;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) {
+			return true;
+		}
+		if (!(obj instanceof HighlightOptions)) {
+			return false;
+		}
+		HighlightOptions other = (HighlightOptions) obj;
+		return Objects.equals(backendUrl, other.backendUrl)
+				&& Objects.equals(defaultAttributes, other.defaultAttributes)
+				&& Objects.equals(enviroment, other.enviroment) && metric == other.metric
+				&& Objects.equals(projectId, other.projectId) && Objects.equals(serviceName, other.serviceName)
+				&& Objects.equals(version, other.version);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(backendUrl, defaultAttributes, enviroment, metric, projectId, serviceName, version);
+	}
+
+	@Override
+	public String toString() {
+		return "HighlightOptions [projectId=" + projectId + ", backendUrl=" + backendUrl + ", enviroment=" + enviroment
+				+ ", version=" + version + ", serviceName=" + serviceName + ", metric=" + metric
+				+ ", defaultAttributes=" + defaultAttributes + "]";
 	}
 
 	/**
@@ -37,6 +116,8 @@ public record HighlightOptions(String projectId, String backendUrl, String envir
 
 		private String environment = null;
 		private String version = null;
+
+		private String serviceName = null;
 
 		private boolean metric = true;
 
@@ -89,6 +170,18 @@ public record HighlightOptions(String projectId, String backendUrl, String envir
 		}
 
 		/**
+		 * Sets the service name for the highlight options being constructed. <br>
+		 * If not set, the default value is <b>"unknown"</b>.
+		 *
+		 * @param serviceName the service name to set
+		 * @return this builder
+		 */
+		public Builder serviceName(String serviceName) {
+			this.serviceName = serviceName;
+			return this;
+		}
+
+		/**
 		 * Sets whether metric is enabled or not for the highlight options being
 		 * constructed. <br>
 		 * If not set, the default value is <b>true</b>.
@@ -128,8 +221,8 @@ public record HighlightOptions(String projectId, String backendUrl, String envir
 				this.version = DEFAULT_VERSION;
 			}
 
-			return new HighlightOptions(this.projectId, this.backendUrl, this.environment, this.version, this.metric,
-					this.defaultAttributes.build());
+			return new HighlightOptions(this.projectId, this.backendUrl, this.environment, this.version,
+					this.serviceName, this.metric, this.defaultAttributes.build());
 		}
 	}
 }

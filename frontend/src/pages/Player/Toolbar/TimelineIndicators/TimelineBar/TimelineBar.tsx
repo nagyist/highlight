@@ -1,8 +1,5 @@
 import Popover from '@components/Popover/Popover'
-import {
-	getFullScreenPopoverGetPopupContainer,
-	usePlayerUIContext,
-} from '@pages/Player/context/PlayerUIContext'
+import { getFullScreenPopoverGetPopupContainer } from '@pages/Player/context/PlayerUIContext'
 import { EventsForTimeline } from '@pages/Player/PlayerHook/utils'
 import { EventBucket } from '@pages/Player/Toolbar/TimelineIndicators/TimelineIndicatorsBarGraph/TimelineIndicatorsBarGraph'
 import TimelinePopover from '@pages/Player/Toolbar/TimelineIndicators/TimelinePopover/TimelinePopover'
@@ -13,6 +10,12 @@ import { clamp } from '@util/numbers'
 import { TooltipPlacement } from 'antd/es/tooltip'
 import clsx from 'clsx'
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
+
+import {
+	RelatedError,
+	useRelatedResource,
+} from '@/components/RelatedResources/hooks'
+import { useReplayerContext } from '@/pages/Player/ReplayerContext'
 
 import styles from './TimelineBar.module.css'
 
@@ -32,6 +35,18 @@ const TimelineIndicatorsBar = ({
 	disabled,
 	viewportRef,
 }: IBar) => {
+	const { resource } = useRelatedResource()
+	const relatedError = resource as RelatedError | undefined
+	const { errors } = useReplayerContext()
+	const activeError = useMemo(
+		() =>
+			errors.find(
+				(error) =>
+					error.error_group_secure_id === relatedError?.secureId,
+			),
+		[errors, relatedError?.secureId],
+	)
+
 	const data = useMemo(() => {
 		const selectedEventTypes = EventsForTimeline.filter(
 			(eventType) => bucket.identifier[eventType] !== undefined,
@@ -62,7 +77,6 @@ const TimelineIndicatorsBar = ({
 	const [isInsideBar, setIsInsideBar] = useState(false)
 	const [isInsidePopover, setIsInsidePopover] = useState(false)
 	const [isSelected, setIsSelected] = useState(false)
-	const { activeError } = usePlayerUIContext()
 
 	useEffect(() => {
 		if (

@@ -1,5 +1,5 @@
 import { Button } from '@components/Button'
-import { Callout, Stack, Text } from '@highlight-run/ui'
+import { Callout, Stack, Text } from '@highlight-run/ui/components'
 
 export enum SearchResultsKind {
 	Errors = 'errors',
@@ -24,7 +24,7 @@ export const EmptySearchResults = ({ kind }: Props) => {
 					onClick={() => {
 						const url =
 							kind === SearchResultsKind.Errors
-								? 'https://www.highlight.io/docs/general/product-features/error-monitoring/grouping-errors'
+								? 'https://www.highlight.io/docs/general/product-features/error-monitoring/error-search'
 								: 'https://www.highlight.io/docs/general/product-features/session-replay/session-search'
 
 						window.open(url, '_blank')

@@ -3,10 +3,11 @@ import { useSlackBot } from '@components/Header/components/ConnectHighlightWithS
 import LeadAlignLayout from '@components/layout/LeadAlignLayout'
 import { useClearbitIntegration } from '@pages/IntegrationsPage/components/ClearbitIntegration/utils'
 import { useClickUpIntegration } from '@pages/IntegrationsPage/components/ClickUpIntegration/utils'
+import { useCloudflareIntegration } from '@pages/IntegrationsPage/components/CloudflareIntegration/utils'
 import { useDiscordIntegration } from '@pages/IntegrationsPage/components/DiscordIntegration/utils'
-import { useFrontIntegration } from '@pages/IntegrationsPage/components/FrontIntegration/utils'
 import { useGitHubIntegration } from '@pages/IntegrationsPage/components/GitHubIntegration/utils'
 import { useHeightIntegration } from '@pages/IntegrationsPage/components/HeightIntegration/utils'
+import { useHerokuIntegration } from '@pages/IntegrationsPage/components/HerokuIntegration/utils'
 import Integration from '@pages/IntegrationsPage/components/Integration'
 import { useLinearIntegration } from '@pages/IntegrationsPage/components/LinearIntegration/utils'
 import { useVercelIntegration } from '@pages/IntegrationsPage/components/VercelIntegration/utils'
@@ -15,9 +16,13 @@ import INTEGRATIONS from '@pages/IntegrationsPage/Integrations'
 import { useApplicationContext } from '@routers/AppRouter/context/ApplicationContext'
 import analytics from '@util/analytics'
 import { useParams } from '@util/react-router/useParams'
-import React, { useEffect, useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Helmet } from 'react-helmet'
 import { StringParam, useQueryParam } from 'use-query-params'
+
+import { useGitlabIntegration } from '@/pages/IntegrationsPage/components/GitlabIntegration/utils'
+import { useJiraIntegration } from '@/pages/IntegrationsPage/components/JiraIntegration/utils'
+import { useMicrosoftTeamsBot } from '@/pages/IntegrationsPage/components/MicrosoftTeamsIntegration/utils'
 
 import layoutStyles from '../../components/layout/LeadAlignLayout.module.css'
 import styles from './IntegrationsPage.module.css'
@@ -43,14 +48,36 @@ const IntegrationsPage = () => {
 	const { isClearbitIntegratedWithWorkspace, loading: loadingClearbit } =
 		useClearbitIntegration()
 
-	const { isFrontIntegratedWithProject, loading: loadingFront } =
-		useFrontIntegration()
-
 	const { isVercelIntegratedWithProject, loading: loadingVercel } =
 		useVercelIntegration()
 
 	const { isDiscordIntegratedWithProject, loading: loadingDiscord } =
 		useDiscordIntegration()
+
+	const { isHerokuConnectedToWorkspace, loading: loadingHeroku } =
+		useHerokuIntegration()
+
+	const { isCloudflareConnectedToWorkspace, loading: loadingCloudflare } =
+		useCloudflareIntegration()
+
+	const {
+		isMicrosoftTeamsConnectedToWorkspace,
+		loading: loadingMicrosoftTeams,
+	} = useMicrosoftTeamsBot()
+
+	const {
+		settings: {
+			isIntegrated: isJiraIntegratedWithProject,
+			loading: loadingJira,
+		},
+	} = useJiraIntegration()
+
+	const {
+		settings: {
+			isIntegrated: isGitlabIntegratedWithProject,
+			loading: loadingGitlab,
+		},
+	} = useGitlabIntegration()
 
 	const {
 		settings: {
@@ -78,12 +105,16 @@ const IntegrationsPage = () => {
 		loadingSlack ||
 		loadingZapier ||
 		loadingClearbit ||
-		loadingFront ||
 		loadingVercel ||
 		loadingDiscord ||
 		loadingClickUp ||
 		loadingHeight ||
-		loadingGitHub
+		loadingGitHub ||
+		loadingJira ||
+		loadingGitlab ||
+		loadingMicrosoftTeams ||
+		loadingHeroku ||
+		loadingCloudflare
 
 	const integrations = useMemo(() => {
 		return INTEGRATIONS.filter((integration) => {
@@ -116,12 +147,18 @@ const IntegrationsPage = () => {
 				(inter.key === 'zapier' && isZapierIntegratedWithProject) ||
 				(inter.key === 'clearbit' &&
 					isClearbitIntegratedWithWorkspace) ||
-				(inter.key === 'front' && isFrontIntegratedWithProject) ||
 				(inter.key === 'vercel' && isVercelIntegratedWithProject) ||
 				(inter.key === 'discord' && isDiscordIntegratedWithProject) ||
 				(inter.key === 'github' && isGitHubIntegratedWithProject) ||
 				(inter.key === 'clickup' && isClickUpIntegratedWithProject) ||
-				(inter.key === 'height' && isHeightIntegratedWithProject),
+				(inter.key === 'height' && isHeightIntegratedWithProject) ||
+				(inter.key === 'jira' && isJiraIntegratedWithProject) ||
+				(inter.key === 'microsoft_teams' &&
+					isMicrosoftTeamsConnectedToWorkspace) ||
+				(inter.key === 'gitlab' && isGitlabIntegratedWithProject) ||
+				(inter.key === 'heroku' && isHerokuConnectedToWorkspace) ||
+				(inter.key === 'cloudflare' &&
+					isCloudflareConnectedToWorkspace),
 		}))
 	}, [
 		currentWorkspace?.id,
@@ -130,15 +167,19 @@ const IntegrationsPage = () => {
 		isLinearIntegratedWithProject,
 		isZapierIntegratedWithProject,
 		isClearbitIntegratedWithWorkspace,
-		isFrontIntegratedWithProject,
 		isVercelIntegratedWithProject,
 		isDiscordIntegratedWithProject,
 		isGitHubIntegratedWithProject,
 		isClickUpIntegratedWithProject,
 		isHeightIntegratedWithProject,
+		isJiraIntegratedWithProject,
+		isMicrosoftTeamsConnectedToWorkspace,
+		isGitlabIntegratedWithProject,
+		isHerokuConnectedToWorkspace,
+		isCloudflareConnectedToWorkspace,
 	])
 
-	useEffect(() => analytics.page(), [])
+	useEffect(() => analytics.page('Integrations'), [])
 
 	return (
 		<>

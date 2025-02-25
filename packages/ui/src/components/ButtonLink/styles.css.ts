@@ -1,5 +1,6 @@
 import { style } from '@vanilla-extract/css'
 import { recipe, RecipeVariants } from '@vanilla-extract/recipes'
+
 import { vars } from '../../css/vars'
 
 export const button = style({
@@ -34,6 +35,20 @@ export const variants = recipe({
 					'&:active': {
 						color: vars.theme.interactive.fill.secondary.content
 							.onEnabled,
+					},
+				},
+			},
+
+			light: {
+				color: vars.theme.interactive.fill.secondary.enabled,
+				selectors: {
+					'&:hover': {
+						color: vars.theme.interactive.fill.secondary.content
+							.onDisabled,
+					},
+					'&:active': {
+						color: vars.theme.interactive.fill.secondary.content
+							.onDisabled,
 					},
 				},
 			},

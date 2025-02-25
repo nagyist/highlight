@@ -1,21 +1,24 @@
 import clsx from 'clsx'
 import React from 'react'
-import { Box, BoxProps } from '../Box/Box'
+
+import { spaces } from '../../css/spaces'
 import { sprinkles } from '../../css/sprinkles.css'
+import { Box } from '../Box/Box'
+import * as styles from './styles.css'
 import { negativeMargin } from './utils'
 
-import * as styles from './styles.css'
+type Gap = keyof typeof spaces
 
-const ColumnsContext = React.createContext<{ gap: BoxProps['padding'] }>({
+const ColumnsContext = React.createContext<{ gap: Gap }>({
 	gap: '0',
 })
 
 type ColumnsProps = React.PropsWithChildren & {
-	gap?: BoxProps['gap']
+	gap?: Gap
 }
 
 const Columns: React.FC<ColumnsProps> = ({ children, gap }) => (
-	<ColumnsContext.Provider value={{ gap }}>
+	<ColumnsContext.Provider value={{ gap: gap ?? '0' }}>
 		<Box cssClass={clsx(styles.columns, negativeMargin(gap))}>
 			{children}
 		</Box>

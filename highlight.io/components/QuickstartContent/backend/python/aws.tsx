@@ -1,7 +1,7 @@
-import { siteUrl } from '../../../../utils/urls'
 import { QuickStartContent } from '../../QuickstartContent'
 import {
 	downloadSnippet,
+	init,
 	setupFrontendSnippet,
 	setupLogging,
 } from './shared-snippets'
@@ -9,7 +9,6 @@ import {
 export const PythonAWSContext: QuickStartContent = {
 	title: 'Logging from Python AWS Lambda',
 	subtitle: 'Learn how to set up highlight.io on AWS Lambda.',
-	logoUrl: siteUrl('/images/quickstart/aws-lambda.svg'),
 	entries: [
 		setupFrontendSnippet,
 		downloadSnippet(),
@@ -22,7 +21,7 @@ export const PythonAWSContext: QuickStartContent = {
 					text: `import highlight_io
 from highlight_io.integrations.aws import observe_handler
 
-H = highlight_io.H("<YOUR_PROJECT_ID>", instrument_logging=True)
+${init}
 
 
 @observe_handler
@@ -49,7 +48,7 @@ def lambda_handler(event, context):
 					text: `import highlight_io
 from highlight_io.integrations.aws import observe_handler
 
-H = highlight_io.H("<YOUR_PROJECT_ID>", instrument_logging=True)
+${init}
 
 
 @observe_handler

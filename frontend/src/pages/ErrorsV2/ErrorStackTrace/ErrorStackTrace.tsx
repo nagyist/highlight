@@ -1,23 +1,29 @@
 import { Button } from '@components/Button'
 import InfoTooltip from '@components/InfoTooltip/InfoTooltip'
 import { LinkButton } from '@components/LinkButton'
-import Tooltip from '@components/Tooltip/Tooltip'
 import { Maybe, SourceMappingError } from '@graph/schemas'
 import {
+	Badge,
 	Box,
 	ButtonIcon,
 	Callout,
 	IconSolidCheveronDown,
 	IconSolidCheveronUp,
+	IconSolidClipboardCopy,
 	IconSolidExclamation,
+	IconSolidExternalLink,
+	IconSolidGithub,
 	Popover,
 	Stack,
 	Text,
-} from '@highlight-run/ui'
+	Tooltip,
+} from '@highlight-run/ui/components'
 import { useProjectId } from '@hooks/useProjectId'
 import ErrorSourcePreview from '@pages/ErrorsV2/ErrorSourcePreview/ErrorSourcePreview'
 import { SourcemapErrorDetails } from '@pages/ErrorsV2/SourcemapErrorDetails/SourcemapErrorDetails'
 import { UnstructuredStackTrace } from '@pages/ErrorsV2/UnstructuredStackTrace/UnstructuredStackTrace'
+import analytics from '@util/analytics'
+import { copyToClipboard } from '@util/string'
 import clsx from 'clsx'
 import React from 'react'
 import ReactCollapsible from 'react-collapsible'
@@ -25,6 +31,8 @@ import ReactCollapsible from 'react-collapsible'
 import { ErrorObjectFragment } from '@/graph/generated/operations'
 
 import * as styles from './ErrorStackTrace.css'
+
+const MAX_GIT_SHA_LENGTH = 7
 
 interface Props {
 	errorObject?: ErrorObjectFragment
@@ -112,6 +120,9 @@ const ErrorStackTrace = ({ errorObject }: Props) => {
 							longestLineNumberCharacterLength={
 								longestLineNumberCharacterLength
 							}
+							enhancementSource={e?.enhancementSource}
+							enhancementVersion={e?.enhancementVersion}
+							externalLink={e?.externalLink}
 							lineContent={e?.lineContent}
 							linesBefore={e?.linesBefore}
 							linesAfter={e?.linesAfter}
@@ -121,6 +132,7 @@ const ErrorStackTrace = ({ errorObject }: Props) => {
 							sourceMappingErrorMetadata={
 								e?.sourceMappingErrorMetadata
 							}
+							errorObjectId={errorObject?.id ?? ''}
 							compact={false}
 						/>
 					))
@@ -142,11 +154,15 @@ export type StackSectionProps = {
 	lineNumber?: number
 	columnNumber?: number
 	longestLineNumberCharacterLength?: number
+	enhancementSource?: Maybe<string>
+	externalLink?: Maybe<string>
+	enhancementVersion?: Maybe<string>
 	lineContent?: Maybe<string>
 	linesBefore?: Maybe<string>
 	linesAfter?: Maybe<string>
 	sourceMappingErrorMetadata?: Maybe<SourceMappingError>
 	error?: Maybe<string>
+	errorObjectId: string
 	compact: boolean
 	isFirst: boolean
 	isLast: boolean
@@ -182,18 +198,33 @@ const StackSection: React.FC<React.PropsWithChildren<StackSectionProps>> = ({
 	lineNumber,
 	columnNumber,
 	longestLineNumberCharacterLength = 5,
+	enhancementSource,
+	enhancementVersion,
+	externalLink,
 	lineContent,
 	linesBefore,
 	linesAfter,
 	sourceMappingErrorMetadata,
 	error,
+	errorObjectId,
 	isFirst,
 	isLast,
 }) => {
 	const [expanded, setExpanded] = React.useState(isFirst)
 
+	const handleExpandedChange = (value: boolean) => {
+		setExpanded(value)
+
+		const trackingProperties = {
+			expanded: value,
+			errorObjectId,
+			enhancementSource: enhancementSource ?? 'none',
+		}
+		analytics.track('error-stack-trace-clicked', trackingProperties)
+	}
+
 	const trigger = (
-		<Box p="12" backgroundColor="n2">
+		<Box py="4" backgroundColor="n2">
 			{!!lineContent ? (
 				<ErrorSourcePreview
 					fileName={fileName}
@@ -205,7 +236,7 @@ const StackSection: React.FC<React.PropsWithChildren<StackSectionProps>> = ({
 					linesAfter={linesAfter}
 				/>
 			) : (
-				<Text family="monospace" as="div">
+				<Text family="monospace" as="div" display="flex">
 					<Box
 						as="span"
 						cssClass={styles.lineNumber}
@@ -219,8 +250,8 @@ const StackSection: React.FC<React.PropsWithChildren<StackSectionProps>> = ({
 					>
 						{lineNumber}
 					</Box>
-					<Tooltip title={functionName}>
-						<span>{functionName}</span>
+					<Tooltip trigger={<span>{functionName}</span>}>
+						{functionName}
 					</Tooltip>
 					<span>
 						<InfoTooltip
@@ -232,6 +263,11 @@ const StackSection: React.FC<React.PropsWithChildren<StackSectionProps>> = ({
 			)}
 		</Box>
 	)
+
+	const versionString =
+		(enhancementVersion?.length || 0) > MAX_GIT_SHA_LENGTH
+			? enhancementVersion?.slice(0, MAX_GIT_SHA_LENGTH)
+			: enhancementVersion!
 
 	const stackTraceTitle = (
 		<Box
@@ -248,27 +284,93 @@ const StackSection: React.FC<React.PropsWithChildren<StackSectionProps>> = ({
 			display="flex"
 			justifyContent="space-between"
 			alignItems="center"
+			style={{ height: '36px' }}
 		>
 			<Box display="flex" gap="4" alignItems="center">
-				<Text cssClass={clsx(styles.name, styles.file)} as="span">
-					{truncateFileName(fileName || '')}
-				</Text>
-				<Text cssClass={styles.name} color="n11" as="span">
-					{functionName ? ' in ' : ''}
-				</Text>
-				<Text cssClass={styles.name} as="span">
-					{functionName}
-				</Text>
-				<Text cssClass={styles.name} color="n11" as="span">
-					{lineNumber ? ' at line ' : ''}
-				</Text>
-				<Text cssClass={styles.name} as="span">
-					{lineNumber}
-				</Text>
+				{fileName && (
+					<Tooltip
+						trigger={
+							<Text
+								cssClass={clsx(styles.name, styles.file)}
+								as="span"
+							>
+								{truncateFileName(fileName)}
+							</Text>
+						}
+					>
+						<Box display="flex">
+							<ButtonIcon
+								kind="secondary"
+								size="xSmall"
+								shape="square"
+								emphasis="low"
+								icon={<IconSolidClipboardCopy size={12} />}
+								onClick={(e) => {
+									e.stopPropagation()
+									copyToClipboard(fileName)
+								}}
+							/>
+							<Text cssClass={styles.fileName} wrap="breakWord">
+								{fileName}
+							</Text>
+						</Box>
+					</Tooltip>
+				)}
+
+				{externalLink && (
+					<LinkButton
+						kind="secondary"
+						emphasis="low"
+						to={externalLink}
+						target="_blank"
+						trackingId="stacktrace-external-link-click"
+						size="xSmall"
+					>
+						<IconSolidExternalLink size={16} />
+					</LinkButton>
+				)}
+				{!!functionName && (
+					<>
+						<Text cssClass={styles.name} color="n11" as="span">
+							{' in '}
+						</Text>
+						<Text cssClass={styles.name} as="span">
+							{functionName}
+						</Text>
+					</>
+				)}
+				{!!lineNumber && (
+					<>
+						<Text cssClass={styles.name} color="n11" as="span">
+							{' at line '}
+						</Text>
+						<Text cssClass={styles.name} as="span">
+							{lineNumber}
+						</Text>
+					</>
+				)}
 			</Box>
 
 			<Box display="flex" gap="4" alignItems="center">
-				<SourcemapError metadata={sourceMappingErrorMetadata} />
+				{enhancementSource == 'github' && (
+					<Tooltip
+						trigger={
+							<Badge
+								iconStart={<IconSolidGithub size={16} />}
+								label={versionString}
+							/>
+						}
+					>
+						This stacktrace was enhanced using GitHub
+						{enhancementVersion &&
+							` with commit version, ${versionString}`}
+						.
+					</Tooltip>
+				)}
+				<SourcemapError
+					errorObjectId={errorObjectId}
+					metadata={sourceMappingErrorMetadata}
+				/>
 
 				<ButtonIcon
 					icon={
@@ -291,7 +393,7 @@ const StackSection: React.FC<React.PropsWithChildren<StackSectionProps>> = ({
 			<StackTraceSectionCollapsible
 				title={stackTraceTitle}
 				expanded={expanded}
-				setExpanded={setExpanded}
+				setExpanded={handleExpandedChange}
 				isLast={isLast}
 			>
 				{trigger}
@@ -324,6 +426,7 @@ const StackTraceSectionCollapsible: React.FC<
 }
 
 const SourcemapError: React.FC<{
+	errorObjectId: string
 	metadata?: Maybe<SourceMappingError>
 }> = ({ metadata }) => {
 	if (!metadata) {
@@ -337,7 +440,7 @@ const SourcemapError: React.FC<{
 			onClick={(e) => e.stopPropagation()}
 			display="flex"
 		>
-			<Popover placement="bottom-start">
+			<Popover>
 				<Popover.TagTrigger
 					kind="secondary"
 					shape="basic"
@@ -357,7 +460,13 @@ const SourcemapError: React.FC<{
 const truncateFileName = (fileName: string, numberOfLevelsToGoUp = 5) => {
 	const tokens = fileName.split('/')
 
-	return `${'../'.repeat(
-		Math.max(tokens.length - numberOfLevelsToGoUp, 0),
-	)}${tokens.splice(tokens.length - numberOfLevelsToGoUp).join('/')}`
+	// add one for the starting "/"
+	const useRelativePath = tokens.length > 1 + numberOfLevelsToGoUp
+	if (!useRelativePath) {
+		return fileName
+	}
+
+	return `.../${tokens
+		.splice(tokens.length - numberOfLevelsToGoUp)
+		.join('/')}`
 }

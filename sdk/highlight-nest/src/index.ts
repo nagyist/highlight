@@ -1,7 +1,6 @@
 import { H as NodeH, NodeOptions } from '@highlight-run/node'
 import type { OnApplicationShutdown } from '@nestjs/common'
 import {
-	BadGatewayException,
 	CallHandler,
 	ConsoleLogger,
 	ExecutionContext,
@@ -9,7 +8,8 @@ import {
 	Injectable,
 	NestInterceptor,
 } from '@nestjs/common'
-import { Observable, throwError } from 'rxjs'
+import api from '@opentelemetry/api'
+import { finalize, Observable, throwError } from 'rxjs'
 import { catchError } from 'rxjs/operators'
 
 @Injectable()
@@ -97,18 +97,35 @@ export class HighlightInterceptor
 	intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
 		const ctx = context.switchToHttp()
 		const request = ctx.getRequest()
-		const highlightCtx = NodeH.parseHeaders(request.headers)
 
-		return next.handle().pipe(
-			catchError((err) => {
-				NodeH.consumeError(
-					err,
-					highlightCtx?.secureSessionId,
-					highlightCtx?.requestId,
-				)
-				return throwError(() => err)
-			}),
+		const { span: requestSpan, ctx: spanCtx } = NodeH.startWithHeaders(
+			`${request.method} ${request.url}`,
+			request.headers,
+			{
+				attributes: {
+					'http.method': request.method,
+					'http.url': request.url,
+				},
+			},
 		)
+		const fn = api.context.bind(spanCtx, () =>
+			next.handle().pipe(
+				catchError((err) => {
+					NodeH.consumeError(
+						err,
+						undefined,
+						undefined,
+						{},
+						{ span: requestSpan },
+					)
+					return throwError(() => err)
+				}),
+				finalize(() => {
+					requestSpan.end()
+				}),
+			),
+		)
+		return fn()
 	}
 }
 

@@ -1,5 +1,4 @@
 {
-	"taskDefinitionArn": "arn:aws:ecs:us-east-2:173971919437:task-definition/opentelemetry-collector-service:8",
 	"containerDefinitions": [
 		{
 			"name": "highlight-collector",
@@ -28,14 +27,32 @@
 					"appProtocol": "http"
 				},
 				{
+					"name": "highlight-collector-8888-tcp",
+					"containerPort": 8888,
+					"hostPort": 8888,
+					"protocol": "tcp",
+					"appProtocol": "http"
+				},
+				{
 					"name": "highlight-collector-24224-tcp",
 					"containerPort": 24224,
 					"hostPort": 24224,
 					"protocol": "tcp"
+				},
+				{
+					"name": "highlight-collector-34302-tcp",
+					"containerPort": 34302,
+					"hostPort": 34302,
+					"protocol": "tcp"
 				}
 			],
 			"essential": true,
-			"environment": [],
+			"environment": [
+				{
+					"name": "GOMEMLIMIT",
+					"value": "12GiB"
+				}
+			],
 			"mountPoints": [],
 			"volumesFrom": [],
 			"logConfiguration": {
@@ -49,44 +66,16 @@
 		}
 	],
 	"family": "opentelemetry-collector-service",
-	"executionRoleArn": "arn:aws:iam::173971919437:role/ecsTaskExecutionRole",
+	"executionRoleArn": "arn:aws:iam::173971919437:role/HighlightAppProd",
 	"networkMode": "awsvpc",
-	"revision": 8,
 	"volumes": [],
-	"status": "ACTIVE",
-	"requiresAttributes": [
-		{
-			"name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
-		},
-		{
-			"name": "ecs.capability.execution-role-awslogs"
-		},
-		{
-			"name": "com.amazonaws.ecs.capability.ecr-auth"
-		},
-		{
-			"name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
-		},
-		{
-			"name": "ecs.capability.execution-role-ecr-pull"
-		},
-		{
-			"name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
-		},
-		{
-			"name": "ecs.capability.task-eni"
-		}
-	],
 	"placementConstraints": [],
-	"compatibilities": ["EC2", "FARGATE"],
 	"requiresCompatibilities": ["FARGATE"],
-	"cpu": "1024",
-	"memory": "2048",
+	"cpu": "4096",
+	"memory": "16384",
 	"runtimePlatform": {
 		"cpuArchitecture": "ARM64"
 	},
-	"registeredAt": "2023-01-26T21:49:32.433Z",
-	"registeredBy": "arn:aws:iam::173971919437:user/vadim",
 	"tags": [
 		{
 			"key": "ecs:taskDefinition:createdFrom",

@@ -3,13 +3,13 @@ import ButtonLink from '@components/Button/ButtonLink/ButtonLink'
 import { CircularSpinner, LoadingBar } from '@components/Loading/Loading'
 import Select from '@components/Select/Select'
 import Tag from '@components/Tag/Tag'
+import { toast } from '@components/Toaster'
 import {
 	AppLoadingState,
 	useAppLoadingContext,
 } from '@context/AppLoadingContext'
 import { useGetWorkspacesQuery, useJoinWorkspaceMutation } from '@graph/hooks'
-import { message } from 'antd'
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Helmet } from 'react-helmet'
 import { Navigate, useLocation } from 'react-router-dom'
 import { StringParam, useQueryParam } from 'use-query-params'
@@ -116,7 +116,9 @@ const SwitchWorkspace = () => {
 				variables: { workspace_id: selectedWorkspace },
 			}).then((result) => {
 				if (!!result.data?.joinWorkspace) {
-					message.success('Successfuly joined workspace!', 1)
+					toast.success('Successfully joined workspace!', {
+						duration: 1000,
+					})
 					setShouldRedirect(true)
 				}
 			})

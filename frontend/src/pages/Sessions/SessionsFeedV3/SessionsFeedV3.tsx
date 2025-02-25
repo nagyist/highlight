@@ -1,269 +1,209 @@
 import {
-	DEMO_PROJECT_ID,
-	DEMO_WORKSPACE_PROXY_APPLICATION_ID,
-} from '@components/DemoWorkspaceButton/DemoWorkspaceButton'
-import {
 	EmptySearchResults,
 	SearchResultsKind,
 } from '@components/EmptySearchResults/EmptySearchResults'
 import { Series } from '@components/Histogram/Histogram'
 import LoadingBox from '@components/LoadingBox'
-import {
-	DEFAULT_PAGE_SIZE,
-	RESET_PAGE_MS,
-	STARTING_PAGE,
-} from '@components/Pagination/Pagination'
-import SearchPagination from '@components/SearchPagination/SearchPagination'
+import SearchPagination, {
+	PAGE_SIZE,
+} from '@components/SearchPagination/SearchPagination'
 import { SearchResultsHistogram } from '@components/SearchResultsHistogram/SearchResultsHistogram'
 import {
-	useGetBillingDetailsForProjectQuery,
 	useGetSessionsHistogramQuery,
-	useGetSessionsOpenSearchQuery,
+	useGetWorkspaceSettingsQuery,
 } from '@graph/hooks'
-import { GetSessionsOpenSearchQuery } from '@graph/operations'
 import {
-	DateHistogramBucketSize,
 	Maybe,
-	PlanType,
 	ProductType,
+	SavedSegmentEntityType,
 	Session,
 } from '@graph/schemas'
-import { Box } from '@highlight-run/ui'
-import { SessionFeedCard } from '@pages/Sessions/SessionsFeedV3/SessionFeedCard/SessionFeedCard'
-import SessionQueryBuilder, {
-	TIME_RANGE_FIELD,
-} from '@pages/Sessions/SessionsFeedV3/SessionQueryBuilder/SessionQueryBuilder'
-import { useGlobalContext } from '@routers/ProjectRouter/context/GlobalContext'
-import { useIntegrated } from '@util/integrated'
-import { useParams } from '@util/react-router/useParams'
-import { roundFeedDate, serializeAbsoluteTimeRange } from '@util/time'
-import clsx from 'clsx'
-import React, { useCallback, useEffect, useRef } from 'react'
-
 import {
-	QueryBuilderState,
-	updateQueriedTimeRange,
-} from '@/components/QueryBuilder/QueryBuilder'
+	Box,
+	ButtonIcon,
+	IconSolidLogout,
+	Stack,
+} from '@highlight-run/ui/components'
+import { SessionFeedCard } from '@pages/Sessions/SessionsFeedV3/SessionFeedCard/SessionFeedCard'
+import { SessionReport } from '@pages/Sessions/SessionsFeedV3/SessionReport'
+import { useGlobalContext } from '@routers/ProjectRouter/context/GlobalContext'
+import { useParams } from '@util/react-router/useParams'
+import { roundFeedDate, msToHours } from '@util/time'
+import clsx from 'clsx'
+import React from 'react'
+
+import { AdditionalFeedResults } from '@/components/FeedResults/FeedResults'
+import { useSearchContext } from '@/components/Search/SearchContext'
+import { useRetentionPresets } from '@/components/Search/SearchForm/hooks'
+import { SearchForm } from '@/components/Search/SearchForm/SearchForm'
+import usePlayerConfiguration from '@/pages/Player/PlayerHook/utils/usePlayerConfiguration'
 import { OverageCard } from '@/pages/Sessions/SessionsFeedV3/OverageCard/OverageCard'
+import { useApplicationContext } from '@/routers/AppRouter/context/ApplicationContext'
 import { styledVerticalScrollbar } from '@/style/common.css'
 
-import usePlayerConfiguration from '../../Player/PlayerHook/utils/usePlayerConfiguration'
-import { useReplayerContext } from '../../Player/ReplayerContext'
-import {
-	showLiveSessions,
-	useSearchContext,
-} from '../SearchContext/SearchContext'
+import { SessionFeedConfigurationContextProvider } from './context/SessionFeedConfigurationContext'
+import { useSessionFeedConfiguration } from './hooks/useSessionFeedConfiguration'
+import { SessionFeedConfigDropdown } from './SessionFeedConfigDropdown'
 import * as style from './SessionFeedV3.css'
-import { SessionFeedConfigurationContextProvider } from './SessionQueryBuilder/context/SessionFeedConfigurationContext'
-import { useSessionFeedConfiguration } from './SessionQueryBuilder/hooks/useSessionFeedConfiguration'
 
-export const SessionsHistogram: React.FC = React.memo(() => {
-	const { project_id } = useParams<{
-		project_id: string
-	}>()
-	const { setSearchQuery, backendSearchQuery } = useSearchContext()
+export const SessionsHistogram: React.FC<{ readonly?: boolean }> = React.memo(
+	({ readonly }) => {
+		const { project_id } = useParams<{
+			project_id: string
+		}>()
 
-	const { loading, data } = useGetSessionsHistogramQuery({
-		variables: {
-			project_id: project_id!,
-			query: backendSearchQuery?.searchQuery as string,
-			histogram_options: {
-				bucket_size:
-					backendSearchQuery?.histogramBucketSize as DateHistogramBucketSize,
-				time_zone:
-					Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
-				bounds: {
-					start_date: roundFeedDate(
-						backendSearchQuery?.startDate.toISOString() ?? null,
-					).format(),
-					end_date: roundFeedDate(
-						backendSearchQuery?.endDate.toISOString() ?? null,
-					).format(),
+		const {
+			initialQuery,
+			histogramBucketSize,
+			startDate,
+			endDate,
+			updateSearchTime,
+		} = useSearchContext()
+		const sessionFeedConfiguration = useSessionFeedConfiguration()
+
+		const { loading, data } = useGetSessionsHistogramQuery({
+			variables: {
+				project_id: project_id!,
+				params: {
+					query: initialQuery,
+					date_range: {
+						start_date: roundFeedDate(
+							startDate!.toISOString(),
+						).format(),
+						end_date: roundFeedDate(
+							endDate!.toISOString(),
+						).format(),
+					},
+				},
+				histogram_options: {
+					bucket_size: histogramBucketSize!,
+					time_zone:
+						Intl.DateTimeFormat().resolvedOptions().timeZone ??
+						'UTC',
+					bounds: {
+						start_date: roundFeedDate(
+							startDate!.toISOString(),
+						).format(),
+						end_date: roundFeedDate(
+							endDate!.toISOString(),
+						).format(),
+					},
 				},
 			},
-		},
-		skip: !backendSearchQuery || !project_id,
-	})
+			skip: !histogramBucketSize || !project_id || !startDate || !endDate,
+			fetchPolicy: 'network-only',
+		})
 
-	const histogram: {
-		seriesList: Series[]
-		bucketTimes: number[]
-	} = {
-		seriesList: [],
-		bucketTimes: [],
-	}
-	if (data?.sessions_histogram) {
-		histogram.bucketTimes = data?.sessions_histogram.bucket_times.map(
-			(startTime) => new Date(startTime).valueOf(),
-		)
-		histogram.seriesList = [
-			{
-				label: 'sessions',
-				color: 'n11',
-				counts: data?.sessions_histogram.sessions_without_errors,
-			},
-			{
-				label: 'w/errors',
-				color: 'p11',
-				counts: data?.sessions_histogram.sessions_with_errors,
-			},
-		]
-	}
-
-	const updateTimeRange = useCallback(
-		(newStartTime: Date, newEndTime: Date) => {
-			setSearchQuery((query) =>
-				updateQueriedTimeRange(
-					query || '',
-					TIME_RANGE_FIELD,
-					serializeAbsoluteTimeRange(newStartTime, newEndTime),
-				),
+		const histogram: {
+			seriesList: Series[]
+			bucketTimes: number[]
+		} = {
+			seriesList: [],
+			bucketTimes: [],
+		}
+		if (data?.sessions_histogram) {
+			histogram.bucketTimes = data?.sessions_histogram.bucket_times.map(
+				(startTime) => new Date(startTime).valueOf(),
 			)
-		},
-		[setSearchQuery],
-	)
+			histogram.seriesList =
+				sessionFeedConfiguration.sessionHistogramFormat ===
+				'Active/Inactive Time'
+					? [
+							{
+								label: 'inactive hours',
+								color: 'n11',
+								counts: data?.sessions_histogram.inactive_lengths.map(
+									msToHours,
+								),
+							},
+							{
+								label: 'active hours',
+								color: 'p11',
+								counts: data?.sessions_histogram.active_lengths.map(
+									msToHours,
+								),
+							},
+						]
+					: [
+							{
+								label: 'sessions',
+								color: 'n11',
+								counts: data?.sessions_histogram
+									.sessions_without_errors,
+							},
+							{
+								label: 'w/errors',
+								color: 'p11',
+								counts: data?.sessions_histogram
+									.sessions_with_errors,
+							},
+						]
+		}
 
-	return (
-		<SearchResultsHistogram
-			seriesList={histogram.seriesList}
-			bucketTimes={histogram.bucketTimes}
-			bucketSize={backendSearchQuery?.histogramBucketSize}
-			loading={loading}
-			updateTimeRange={updateTimeRange}
-			barGap={2.4}
-		/>
-	)
-})
+		return (
+			<SearchResultsHistogram
+				seriesList={histogram.seriesList}
+				bucketTimes={histogram.bucketTimes}
+				bucketSize={histogramBucketSize}
+				loading={loading}
+				updateTimeRange={updateSearchTime!}
+				barGap={2.4}
+				readonly={readonly}
+			/>
+		)
+	},
+)
 
 export const SessionFeedV3 = React.memo(() => {
-	const { setSessionResults, sessionResults } = useReplayerContext()
-	const { project_id, session_secure_id } = useParams<{
-		project_id: string
-		session_secure_id: string
-	}>()
+	const { currentWorkspace } = useApplicationContext()
 	const sessionFeedConfiguration = useSessionFeedConfiguration()
-	const { autoPlaySessions, showDetailedSessionView } =
-		usePlayerConfiguration()
-
-	const totalPages = useRef<number>(0)
 	const {
-		searchQuery,
-		setSearchQuery,
-		backendSearchQuery,
+		loading,
+		totalCount,
+		startDate,
+		endDate,
+		selectedPreset,
+		results,
+		resultFormatted,
+		moreResults,
+		resetMoreResults,
 		page,
 		setPage,
-		searchResultsLoading,
-		setSearchResultsLoading,
-		searchResultsCount,
-		setSearchResultsCount,
+		rebaseSearchTime,
+		updateSearchTime,
+		pollingExpired,
 	} = useSearchContext()
-	const { integrated } = useIntegrated()
-	const { showLeftPanel } = usePlayerConfiguration()
+
 	const { showBanner } = useGlobalContext()
-	const searchParamsChanged = useRef<Date>()
-	const showHistogram = searchResultsCount !== 0
+	const showHistogram = totalCount >= 0
 
-	const { data: billingDetails } = useGetBillingDetailsForProjectQuery({
-		variables: { project_id: project_id! },
-		skip: !project_id || project_id === DEMO_PROJECT_ID,
-	})
+	const { setShowLeftPanel } = usePlayerConfiguration()
 
-	const addSessions = (response: GetSessionsOpenSearchQuery) => {
-		if (response?.sessions_opensearch) {
-			setSessionResults({
-				...response.sessions_opensearch,
-				sessions: response.sessions_opensearch.sessions.map((s) => ({
-					...s,
-					payload_updated_at: new Date().toISOString(),
-				})),
-			})
-			totalPages.current = Math.ceil(
-				response?.sessions_opensearch.totalCount / DEFAULT_PAGE_SIZE,
-			)
-			setSearchResultsCount(response?.sessions_opensearch.totalCount)
-		}
-		setSearchResultsLoading(false)
+	const actions = () => {
+		return (
+			<Stack direction="row" gap="2">
+				<Box marginLeft="auto" display="flex" gap="0">
+					<ButtonIcon
+						kind="secondary"
+						size="small"
+						shape="square"
+						emphasis="low"
+						icon={<IconSolidLogout size={14} />}
+						onClick={() => setShowLeftPanel(false)}
+					/>
+				</Box>
+				<SessionReport />
+				<SessionFeedConfigDropdown />
+			</Stack>
+		)
 	}
 
-	const { loading } = useGetSessionsOpenSearchQuery({
-		variables: {
-			query: backendSearchQuery?.searchQuery || '',
-			count: DEFAULT_PAGE_SIZE,
-			page: page && page > 0 ? page : 1,
-			project_id: project_id!,
-			sort_desc: sessionFeedConfiguration.sortOrder === 'Descending',
-		},
-		onCompleted: addSessions,
-		skip: !backendSearchQuery?.searchQuery || !project_id,
+	const { data: workspaceSettings } = useGetWorkspaceSettingsQuery({
+		variables: { workspace_id: String(currentWorkspace?.id) },
+		skip: !currentWorkspace?.id,
 	})
 
-	// Used to determine if we need to show the loading skeleton.
-	// The loading skeleton should only be shown on the first load and when searchParams changes.
-	// It should not show when loading more sessions via infinite scroll.
-	useEffect(() => {
-		setSearchResultsLoading(loading)
-	}, [loading, setSearchResultsLoading])
-
-	useEffect(() => {
-		setSearchResultsCount(undefined)
-	}, [backendSearchQuery?.searchQuery, setSearchResultsCount])
-
-	useEffect(() => {
-		// we just loaded the page for the first time
-		if (
-			searchParamsChanged.current &&
-			new Date().getTime() - searchParamsChanged.current.getTime() >
-				RESET_PAGE_MS
-		) {
-			// the search query actually changed, reset the page
-			setPage(STARTING_PAGE)
-		}
-		searchParamsChanged.current = new Date()
-	}, [searchQuery, setPage])
-
-	const enableLiveSessions = useCallback(() => {
-		if (searchQuery) {
-			// Replace any 'custom_processed' values with ['true', 'false']
-			const processedRule = ['custom_processed', 'is', 'true', 'false']
-			const currentState = JSON.parse(searchQuery) as QueryBuilderState
-			const newRules = currentState.rules.map((rule) =>
-				rule[0] === processedRule[0] ? processedRule : rule,
-			)
-			setSearchQuery(
-				JSON.stringify({
-					isAnd: currentState.isAnd,
-					rules: newRules,
-				}),
-			)
-		}
-	}, [searchQuery, setSearchQuery])
-
-	useEffect(() => {
-		// We're showing live sessions for new users.
-		// The assumption here is if a project is on the free plan and the project has less than 15 sessions than there must be live sessions.
-		// We show live sessions along with the processed sessions so the user isn't confused on why sessions are not showing up in the feed.
-		if (
-			billingDetails?.billingDetailsForProject &&
-			integrated &&
-			project_id !== DEMO_PROJECT_ID &&
-			project_id !== DEMO_WORKSPACE_PROXY_APPLICATION_ID &&
-			!showLiveSessions(searchQuery)
-		) {
-			if (
-				billingDetails.billingDetailsForProject.plan.type ===
-					PlanType.Free &&
-				billingDetails.billingDetailsForProject.meter < 15
-			) {
-				enableLiveSessions()
-			}
-		}
-	}, [
-		billingDetails?.billingDetailsForProject,
-		enableLiveSessions,
-		integrated,
-		project_id,
-		searchQuery,
-	])
+	const { presets, minDate } = useRetentionPresets(ProductType.Sessions)
 
 	return (
 		<SessionFeedConfigurationContextProvider
@@ -276,17 +216,55 @@ export const SessionFeedV3 = React.memo(() => {
 				borderRight="secondary"
 				position="relative"
 				cssClass={clsx(style.searchPanel, {
-					[style.searchPanelHidden]: !showLeftPanel,
 					[style.searchPanelWithBanner]: showBanner,
 				})}
 				background="n2"
 			>
-				<SessionQueryBuilder />
+				<SearchForm
+					startDate={startDate!}
+					endDate={endDate!}
+					onDatesChange={updateSearchTime!}
+					presets={presets}
+					minDate={minDate}
+					selectedPreset={selectedPreset}
+					productType={ProductType.Sessions}
+					timeMode="fixed-range"
+					savedSegmentType={SavedSegmentEntityType.Session}
+					actions={actions}
+					resultFormatted={resultFormatted}
+					loading={loading}
+					creatables={{
+						sample: {
+							label: 'New Random Seed',
+							value: [...Array(16)]
+								.map(() =>
+									Math.floor(Math.random() * 16).toString(16),
+								)
+								.join(''),
+						},
+					}}
+					enableAIMode={
+						workspaceSettings?.workspaceSettings?.ai_query_builder
+					}
+					aiSupportedSearch
+					hideCreateAlert
+					isPanelView
+				/>
 				{showHistogram && (
 					<Box borderBottom="secondary" paddingBottom="8" px="8">
 						<SessionsHistogram />
 					</Box>
 				)}
+				<AdditionalFeedResults
+					maxResults={PAGE_SIZE}
+					more={moreResults}
+					type="sessions"
+					onClick={() => {
+						resetMoreResults()
+						rebaseSearchTime!()
+					}}
+					pollingExpired={pollingExpired}
+				/>
 				<Box
 					padding="8"
 					overflowX="hidden"
@@ -294,33 +272,23 @@ export const SessionFeedV3 = React.memo(() => {
 					height="full"
 					cssClass={styledVerticalScrollbar}
 				>
-					{searchResultsLoading ? (
+					{loading ? (
 						<LoadingBox />
 					) : (
 						<>
 							<OverageCard productType={ProductType.Sessions} />
-							{searchResultsCount === 0 ? (
+							{totalCount === 0 ? (
 								<EmptySearchResults
 									kind={SearchResultsKind.Sessions}
 								/>
 							) : (
 								<>
-									{sessionResults.sessions?.map(
-										(s: Maybe<Session>, ind: number) =>
+									{results?.map(
+										(s: Maybe<Session>) =>
 											s && (
 												<SessionFeedCard
-													key={ind}
+													key={s.secure_id}
 													session={s}
-													selected={
-														session_secure_id ===
-														s?.secure_id
-													}
-													showDetailedSessionView={
-														showDetailedSessionView
-													}
-													autoPlaySessions={
-														autoPlaySessions
-													}
 													configuration={{
 														countFormat:
 															sessionFeedConfiguration.countFormat,
@@ -338,8 +306,9 @@ export const SessionFeedV3 = React.memo(() => {
 				<SearchPagination
 					page={page}
 					setPage={setPage}
-					totalCount={searchResultsCount ?? 0}
-					pageSize={DEFAULT_PAGE_SIZE}
+					totalCount={totalCount}
+					pageSize={PAGE_SIZE}
+					loading={loading}
 				/>
 			</Box>
 		</SessionFeedConfigurationContextProvider>

@@ -13,7 +13,7 @@ quickstart: true
   </div>
   <div className="right">
     <h6>Just getting started?</h6>
-    <p>Check out our [getting started guide](../getting-started/1_overview.md) to get up and running quickly.</p>
+    <p>Check out our [getting started guide](../getting-started/3_browser/2_nextjs.md) to get up and running quickly.</p>
   </div>
 </section>
 
@@ -44,18 +44,18 @@ quickstart: true
   </div>
   <div className="right">
     <code>
-      import { Highlight } from "@highlight-run/next";
+      import { PageRouterHighlight } from "@highlight-run/next/server";
  
-      export const withHighlight = Highlight({projectID: '<YOUR_PROJECT_ID>'});
+      export const withPageRouterHighlight = PageRouterHighlight({projectID: '<YOUR_PROJECT_ID>'});
     </code>
     <code>
-      import { withHighlight } from "../highlight.config";
+      import { withPageRouterHighlight } from "../highlight.config";
  
       const handler = async (req, res) => {
         res.status(200).json({ name: "Jay" });
       };
  
-      export default withHighlight(handler);
+      export default withPageRouterHighlight(handler);
     </code>
   </div>
 </section>
@@ -82,6 +82,10 @@ quickstart: true
       <p>App version used when uploading source maps.</p>
     </aside>
     <aside className="parameter">
+      <h5>serviceName <code>string</code> <code>optional</code></h5>
+      <p>Name of your app.</p>
+    </aside>
+    <aside className="parameter">
       <h5>sourceMapsPath <code>string</code> <code>optional</code></h5>
       <p>The file system root directory containing all your source map files.</p>
     </aside>
@@ -89,11 +93,15 @@ quickstart: true
       <h5>sourceMapsBasePath <code>string</code> <code>optional</code></h5>
       <p>Base path to append to your source map URLs when uploaded to Highlight.</p>
     </aside>
+    <aside className="parameter">
+      <h5>sourceMapsBackendUrl <code>string</code> <code>optional</code></h5>
+      <p>Backend url for private graph to use for uploading (for self-hosted highlight deployments).</p>
+    </aside>
   </div>
   <div className="right">
     <code>
       
-      import { withHighlightConfig } from "@highlight-run/next";
+      import { withHighlightConfig } from "@highlight-run/next/config";
       export default withHighlightConfig({
         // your next.config.js options here
 

@@ -1,5 +1,6 @@
 package io.highlight.sdk;
 
+import java.time.Duration;
 import java.util.Arrays;
 
 import io.highlight.sdk.common.HighlightAttributes;
@@ -50,6 +51,10 @@ public class HighlightOpenTelemetry implements OpenTelemetry {
 				.put(ResourceAttributes.SERVICE_INSTANCE_ID, SessionId.get().toString())
 				.put(ResourceAttributes.SERVICE_VERSION, options.version());
 
+		if (options.serviceName() != null) {
+			attributesBuilder.put(ResourceAttributes.SERVICE_NAME, options.serviceName());
+		}
+
 		if (options.metric()) {
 			attributesBuilder
 				.put(ResourceAttributes.TELEMETRY_SDK_NAME, HighlightVersion.getSdkName())
@@ -72,9 +77,15 @@ public class HighlightOpenTelemetry implements OpenTelemetry {
 		// Tracer
 		SpanExporter tracerExporter = OtlpHttpSpanExporter.builder()
 				.setEndpoint(HighlightRoute.buildTraceRoute(options.backendUrl()))
+				.setCompression("gzip")
+				.setTimeout(Duration.ofSeconds(30))
 				.build();
 
 		BatchSpanProcessor tracerProcessor = BatchSpanProcessor.builder(tracerExporter)
+				.setExporterTimeout(Duration.ofSeconds(30))
+		        .setScheduleDelay(Duration.ofSeconds(1))
+		        .setMaxExportBatchSize(128)
+		        .setMaxQueueSize(1024)
 				.build();
 
 		this.tracerProvider = SdkTracerProvider.builder()
@@ -86,9 +97,15 @@ public class HighlightOpenTelemetry implements OpenTelemetry {
 		// Log
 		LogRecordExporter logExporter = OtlpHttpLogRecordExporter.builder()
 				.setEndpoint(HighlightRoute.buildLogRoute(options.backendUrl()))
+				.setCompression("gzip")
+				.setTimeout(Duration.ofSeconds(30))
 				.build();
 
 		LogRecordProcessor logProcessor = BatchLogRecordProcessor.builder(logExporter)
+				.setExporterTimeout(Duration.ofSeconds(30))
+				.setScheduleDelay(Duration.ofSeconds(1))
+				.setMaxExportBatchSize(128)
+				.setMaxQueueSize(1024)
 				.build();
 
 		this.loggerProvider = SdkLoggerProvider.builder()

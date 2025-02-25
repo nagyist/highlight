@@ -4,30 +4,30 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/highlight-run/highlight/backend/env"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/highlight-run/highlight/backend/private-graph/graph/model"
 	"github.com/pkg/errors"
+
+	"github.com/highlight-run/highlight/backend/private-graph/graph/model"
 
 	"golang.org/x/oauth2"
 )
 
-var (
-	HeightClientId     = os.Getenv("HEIGHT_CLIENT_ID")
-	HeightClientSecret = os.Getenv("HEIGHT_CLIENT_SECRET")
-	HeightApiBaseUrl   = "https://api.height.app"
+const (
+	ApiBaseUrl = "https://api.height.app"
 )
 
 var heightEndpoint = oauth2.Endpoint{
-	AuthURL:   fmt.Sprintf("%s/oauth/tokens", HeightApiBaseUrl),
-	TokenURL:  fmt.Sprintf("%s/oauth/tokens", HeightApiBaseUrl),
+	AuthURL:   fmt.Sprintf("%s/oauth/tokens", ApiBaseUrl),
+	TokenURL:  fmt.Sprintf("%s/oauth/tokens", ApiBaseUrl),
 	AuthStyle: oauth2.AuthStyleInParams,
 }
 
@@ -54,7 +54,7 @@ func doRequest[T any](method string, accessToken string, relativeUrl string, bod
 	var unmarshalled T
 	client := &http.Client{}
 
-	req, err := http.NewRequest(method, fmt.Sprintf("%s%s", HeightApiBaseUrl, relativeUrl), strings.NewReader(body))
+	req, err := http.NewRequest(method, fmt.Sprintf("%s%s", ApiBaseUrl, relativeUrl), strings.NewReader(body))
 	if err != nil {
 		return unmarshalled, errors.Wrap(err, "error creating api request to Height")
 	}
@@ -95,19 +95,13 @@ func NewHeightClient() *HeightClient {
 }
 
 func GetOAuthConfig() (*oauth2.Config, []oauth2.AuthCodeOption, error) {
-	var (
-		ok                 bool
-		heightClientID     string
-		heightClientSecret string
-		frontendUri        string
-	)
-	if heightClientID, ok = os.LookupEnv("HEIGHT_CLIENT_ID"); !ok || heightClientID == "" {
+	if env.Config.HeightClientId == "" {
 		return nil, nil, errors.New("HEIGHT_CLIENT_ID not set")
 	}
-	if heightClientSecret, ok = os.LookupEnv("HEIGHT_CLIENT_SECRET"); !ok || heightClientSecret == "" {
+	if env.Config.HeightClientSecret == "" {
 		return nil, nil, errors.New("HEIGHT_CLIENT_SECRET not set")
 	}
-	if frontendUri, ok = os.LookupEnv("REACT_APP_FRONTEND_URI"); !ok || frontendUri == "" {
+	if env.Config.FrontendUri == "" {
 		return nil, nil, errors.New("REACT_APP_FRONTEND_URI not set")
 	}
 
@@ -119,10 +113,10 @@ func GetOAuthConfig() (*oauth2.Config, []oauth2.AuthCodeOption, error) {
 	}
 
 	return &oauth2.Config{
-		ClientID:     heightClientID,
-		ClientSecret: heightClientSecret,
+		ClientID:     env.Config.HeightClientId,
+		ClientSecret: env.Config.HeightClientSecret,
 		Endpoint:     heightEndpoint,
-		RedirectURL:  fmt.Sprintf("%s/callback/height", frontendUri),
+		RedirectURL:  fmt.Sprintf("%s/callback/height", env.Config.FrontendUri),
 	}, options, nil
 }
 
@@ -244,4 +238,66 @@ func CreateTask(accessToken string, listId string, name string, description stri
 		// The external attachment data model prepends the URL on the frontend.
 		ID: strings.TrimPrefix(res.URL, "https://height.app/"),
 	}, nil
+}
+
+func makeQueryParams(query string) string {
+	lastActivity := time.Now().AddDate(-5, 0, 0).UTC().Format("2006-01-02T15:04:05Z")
+
+	order := []struct {
+		Column    string `json:"column"`
+		Direction string `json:"direction"`
+	}{
+		{Column: "lastActivityAt", Direction: "DESC"},
+	}
+
+	orderStr, _ := json.Marshal(order)
+	filter := map[string]interface{}{
+		"lastActivityAt": map[string]interface{}{
+			"gt": map[string]string{
+				"date": lastActivity,
+			},
+		},
+	}
+
+	filterStr, _ := json.Marshal(filter)
+
+	params := map[string]interface{}{
+		"query":   query,
+		"order":   string(orderStr),
+		"filters": string(filterStr),
+	}
+
+	queryParams := url.Values{}
+	for key, value := range params {
+		queryParams.Set(key, fmt.Sprintf("%v", value))
+	}
+	return queryParams.Encode()
+}
+
+func SearchTask(accessToken string, query string) ([]*model.IssuesSearchResult, error) {
+	type HeightTask struct {
+		Name  string `json:"name"`
+		URL   string `json:"url"`
+		ID    string `json:"id"`
+		Index int    `json:"index"`
+	}
+
+	type HeightTaskSearchResponse struct {
+		List []HeightTask `json:"list"`
+	}
+
+	url := fmt.Sprintf("/tasks?%s", makeQueryParams(query))
+	results, err := doGetRequest[HeightTaskSearchResponse](accessToken, url)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return lo.Map(results.List, func(res HeightTask, _ int) *model.IssuesSearchResult {
+		return &model.IssuesSearchResult{
+			ID:       res.ID,
+			Title:    fmt.Sprintf("#%d - %s", res.Index, res.Name),
+			IssueURL: res.URL,
+		}
+	}), nil
 }

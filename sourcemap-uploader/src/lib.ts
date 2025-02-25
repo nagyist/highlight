@@ -1,8 +1,8 @@
-import { basename, join } from "path";
-import { cwd } from "process";
+import fetch from "cross-fetch";
 import { readFileSync, statSync } from "fs";
 import { globSync } from "glob";
-import fetch from "cross-fetch";
+import { basename, join } from "path";
+import { cwd } from "process";
 
 const VERIFY_API_KEY_QUERY = `
   query ApiKeyToOrgID($api_key: String!) {
@@ -21,11 +21,15 @@ export const uploadSourcemaps = async ({
   appVersion,
   path,
   basePath,
+  backendUrl,
+  allowNoop,
 }: {
   apiKey: string;
   appVersion: string;
   path: string;
-  basePath: string;
+  basePath?: string;
+  backendUrl?: string;
+  allowNoop?: boolean;
 }) => {
   if (!apiKey || apiKey === "") {
     if (process.env.HIGHLIGHT_SOURCEMAP_UPLOAD_API_KEY) {
@@ -35,11 +39,12 @@ export const uploadSourcemaps = async ({
     }
   }
 
+  const backend = backendUrl || "https://pri.highlight.io";
   const variables = {
     api_key: apiKey,
   };
 
-  const res = await fetch("https://pri.highlight.io", {
+  const res = await fetch(backend, {
     method: "post",
     headers: {
       "Content-Type": "application/json",
@@ -71,21 +76,21 @@ export const uploadSourcemaps = async ({
 
   console.info(`Starting to upload source maps from ${path}`);
 
-  const fileList = await getAllSourceMapFiles([path]);
+  const fileList = await getAllSourceMapFiles([path], { allowNoop });
 
   if (fileList.length === 0) {
     console.error(
-      `Error: No source maps found in ${path}, is this the correct path?`
+      `Error: No source maps found in ${path}, is this the correct path?`,
     );
     console.info("Failed to upload source maps. Please see reason above.");
     return;
   }
 
   const s3Keys = fileList.map(({ name }) =>
-    getS3Key(organizationId, appVersion, basePath, name)
+    getS3Key(organizationId, appVersion, basePath || "", name),
   );
 
-  const urlRes = await fetch("https://pri.highlight.io", {
+  const urlRes = await fetch(backend, {
     method: "post",
     headers: {
       "Content-Type": "application/json",
@@ -120,11 +125,18 @@ export const uploadSourcemaps = async ({
   const uploadUrls = urlRes.data.get_source_map_upload_urls;
 
   await Promise.all(
-    fileList.map(({ path }, idx) => uploadFile(path, uploadUrls[idx]))
+    fileList.map(({ path, name }, idx) =>
+      uploadFile(path, uploadUrls[idx], name),
+    ),
   );
 };
 
-async function getAllSourceMapFiles(paths: string[]) {
+const NextRouteGroupPattern = new RegExp(/(\(.+?\))\//gm);
+
+async function getAllSourceMapFiles(
+  paths: string[],
+  { allowNoop }: { allowNoop?: boolean },
+) {
   const map: { path: string; name: string }[] = [];
 
   await Promise.all(
@@ -141,6 +153,7 @@ async function getAllSourceMapFiles(paths: string[]) {
       }
 
       if (
+        !allowNoop &&
         !globSync("**/*.js.map", {
           cwd: realPath,
           nodir: true,
@@ -148,7 +161,7 @@ async function getAllSourceMapFiles(paths: string[]) {
         }).length
       ) {
         throw new Error(
-          "No .js.map files found. Please double check that you have generated sourcemaps for your app."
+          "No .js.map files found. Please double check that you have generated sourcemaps for your app.",
         );
       }
 
@@ -161,8 +174,19 @@ async function getAllSourceMapFiles(paths: string[]) {
           path: join(realPath, file),
           name: file,
         });
+        const routeGroupRemovedPath = file.replaceAll(
+          new RegExp(/(\(.+?\))\//gm),
+          "",
+        );
+        if (file !== routeGroupRemovedPath) {
+          // also upload the file to a path without the route group for frontend errors
+          map.push({
+            path: join(realPath, file),
+            name: routeGroupRemovedPath,
+          });
+        }
       }
-    })
+    }),
   );
 
   return map;
@@ -172,7 +196,7 @@ function getS3Key(
   organizationId: string,
   version: string,
   basePath: string,
-  fileName: string
+  fileName: string,
 ) {
   // Setting up S3 upload parameters
   if (version === null || version === undefined || version === "" || !version) {
@@ -181,8 +205,8 @@ function getS3Key(
   return `${organizationId}/${version}/${basePath}${fileName}`;
 }
 
-async function uploadFile(filePath: string, uploadUrl: string) {
+async function uploadFile(filePath: string, uploadUrl: string, name: string) {
   const fileContent = readFileSync(filePath);
   await fetch(uploadUrl, { method: "put", body: fileContent });
-  console.log(`Uploaded ${filePath}`);
+  console.log(`[Highlight] Uploaded ${filePath} to ${name}`);
 }

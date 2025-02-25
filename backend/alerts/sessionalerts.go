@@ -2,8 +2,11 @@ package alerts
 
 import (
 	"encoding/json"
-	"github.com/highlight-run/highlight/backend/alerts/integrations/webhook"
 
+	"github.com/openlyinc/pointy"
+
+	microsoft_teams "github.com/highlight-run/highlight/backend/alerts/integrations/microsoft-teams"
+	"github.com/highlight-run/highlight/backend/alerts/integrations/webhook"
 	"github.com/pkg/errors"
 
 	"github.com/highlight-run/highlight/backend/alerts/integrations/discord"
@@ -82,26 +85,32 @@ func BuildSessionAlert(project *model.Project, workspace *model.Workspace, admin
 
 	inputType := string(input.Type)
 
+	defaultArg := input.Default
+	if defaultArg == nil {
+		defaultArg = pointy.Bool(true)
+	}
+
 	return &model.SessionAlert{
-		Alert: model.Alert{
+		AlertDeprecated: model.AlertDeprecated{
 			ProjectID:            input.ProjectID,
-			OrganizationID:       input.ProjectID,
 			ExcludedEnvironments: envString,
 			CountThreshold:       input.CountThreshold,
 			ThresholdWindow:      &input.ThresholdWindow,
 			Type:                 &inputType,
 			ChannelsToNotify:     channelsString,
 			EmailsToNotify:       emailsString,
-			Name:                 &input.Name,
+			Name:                 input.Name,
 			LastAdminToEditID:    admin.ID,
 			Disabled:             &input.Disabled,
+			Default:              *defaultArg,
 		},
 		UserProperties:  &userPropertiesString,
 		TrackProperties: &trackPropertiesString,
 		ExcludeRules:    excludeRulesString,
 		AlertIntegrations: model.AlertIntegrations{
-			DiscordChannelsToNotify: discord.GQLInputToGo(input.DiscordChannels),
-			WebhookDestinations:     webhook.GQLInputToGo(input.WebhookDestinations),
+			DiscordChannelsToNotify:        discord.GQLInputToGo(input.DiscordChannels),
+			MicrosoftTeamsChannelsToNotify: microsoft_teams.GQLInputToGo(input.MicrosoftTeamsChannels),
+			WebhookDestinations:            webhook.GQLInputToGo(input.WebhookDestinations),
 		},
 	}, nil
 }

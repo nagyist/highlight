@@ -1,6 +1,5 @@
 import 'firebase/compat/auth'
 
-import { ApolloError } from '@apollo/client'
 import { useAuthContext } from '@authentication/AuthContext'
 import { ErrorState } from '@components/ErrorState/ErrorState'
 import { Header } from '@components/Header/Header'
@@ -9,11 +8,11 @@ import {
 	AppLoadingState,
 	useAppLoadingContext,
 } from '@context/AppLoadingContext'
-import { useGetProjectDropdownOptionsQuery } from '@graph/hooks'
-import { ErrorObject, Maybe, Project, Workspace } from '@graph/schemas'
-import { Ariakit } from '@highlight-run/ui'
-import { useNumericProjectId } from '@hooks/useProjectId'
-import FrontPlugin from '@pages/FrontPlugin/FrontPlugin'
+import { Maybe, Project, Workspace } from '@graph/schemas'
+import {
+	useLocalStorageProjectId,
+	useNumericProjectId,
+} from '@hooks/useProjectId'
 import {
 	PlayerUIContextProvider,
 	RightPanelView,
@@ -21,17 +20,16 @@ import {
 } from '@pages/Player/context/PlayerUIContext'
 import { HighlightEvent } from '@pages/Player/HighlightEvent'
 import { usePlayerFullscreen } from '@pages/Player/utils/PlayerHooks'
-import useLocalStorage from '@rehooks/local-storage'
 import { GlobalContextProvider } from '@routers/ProjectRouter/context/GlobalContext'
 import { auth } from '@util/auth'
 import { setIndexedDBEnabled } from '@util/db'
-import { isOnPrem } from '@util/onPrem/onPremUtils'
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import { useToggle } from 'react-use'
 
 import { PRIVATE_GRAPH_URI } from '@/constants'
+import { useApplicationContext } from '@/routers/AppRouter/context/ApplicationContext'
 import {
 	useClientIntegration,
 	useLogsIntegration,
@@ -42,18 +40,16 @@ import commonStyles from '../../Common.module.css'
 import ApplicationRouter from './ApplicationRouter'
 
 export const ProjectRouter = () => {
-	const { isLoggedIn } = useAuthContext()
 	const [showKeyboardShortcutsGuide, toggleShowKeyboardShortcutsGuide] =
 		useToggle(false)
 	const [showBanner, toggleShowBanner] = useToggle(false)
 
 	const { projectId } = useNumericProjectId()
 	const { setLoadingState } = useAppLoadingContext()
+	const { setProjectId: setLocalStorageProjectId } =
+		useLocalStorageProjectId()
 
-	const { data, error } = useGetProjectDropdownOptionsQuery({
-		variables: { project_id: projectId! },
-		skip: !isLoggedIn || !projectId, // Higher level routers decide when guests are allowed to hit this router
-	})
+	const { currentProject, joinableWorkspaces } = useApplicationContext()
 
 	// Can we avoid calling these if we are viewing a shared session?
 	const clientIntegration = useClientIntegration()
@@ -69,7 +65,11 @@ export const ProjectRouter = () => {
 		if (projectId === '5403') {
 			setIndexedDBEnabled(false)
 		}
-	}, [projectId])
+
+		if (projectId) {
+			setLocalStorageProjectId(projectId)
+		}
+	}, [projectId, setLocalStorageProjectId])
 
 	useEffect(() => {
 		let intervalId: NodeJS.Timeout
@@ -95,37 +95,11 @@ export const ProjectRouter = () => {
 	}, [projectId])
 
 	useEffect(() => {
-		if (data?.workspace?.id) {
-			window.Intercom('update', {
-				company: {
-					id: data?.workspace.id,
-					name: data?.workspace.name,
-				},
-			})
-		}
-	}, [data?.workspace])
-
-	useEffect(() => {
-		if (!isOnPrem) {
-			window.Intercom('update', {
-				hide_default_launcher: true,
-			})
-		}
-		return () => {
-			if (!isOnPrem) {
-				window.Intercom('update', {
-					hide_default_launcher: false,
-				})
-			}
-		}
-	}, [])
-
-	useEffect(() => {
 		setLoadingState(AppLoadingState.LOADED)
 	}, [setLoadingState])
 
 	// if the user can join this workspace, give them that option via the ErrorState
-	const joinableWorkspace = data?.joinable_workspaces
+	const joinableWorkspace = joinableWorkspaces
 		?.filter((w) => w?.projects.map((p) => p?.id).includes(projectId))
 		?.pop()
 
@@ -137,20 +111,15 @@ export const ProjectRouter = () => {
 		undefined,
 	)
 
-	const [activeError, setActiveError] = useState<ErrorObject | undefined>(
-		undefined,
-	)
+	const [activeEventIndex, setActiveEventIndex] = useState<number>(0)
+
+	const [searchItem, setSearchItem] = useState<string | undefined>('')
 
 	const [selectedRightPanelTab, setSelectedRightPanelTab] =
-		useLocalStorage<RightPlayerTab>(
-			'tabs-PlayerRightPanel-active-tab',
-			'Events',
-		)
+		useState<RightPlayerTab>(RightPlayerTab.Events)
 
 	const { isPlayerFullscreen, setIsPlayerFullscreen, playerCenterPanelRef } =
 		usePlayerFullscreen()
-
-	const commandBarDialog = Ariakit.useDialogState()
 
 	const playerUIContext = {
 		isPlayerFullscreen,
@@ -160,8 +129,10 @@ export const ProjectRouter = () => {
 		setSelectedRightPanelTab,
 		activeEvent,
 		setActiveEvent,
-		activeError,
-		setActiveError,
+		activeEventIndex,
+		setActiveEventIndex,
+		searchItem,
+		setSearchItem,
 		rightPanelView,
 		setRightPanelView,
 	}
@@ -173,12 +144,10 @@ export const ProjectRouter = () => {
 				toggleShowKeyboardShortcutsGuide,
 				showBanner,
 				toggleShowBanner,
-				commandBarDialog,
 			}}
 		>
 			<PlayerUIContextProvider value={playerUIContext}>
 				<Routes>
-					<Route path=":project_id/front" element={<FrontPlugin />} />
 					<Route
 						path=":project_id/*"
 						element={
@@ -191,7 +160,7 @@ export const ProjectRouter = () => {
 									})}
 								>
 									<ApplicationOrError
-										error={error}
+										error={!currentProject}
 										joinableWorkspace={joinableWorkspace}
 									/>
 								</div>
@@ -220,7 +189,7 @@ function ApplicationOrError({
 	joinableWorkspace,
 	error,
 }: {
-	error: ApolloError | undefined
+	error: boolean
 	joinableWorkspace: JoinableWorkspace | undefined
 }) {
 	const { isLoggedIn } = useAuthContext()

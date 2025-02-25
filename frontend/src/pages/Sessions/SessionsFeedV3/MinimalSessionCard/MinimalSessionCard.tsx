@@ -21,8 +21,8 @@ import { Link } from 'react-router-dom'
 import TextTransition from 'react-text-transition'
 
 import ActivityGraph from '../ActivityGraph/ActivityGraph'
-import { formatDatetime } from '../SessionQueryBuilder/components/SessionFeedConfiguration/SessionFeedConfiguration'
-import { SessionFeedConfigurationContext } from '../SessionQueryBuilder/context/SessionFeedConfigurationContext'
+import { SessionFeedConfigurationContext } from '../context/SessionFeedConfigurationContext'
+import { formatDatetime } from '../SessionFeedConfigDropdown/helpers'
 import styles from './MinimalSessionCard.module.css'
 import { getDisplayName, getIdentifiedUserProfileImage } from './utils/utils'
 
@@ -128,11 +128,7 @@ const MinimalSessionCard = React.memo(
 				>
 					{!compact && (
 						<div className={styles.avatarWrapper}>
-							<Avatar
-								seed={getDisplayName(session)}
-								style={{ height: 25, width: 25 }}
-								customImage={customAvatarImage}
-							/>
+							<Avatar size={25} customImage={customAvatarImage} />
 						</div>
 					)}
 					<div className={styles.sessionTextSectionWrapper}>
@@ -219,17 +215,17 @@ const MinimalSessionCard = React.memo(
 													? formatDatetime(
 															session.created_at,
 															configuration.datetimeFormat,
-													  )
+														)
 													: `${new Date(
 															session.created_at,
-													  ).toLocaleString(
+														).toLocaleString(
 															'en-us',
 															{
 																day: 'numeric',
 																month: 'long',
 																year: 'numeric',
 															},
-													  )}`
+														)}`
 											}
 											inline
 										/>
@@ -249,16 +245,16 @@ const MinimalSessionCard = React.memo(
 									segment_id !== LIVE_SEGMENT_ID
 										? MillisToMinutesAndSecondsVerbose(
 												session.active_length || 0,
-										  )
+											)
 										: !errorVersion
-										? 'Live'
-										: new Date(
-												session.created_at,
-										  ).toLocaleString('en-us', {
-												day: 'numeric',
-												month: 'long',
-												year: 'numeric',
-										  })}
+											? 'Live'
+											: new Date(
+													session.created_at,
+												).toLocaleString('en-us', {
+													day: 'numeric',
+													month: 'long',
+													year: 'numeric',
+												})}
 								</div>
 							)}
 						</div>

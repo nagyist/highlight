@@ -1,32 +1,31 @@
 import { Button } from '@components/Button'
 import Select from '@components/Select/Select'
+import { toast } from '@components/Toaster'
 import {
-	useCreateLogAlertMutation,
 	useDeleteLogAlertMutation,
 	useGetLogAlertQuery,
-	useGetLogsKeysQuery,
+	useGetMetricsQuery,
 	useUpdateLogAlertMutation,
 } from '@graph/hooks'
 import {
+	Ariakit,
 	Badge,
 	Box,
 	Column,
 	Container,
+	DateRangePicker,
+	DEFAULT_TIME_PRESETS,
 	Form,
-	FormState,
 	IconSolidCheveronDown,
 	IconSolidCheveronRight,
 	IconSolidCheveronUp,
-	IconSolidSpeakerphone,
+	IconSolidBell,
 	Menu,
-	PreviousDateRangePicker,
+	presetStartDate,
 	Stack,
 	Tag,
 	Text,
-	useForm,
-	useFormState,
-	useMenu,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
 import { useProjectId } from '@hooks/useProjectId'
 import { useSlackSync } from '@hooks/useSlackSync'
 import {
@@ -34,97 +33,90 @@ import {
 	FREQUENCIES,
 } from '@pages/Alerts/AlertConfigurationCard/AlertConfigurationConstants'
 import { useLogAlertsContext } from '@pages/Alerts/LogAlert/context'
-import {
-	dedupeEnvironments,
-	EnvironmentSuggestion,
-} from '@pages/Alerts/utils/AlertsUtils'
-import {
-	LOG_TIME_FORMAT,
-	LOG_TIME_PRESETS,
-	now,
-	thirtyDaysAgo,
-} from '@pages/LogsPage/constants'
+import { AlertForm } from '@pages/Alerts/utils/AlertsUtils'
 import LogsHistogram from '@pages/LogsPage/LogsHistogram/LogsHistogram'
-import { Search } from '@pages/LogsPage/SearchForm/SearchForm'
 import { useParams } from '@util/react-router/useParams'
-import { message } from 'antd'
-import { capitalize } from 'lodash'
 import moment from 'moment'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { DateTimeParam, StringParam, useQueryParam } from 'use-query-params'
+import { StringParam, useQueryParam } from 'use-query-params'
 
 import { getSlackUrl } from '@/components/Header/components/ConnectHighlightWithSlackButton/utils/utils'
 import LoadingBox from '@/components/LoadingBox'
+import { SearchContext } from '@/components/Search/SearchContext'
+import { TIME_FORMAT } from '@/components/Search/SearchForm/constants'
+import { Search } from '@/components/Search/SearchForm/SearchForm'
 import { namedOperations } from '@/graph/generated/operations'
-import {
-	DiscordChannelInput,
-	SanitizedSlackChannelInput,
-} from '@/graph/generated/schemas'
+import { MetricAggregator, ProductType } from '@/graph/generated/schemas'
+import { useSearchTime } from '@/hooks/useSearchTime'
 import SlackLoadOrConnect from '@/pages/Alerts/AlertConfigurationCard/SlackLoadOrConnect'
+import AlertTitleField from '@/pages/Alerts/components/AlertTitleField/AlertTitleField'
+import { TIMESTAMP_KEY } from '@/pages/Graphing/components/Graph'
+import analytics from '@/util/analytics'
 
 import * as styles from './styles.css'
 
+const LOG_ALERT_MINIMUM_FREQUENCY = 15
+
 export const LogAlertPage = () => {
-	const [startDateParam] = useQueryParam('start_date', DateTimeParam)
-	const [endDateParam] = useQueryParam('end_date', DateTimeParam)
+	const { startDate, endDate, selectedPreset, updateSearchTime } =
+		useSearchTime({
+			presets: DEFAULT_TIME_PRESETS,
+			initialPreset: DEFAULT_TIME_PRESETS[0],
+		})
 
-	const [startDate, setStartDate] = useState(
-		startDateParam ?? LOG_TIME_PRESETS[0].startDate,
-	)
-
-	const [endDate, setEndDate] = useState(endDateParam ?? now.toDate())
-	const [selectedDates, setSelectedDates] = useState<Date[]>([
-		startDate,
-		endDate,
-	])
+	const { projectId } = useProjectId()
 
 	const [queryParam] = useQueryParam('query', StringParam)
+	const [initialQuery, setInitialQuery] = useState(queryParam ?? '')
+	const [submittedQuery, setSubmittedQuery] = useState(queryParam ?? '')
 
 	const { alert_id } = useParams<{
 		alert_id: string
 	}>()
 
-	const isCreate = alert_id === undefined
-	const createStr = isCreate ? 'create' : 'update'
-
-	useEffect(() => {
-		if (selectedDates.length === 2) {
-			setStartDate(selectedDates[0])
-			setEndDate(selectedDates[1])
-		}
-	}, [selectedDates])
-
 	const { data, loading } = useGetLogAlertQuery({
 		variables: {
-			id: alert_id || 'never',
+			id: alert_id!,
 		},
 		skip: !alert_id,
 	})
 
-	const form = useFormState<LogMonitorForm>({
+	const formStore = Form.useStore<LogMonitorForm>({
 		defaultValues: {
-			query: queryParam ?? '',
+			query: initialQuery,
 			name: '',
 			belowThreshold: false,
-			excludedEnvironments: [],
 			slackChannels: [],
 			discordChannels: [],
+			microsoftTeamsChannels: [],
 			webhookDestinations: [],
 			emails: [],
 			threshold: undefined,
+			threshold_window: Number(DEFAULT_FREQUENCY),
 			frequency: Number(DEFAULT_FREQUENCY),
 			loaded: false,
 		},
 	})
+	const formValues = formStore.useState('values')
+
+	const handleUpdateInputQuery = (query: string) => {
+		setSubmittedQuery(query)
+		formStore.setValue(formStore.names.query, query)
+	}
+
+	formStore.useSubmit(() => {
+		setSubmittedQuery(formValues.query)
+	})
 
 	useEffect(() => {
 		if (!loading && data) {
-			form.setValues({
+			setInitialQuery(data?.log_alert.query)
+			setSubmittedQuery(data?.log_alert.query)
+			formStore.setValues({
 				query: data?.log_alert.query,
 				name: data?.log_alert.Name,
 				belowThreshold: data?.log_alert.BelowThreshold,
-				excludedEnvironments: data?.log_alert.ExcludedEnvironments,
 				slackChannels: data?.log_alert.ChannelsToNotify.map((c) => ({
 					...c,
 					webhook_channel_name: c.webhook_channel,
@@ -140,11 +132,19 @@ export const LogAlertPage = () => {
 						id: c.id,
 					}),
 				),
+				microsoftTeamsChannels:
+					data?.log_alert.MicrosoftTeamsChannelsToNotify.map((c) => ({
+						...c,
+						displayValue: c.name,
+						value: c.id,
+						id: c.id,
+					})),
 				webhookDestinations: data?.log_alert.WebhookDestinations.map(
 					(d) => d.url,
 				),
 				emails: data?.log_alert.EmailsToNotify,
 				threshold: data?.log_alert.CountThreshold,
+				threshold_window: Number(DEFAULT_FREQUENCY),
 				frequency: data?.log_alert.ThresholdWindow,
 				loaded: true,
 			})
@@ -152,12 +152,10 @@ export const LogAlertPage = () => {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [data, loading])
 
-	const [createLogAlertMutation] = useCreateLogAlertMutation({
-		refetchQueries: [
-			namedOperations.Query.GetLogAlert,
-			namedOperations.Query.GetAlertsPagePayload,
-		],
+	useEffect(() => {
+		analytics.page('Log Alert')
 	})
+
 	const [updateLogAlertMutation] = useUpdateLogAlertMutation({
 		refetchQueries: [
 			namedOperations.Query.GetLogAlert,
@@ -165,10 +163,7 @@ export const LogAlertPage = () => {
 		],
 	})
 	const [deleteLogAlertMutation] = useDeleteLogAlertMutation({
-		refetchQueries: [
-			namedOperations.Query.GetLogAlert,
-			namedOperations.Query.GetAlertsPagePayload,
-		],
+		refetchQueries: [namedOperations.Query.GetAlertsPagePayload],
 	})
 
 	const { project_id } = useParams<{
@@ -177,10 +172,9 @@ export const LogAlertPage = () => {
 
 	const navigate = useNavigate()
 
-	const query = form.values.query
-	const belowThreshold = form.values.belowThreshold
-	const threshold = form.values.threshold
-	const frequency = form.values.frequency
+	const belowThreshold = formValues.belowThreshold
+	const threshold = formValues.threshold
+	const frequency = formValues.frequency
 
 	const header = (
 		<Box
@@ -204,31 +198,29 @@ export const LogAlertPage = () => {
 				>
 					Cancel
 				</Button>
-				{!isCreate && (
-					<Button
-						kind="danger"
-						size="small"
-						emphasis="low"
-						trackingId="deleteLogMonitoringAlert"
-						onClick={() => {
-							deleteLogAlertMutation({
-								variables: {
-									project_id: project_id ?? '',
-									id: alert_id,
-								},
+				<Button
+					kind="danger"
+					size="small"
+					emphasis="low"
+					trackingId="deleteLogMonitoringAlert"
+					onClick={() => {
+						deleteLogAlertMutation({
+							variables: {
+								project_id: project_id ?? '',
+								id: alert_id!,
+							},
+						})
+							.then(() => {
+								toast.success(`Log alert deleted!`)
+								navigate(`/${project_id}/alerts`)
 							})
-								.then(() => {
-									message.success(`Log alert deleted!`)
-									navigate(`/${project_id}/alerts`)
-								})
-								.catch(() => {
-									message.error(`Failed to delete log alert!`)
-								})
-						}}
-					>
-						Delete Alert
-					</Button>
-				)}
+							.catch(() => {
+								toast.error(`Failed to delete log alert!`)
+							})
+					}}
+				>
+					Delete Alert
+				</Button>
 				<Button
 					kind="primary"
 					size="small"
@@ -236,62 +228,68 @@ export const LogAlertPage = () => {
 					trackingId="saveLogMonitoringAlert"
 					onClick={() => {
 						const input = {
-							count_threshold: form.getValue(
-								form.names.threshold,
-							),
-							below_threshold: form.getValue(
-								form.names.belowThreshold,
-							),
+							count_threshold: formValues.threshold!,
+							below_threshold: formValues.belowThreshold,
 							disabled: false,
-							discord_channels: form.values.discordChannels.map(
+							discord_channels: formValues.discordChannels.map(
 								(c) => ({
 									name: c.name,
 									id: c.id,
 								}),
 							),
-							emails: form.getValue(form.names.emails),
-							environments: form.getValue(
-								form.names.excludedEnvironments,
-							),
-							name: form.getValue(form.names.name),
+							microsoft_teams_channels:
+								formValues.microsoftTeamsChannels.map((c) => ({
+									name: c.name,
+									id: c.id,
+								})),
+							emails: formValues.emails,
+							name: formValues.name,
 							project_id: project_id || '0',
-							slack_channels: form.values.slackChannels.map(
+							slack_channels: formValues.slackChannels.map(
 								(c) => ({
 									webhook_channel_id: c.webhook_channel_id,
 									webhook_channel_name:
 										c.webhook_channel_name,
 								}),
 							),
-							webhook_destinations: form
-								.getValue(form.names.webhookDestinations)
+							webhook_destinations: formStore
+								.getValue(formStore.names.webhookDestinations)
 								.map((d: string) => ({ url: d })),
-							threshold_window: form.getValue(
-								form.names.frequency,
-							),
-							query: form.getValue(form.names.query),
+							threshold_window: formValues.frequency,
+							query: formValues.query,
 						}
 
 						const nameErr = !input.name
-						const thresholdErr = !input.count_threshold
-						if (nameErr || thresholdErr) {
+						const thresholdErr =
+							!input.count_threshold || input.count_threshold < 0
+						const queryErr = !input.query
+						if (nameErr || thresholdErr || queryErr) {
 							const errs = []
 							if (nameErr) {
-								form.setError(
-									form.names.name,
+								formStore.setError(
+									formStore.names.name,
 									'Name is required',
 								)
 								errs.push('name')
 							}
 
 							if (thresholdErr) {
-								form.setError(
-									form.names.threshold,
-									'Threshold is required',
+								formStore.setError(
+									formStore.names.threshold,
+									'Threshold cannot be less than 0',
 								)
 								errs.push('threshold')
 							}
 
-							message.error(
+							if (queryErr) {
+								formStore.setError(
+									formStore.names.query,
+									'Query is required',
+								)
+								errs.push('query')
+							}
+
+							toast.error(
 								`Missing required field(s): ${errs.join(
 									', ',
 								)}.`,
@@ -300,46 +298,50 @@ export const LogAlertPage = () => {
 							return
 						}
 
-						if (isCreate) {
-							createLogAlertMutation({
-								variables: {
-									input,
-								},
+						updateLogAlertMutation({
+							variables: {
+								id: alert_id!,
+								input,
+							},
+						})
+							.then(() => {
+								toast.success(`Log alert updated!`)
+								navigate(`/${project_id}/alerts`)
 							})
-								.then(() => {
-									message.success(`Log alert ${createStr}d!`)
-									navigate(`/${project_id}/alerts`)
-								})
-								.catch(() => {
-									message.error(
-										`Failed to ${createStr} log alert!`,
-									)
-								})
-						} else {
-							updateLogAlertMutation({
-								variables: {
-									id: alert_id,
-									input,
-								},
+							.catch(() => {
+								toast.error(`Failed to update log alert!`)
 							})
-								.then(() => {
-									message.success(`Log alert ${createStr}d!`)
-								})
-								.catch(() => {
-									message.error(
-										`Failed to ${createStr} log alert!`,
-									)
-								})
-						}
 					}}
 				>
-					{capitalize(createStr)} alert
+					Update alert
 				</Button>
 			</Box>
 		</Box>
 	)
 
-	const isLoading = !isCreate && !form.values.loaded
+	const { data: histogramData, loading: histogramLoading } =
+		useGetMetricsQuery({
+			variables: {
+				product_type: ProductType.Logs,
+				project_id: project_id!,
+				params: {
+					query: submittedQuery,
+					date_range: {
+						start_date: moment(startDate).format(TIME_FORMAT),
+						end_date: moment(endDate).format(TIME_FORMAT),
+					},
+				},
+				group_by: 'level',
+				bucket_by: TIMESTAMP_KEY,
+				bucket_count: 48,
+				expressions: [
+					{ aggregator: MetricAggregator.Count, column: '' },
+				],
+			},
+			skip: !projectId,
+		})
+
+	const isLoading = !formValues.loaded
 
 	return (
 		<Box width="full" background="raised" p="8">
@@ -363,75 +365,107 @@ export const LogAlertPage = () => {
 							py="24"
 							gap="40"
 						>
-							<Box
-								display="flex"
-								flexDirection="column"
-								width="full"
-								height="full"
-								gap="12"
-							>
-								<Box
-									display="flex"
-									alignItems="center"
-									width="full"
-									justifyContent="space-between"
-								>
+							<Form store={formStore} resetOnSubmit={false}>
+								<Stack gap="40">
 									<Box
 										display="flex"
-										alignItems="center"
-										gap="4"
-										color="weak"
+										flexDirection="column"
+										width="full"
+										height="full"
+										gap="12"
 									>
-										<Tag
-											kind="secondary"
-											size="medium"
-											shape="basic"
-											emphasis="high"
-											iconLeft={<IconSolidSpeakerphone />}
-											onClick={() => {
-												navigate(
-													`/${project_id}/alerts`,
+										<Box
+											display="flex"
+											alignItems="center"
+											width="full"
+											justifyContent="space-between"
+										>
+											<Box
+												display="flex"
+												alignItems="center"
+												gap="4"
+												color="weak"
+											>
+												<Tag
+													kind="secondary"
+													size="medium"
+													shape="basic"
+													emphasis="high"
+													iconLeft={<IconSolidBell />}
+													onClick={() => {
+														navigate(
+															`/${project_id}/alerts`,
+														)
+													}}
+												>
+													Alerts
+												</Tag>
+												<IconSolidCheveronRight />
+												<Text
+													color="moderate"
+													size="small"
+													weight="medium"
+													userSelect="none"
+												>
+													Log monitor
+												</Text>
+											</Box>
+											<DateRangePicker
+												emphasis="medium"
+												selectedValue={{
+													startDate,
+													endDate,
+													selectedPreset,
+												}}
+												onDatesChange={updateSearchTime}
+												presets={DEFAULT_TIME_PRESETS}
+												minDate={presetStartDate(
+													DEFAULT_TIME_PRESETS[5],
+												)}
+											/>
+										</Box>
+										<AlertTitleField />
+										<Box
+											cssClass={styles.queryContainer}
+											style={{
+												borderColor: formStore.getError(
+													'query',
 												)
+													? 'var(--color-red-500)'
+													: undefined,
 											}}
 										>
-											Alerts
-										</Tag>
-										<IconSolidCheveronRight />
-										<Text
-											color="moderate"
-											size="small"
-											weight="medium"
-											userSelect="none"
-										>
-											Log monitor
-										</Text>
+											<SearchContext
+												initialQuery={initialQuery}
+												onSubmit={
+													handleUpdateInputQuery
+												}
+											>
+												<Search
+													startDate={startDate}
+													endDate={endDate}
+													hideIcon
+													placeholder="Define query..."
+													productType={
+														ProductType.Logs
+													}
+												/>
+											</SearchContext>
+										</Box>
+										<LogsHistogram
+											startDate={startDate}
+											endDate={endDate}
+											onDatesChange={updateSearchTime}
+											outline
+											threshold={threshold}
+											belowThreshold={belowThreshold}
+											frequencySeconds={frequency}
+											metrics={histogramData}
+											loading={histogramLoading}
+										/>
 									</Box>
-									<PreviousDateRangePicker
-										selectedDates={selectedDates}
-										onDatesChange={setSelectedDates}
-										presets={LOG_TIME_PRESETS}
-										minDate={thirtyDaysAgo}
-										kind="secondary"
-										size="medium"
-										emphasis="low"
-									/>
-								</Box>
-								<LogsHistogram
-									query={query}
-									startDate={startDate}
-									endDate={endDate}
-									onDatesChange={(startDate, endDate) => {
-										setSelectedDates([startDate, endDate])
-									}}
-									onLevelChange={() => {}}
-									outline
-									threshold={threshold}
-									belowThreshold={belowThreshold}
-									frequencySeconds={frequency}
-								/>
-							</Box>
-							<Form state={form} resetOnSubmit={false}>
-								<LogAlertForm {...{ startDate, endDate }} />
+									<LogAlertForm />
+								</Stack>
 							</Form>
 						</Container>
 					</>
@@ -441,38 +475,14 @@ export const LogAlertPage = () => {
 	)
 }
 
-const LogAlertForm = ({
-	startDate,
-	endDate,
-}: {
-	startDate: Date
-	endDate: Date
-}) => {
+const LogAlertForm = () => {
 	const { projectId } = useProjectId()
-	const { data: keysData, loading: keysLoading } = useGetLogsKeysQuery({
-		variables: {
-			project_id: projectId,
-			date_range: {
-				start_date: moment(startDate).format(LOG_TIME_FORMAT),
-				end_date: moment(endDate).format(LOG_TIME_FORMAT),
-			},
-		},
-	})
-	const form = useForm() as FormState<LogMonitorForm>
-	const query = form.values.query
+	const formStore = Form.useContext() as Ariakit.FormStore<LogMonitorForm>
+	const errors = formStore.useState('errors')
 
 	const { alertsPayload } = useLogAlertsContext()
 	const { slackLoading, syncSlack } = useSlackSync()
 	const [slackSearchQuery, setSlackSearchQuery] = useState('')
-
-	const environments = dedupeEnvironments(
-		(alertsPayload?.environment_suggestion ??
-			[]) as EnvironmentSuggestion[],
-	).map((environmentSuggestion) => ({
-		displayValue: environmentSuggestion,
-		value: environmentSuggestion,
-		id: environmentSuggestion,
-	}))
 
 	const slackChannels = (alertsPayload?.slack_channel_suggestion ?? []).map(
 		({ webhook_channel, webhook_channel_id }) => ({
@@ -490,6 +500,14 @@ const LogAlertForm = ({
 		id: id,
 	}))
 
+	const microsoftTeamsChannels = (
+		alertsPayload?.microsoft_teams_channel_suggestions ?? []
+	).map(({ name, id }) => ({
+		displayValue: name,
+		value: id,
+		id: id,
+	}))
+
 	const emails = (alertsPayload?.admins ?? [])
 		.map((wa) => wa.admin!.email)
 		.map((email) => ({
@@ -501,27 +519,6 @@ const LogAlertForm = ({
 	return (
 		<Box cssClass={styles.grid}>
 			<Stack gap="12">
-				<Box cssClass={styles.sectionHeader}>
-					<Text size="large" weight="bold" color="strong">
-						Define query
-					</Text>
-				</Box>
-				<Box borderTop="dividerWeak" width="full" />
-				<Form.NamedSection label="Search query" name={form.names.query}>
-					<Box cssClass={styles.queryContainer}>
-						<Search
-							initialQuery={query}
-							keys={keysData?.logs_keys ?? []}
-							startDate={startDate}
-							endDate={endDate}
-							hideIcon
-							className={styles.combobox}
-							keysLoading={keysLoading}
-						/>
-					</Box>
-				</Form.NamedSection>
-			</Stack>
-			<Stack gap="12">
 				<Box
 					cssClass={styles.sectionHeader}
 					justifyContent="space-between"
@@ -529,15 +526,15 @@ const LogAlertForm = ({
 					<Text size="large" weight="bold" color="strong">
 						Alert conditions
 					</Text>
-					<Menu>
+					<Menu placement="bottom-end">
 						<ThresholdTypeConfiguration />
 					</Menu>
 				</Box>
 				<Box borderTop="dividerWeak" width="full" />
 				<Column.Container gap="12">
-					<Column>
+					<Column span="6">
 						<Form.Input
-							name={form.names.threshold}
+							name={formStore.names.threshold}
 							type="number"
 							label="Alert threshold"
 							tag={
@@ -549,213 +546,207 @@ const LogAlertForm = ({
 								/>
 							}
 							style={{
-								borderColor: form.errors.threshold
+								borderColor: errors.threshold
 									? 'var(--color-red-500)'
 									: undefined,
 							}}
 						/>
 					</Column>
 
-					<Column>
+					<Column span="6">
 						<Form.Select
 							label="Alert frequency"
-							name={form.names.frequency.toString()}
-							value={form.values.frequency}
-							onChange={(e) =>
-								form.setValue(
-									form.names.frequency,
-									e.target.value,
-								)
-							}
-						>
-							<option value="" disabled>
-								Select alert frequency
-							</option>
-							{FREQUENCIES.map((freq: any) => (
-								<option
-									key={freq.id}
-									value={Number(freq.value)}
-								>
-									{freq.displayValue}
-								</option>
-							))}
-						</Form.Select>
+							name={formStore.names.frequency}
+							placeholder="Select alert frequency"
+							options={FREQUENCIES.filter(
+								(freq) =>
+									Number(freq.value) >=
+									LOG_ALERT_MINIMUM_FREQUENCY,
+							)}
+						/>
 					</Column>
 				</Column.Container>
 			</Stack>
-
 			<Stack gap="12">
-				<Box cssClass={styles.sectionHeader}>
-					<Text size="large" weight="bold" color="strong">
-						General
-					</Text>
-				</Box>
+				<Stack gap="12">
+					<Box cssClass={styles.sectionHeader}>
+						<Text size="large" weight="bold" color="strong">
+							Notify team
+						</Text>
+					</Box>
 
-				<Box borderTop="dividerWeak" width="full" />
+					<Box borderTop="dividerWeak" width="full" />
+					<Form.NamedSection
+						label="Slack channels to notify"
+						name={formStore.names.slackChannels}
+					>
+						<Select
+							aria-label="Slack channels to notify"
+							placeholder="Select Slack channels"
+							options={slackChannels}
+							optionFilterProp="label"
+							onFocus={syncSlack}
+							onSearch={(value) => {
+								setSlackSearchQuery(value)
+							}}
+							onChange={(values) => {
+								formStore.setValue(
+									formStore.names.slackChannels,
+									values.map((v: any) => ({
+										webhook_channel_name: v.label,
+										webhook_channel_id: v.value,
+										...v,
+									})),
+								)
+							}}
+							notFoundContent={
+								<SlackLoadOrConnect
+									isLoading={slackLoading}
+									searchQuery={slackSearchQuery}
+									slackUrl={getSlackUrl(projectId ?? '')}
+									isSlackIntegrated={
+										alertsPayload?.is_integrated_with_slack ??
+										false
+									}
+								/>
+							}
+							className={styles.selectContainer}
+							mode="multiple"
+							labelInValue
+							value={formStore.getValue(
+								formStore.names.slackChannels,
+							)}
+						/>
+					</Form.NamedSection>
 
-				<Form.Input
-					name={form.names.name}
-					type="text"
-					placeholder="Alert name"
-					label="Name"
-					style={{
-						borderColor: form.errors.name
-							? 'var(--color-red-500)'
-							: undefined,
-					}}
-				/>
+					<Form.NamedSection
+						label="Discord channels to notify"
+						name={formStore.names.discordChannels}
+					>
+						<Select
+							aria-label="Discord channels to notify"
+							placeholder="Select Discord channels"
+							options={discordChannels}
+							optionFilterProp="label"
+							onChange={(values) => {
+								formStore.setValue(
+									formStore.names.discordChannels,
+									values.map((v: any) => ({
+										name: v.label,
+										id: v.value,
+										...v,
+									})),
+								)
+							}}
+							notFoundContent={
+								discordChannels.length === 0 ? (
+									<Link to="/integrations">
+										Connect Highlight with Discord
+									</Link>
+								) : (
+									'Discord channel not found'
+								)
+							}
+							className={styles.selectContainer}
+							mode="multiple"
+							labelInValue
+							value={formStore.getValue(
+								formStore.names.discordChannels,
+							)}
+						/>
+					</Form.NamedSection>
 
-				<Form.NamedSection
-					label="Excluded environments"
-					name={form.names.excludedEnvironments}
-				>
-					<Select
-						aria-label="Excluded environments list"
-						placeholder="Select excluded environments"
-						options={environments}
-						onChange={(values: any): any =>
-							form.setValue(
-								form.names.excludedEnvironments,
-								values,
-							)
-						}
-						value={form.values.excludedEnvironments}
-						notFoundContent={<p>No environment suggestions</p>}
-						className={styles.selectContainer}
-						mode="multiple"
-					/>
-				</Form.NamedSection>
-			</Stack>
-			<Stack gap="12">
-				<Box cssClass={styles.sectionHeader}>
-					<Text size="large" weight="bold" color="strong">
-						Notify team
-					</Text>
-				</Box>
+					<Form.NamedSection
+						label="Microsoft Teams channels to notify"
+						name={formStore.names.microsoftTeamsChannels}
+					>
+						<Select
+							aria-label="Microsoft Teams channels to notify"
+							placeholder="Select Microsoft Teams channels"
+							options={microsoftTeamsChannels}
+							optionFilterProp="label"
+							onChange={(values) => {
+								formStore.setValue(
+									formStore.names.microsoftTeamsChannels,
+									values.map((v: any) => ({
+										name: v.label,
+										id: v.value,
+										...v,
+									})),
+								)
+							}}
+							notFoundContent={
+								microsoftTeamsChannels.length === 0 ? (
+									<Link to="/integrations">
+										Connect Highlight with Microsoft Teams
+									</Link>
+								) : (
+									'Microsoft Teams channel not found'
+								)
+							}
+							className={styles.selectContainer}
+							mode="multiple"
+							labelInValue
+							value={formStore.getValue(
+								formStore.names.microsoftTeamsChannels,
+							)}
+						/>
+					</Form.NamedSection>
 
-				<Box borderTop="dividerWeak" width="full" />
-				<Form.NamedSection
-					label="Slack channels to notify"
-					name={form.names.slackChannels}
-				>
-					<Select
-						aria-label="Slack channels to notify"
-						placeholder="Select Slack channels"
-						options={slackChannels}
-						optionFilterProp="label"
-						onFocus={syncSlack}
-						onSearch={(value) => {
-							setSlackSearchQuery(value)
-						}}
-						onChange={(values) => {
-							form.setValue(
-								form.names.slackChannels,
-								values.map((v: any) => ({
-									webhook_channel_name: v.label,
-									webhook_channel_id: v.value,
-									...v,
-								})),
-							)
-						}}
-						value={form.values.slackChannels}
-						notFoundContent={
-							<SlackLoadOrConnect
-								isLoading={slackLoading}
-								searchQuery={slackSearchQuery}
-								slackUrl={getSlackUrl(projectId ?? '')}
-								isSlackIntegrated={
-									alertsPayload?.is_integrated_with_slack ??
-									false
-								}
-							/>
-						}
-						className={styles.selectContainer}
-						mode="multiple"
-						labelInValue
-					/>
-				</Form.NamedSection>
+					<Form.NamedSection
+						label="Emails to notify"
+						name={formStore.names.emails}
+					>
+						<Select
+							aria-label="Emails to notify"
+							placeholder="Select emails"
+							options={emails}
+							onChange={(values: any): any =>
+								formStore.setValue(
+									formStore.names.emails,
+									values,
+								)
+							}
+							notFoundContent={<p>No email suggestions</p>}
+							className={styles.selectContainer}
+							mode="tags"
+							value={formStore.getValue(formStore.names.emails)}
+						/>
+					</Form.NamedSection>
 
-				<Form.NamedSection
-					label="Discord channels to notify"
-					name={form.names.discordChannels}
-				>
-					<Select
-						aria-label="Discord channels to notify"
-						placeholder="Select Discord channels"
-						options={discordChannels}
-						optionFilterProp="label"
-						onChange={(values) => {
-							form.setValue(
-								form.names.discordChannels,
-								values.map((v: any) => ({
-									name: v.label,
-									id: v.value,
-									...v,
-								})),
-							)
-						}}
-						value={form.values.discordChannels}
-						notFoundContent={
-							discordChannels.length === 0 ? (
-								<Link to="/integrations">
-									Connect Highlight with Discord
-								</Link>
-							) : (
-								'Discord channel not found'
-							)
-						}
-						className={styles.selectContainer}
-						mode="multiple"
-						labelInValue
-					/>
-				</Form.NamedSection>
-
-				<Form.NamedSection
-					label="Emails to notify"
-					name={form.names.emails}
-				>
-					<Select
-						aria-label="Emails to notify"
-						placeholder="Select emails"
-						options={emails}
-						onChange={(values: any): any =>
-							form.setValue(form.names.emails, values)
-						}
-						value={form.values.emails}
-						notFoundContent={<p>No email suggestions</p>}
-						className={styles.selectContainer}
-						mode="multiple"
-					/>
-				</Form.NamedSection>
-
-				<Form.NamedSection
-					label="Webhooks to notify"
-					name={form.names.emails}
-				>
-					<Select
-						aria-label="Webhooks to notify"
-						placeholder="Enter webhook addresses"
-						onChange={(values: any): any =>
-							form.setValue(
-								form.names.webhookDestinations,
-								values,
-							)
-						}
-						value={form.values.webhookDestinations}
-						notFoundContent={null}
-						className={styles.selectContainer}
-						mode="tags"
-					/>
-				</Form.NamedSection>
+					<Form.NamedSection
+						label="Webhooks to notify"
+						name={formStore.names.webhookDestinations}
+					>
+						<Select
+							aria-label="Webhooks to notify"
+							placeholder="Enter webhook addresses"
+							onChange={(values: any): any =>
+								formStore.setValue(
+									formStore.names.webhookDestinations,
+									values,
+								)
+							}
+							notFoundContent={null}
+							className={styles.selectContainer}
+							mode="tags"
+							value={formStore.getValue(
+								formStore.names.webhookDestinations,
+							)}
+						/>
+					</Form.NamedSection>
+				</Stack>
 			</Stack>
 		</Box>
 	)
 }
 
 const ThresholdTypeConfiguration = () => {
-	const form = useForm()
-	const menu = useMenu()
-	const belowThreshold = form.values.belowThreshold
+	const form = Form.useContext()!
+	const menu = Menu.useContext()!
+	const menuState = menu.getState()
+	const belowThreshold = form.useValue('belowThreshold')
+
 	return (
 		<>
 			<Menu.Button
@@ -764,7 +755,7 @@ const ThresholdTypeConfiguration = () => {
 				emphasis="high"
 				cssClass={styles.thresholdTypeButton}
 				iconRight={
-					menu.open ? (
+					menuState.open ? (
 						<IconSolidCheveronUp />
 					) : (
 						<IconSolidCheveronDown />
@@ -793,18 +784,8 @@ const ThresholdTypeConfiguration = () => {
 	)
 }
 
-interface LogMonitorForm {
+interface LogMonitorForm extends Omit<AlertForm, 'excludedEnvironments'> {
 	query: string
-	name: string
-	belowThreshold: boolean
-	threshold: number | undefined
-	frequency: number
-	excludedEnvironments: string[]
-	slackChannels: SanitizedSlackChannelInput[]
-	discordChannels: DiscordChannelInput[]
-	emails: string[]
-	webhookDestinations: string[]
-	loaded: boolean
 }
 
 export default LogAlertPage

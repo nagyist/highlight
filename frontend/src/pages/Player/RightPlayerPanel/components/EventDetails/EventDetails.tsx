@@ -8,8 +8,8 @@ import {
 	IconSolidX,
 	Tag,
 	Text,
-	vars,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
+import { vars } from '@highlight-run/ui/vars'
 import {
 	EVENT_TYPES_TO_COLORS,
 	EVENT_TYPES_TO_VARIANTS,
@@ -30,8 +30,6 @@ import { MillisToMinutesAndSeconds } from '@util/time'
 import React from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 
-import * as styles from './EventDetails.css'
-
 const EventDetails = React.memo(({ event }: { event: HighlightEvent }) => {
 	const { sessionMetadata, eventsForTimelineIndicator } = useReplayerContext()
 	const { setActiveEvent } = usePlayerUIContext()
@@ -42,7 +40,10 @@ const EventDetails = React.memo(({ event }: { event: HighlightEvent }) => {
 		0,
 	)
 	const displayName = getTimelineEventDisplayName(details.title || '')
-	const payload = (event.data as { payload: any }).payload
+	let payload = (event.data as { payload: any }).payload
+	try {
+		payload = JSON.parse(payload)
+	} catch (e) {}
 
 	const eventIdx = eventsForTimelineIndicator.findIndex(
 		(e) => e.identifier === event.identifier,
@@ -74,7 +75,7 @@ const EventDetails = React.memo(({ event }: { event: HighlightEvent }) => {
 	)
 
 	return (
-		<Box cssClass={styles.container}>
+		<Box display="flex" flexDirection="column" width="full" height="full">
 			<Box
 				py="6"
 				px="8"
@@ -82,18 +83,23 @@ const EventDetails = React.memo(({ event }: { event: HighlightEvent }) => {
 				align="center"
 				justifyContent="space-between"
 			>
-				<PreviousNextGroup
-					onPrev={() =>
-						setActiveEvent(eventsForTimelineIndicator[prev])
-					}
-					canMoveBackward={canMoveBackward}
-					prevShortcut="h"
-					onNext={() =>
-						setActiveEvent(eventsForTimelineIndicator[next])
-					}
-					canMoveForward={canMoveForward}
-					nextShortcut="l"
-				/>
+				<Box display="flex" gap="6" alignItems="center">
+					<PreviousNextGroup
+						onPrev={() =>
+							setActiveEvent(eventsForTimelineIndicator[prev])
+						}
+						canMoveBackward={canMoveBackward}
+						prevShortcut="h"
+						onNext={() =>
+							setActiveEvent(eventsForTimelineIndicator[next])
+						}
+						canMoveForward={canMoveForward}
+						nextShortcut="l"
+					/>
+					<Text size="xSmall" weight="medium" color="weak">
+						{eventIdx + 1} / {eventsForTimelineIndicator.length}
+					</Text>
+				</Box>
 				<ButtonIcon
 					kind="secondary"
 					size="small"
@@ -112,10 +118,8 @@ const EventDetails = React.memo(({ event }: { event: HighlightEvent }) => {
 					}}
 				/>
 			</Box>
-			<Box pt="8" pr="12" pb="8" pl="12" width="full">
-				<Text cssClass={styles.overflowText}>
-					{details.displayValue}
-				</Text>
+			<Box pt="8" pr="12" pb="8" pl="12">
+				<Text lines="1">{details.displayValue}</Text>
 			</Box>
 			<Box display="flex" pt="8" pr="12" pb="8" pl="12" gap="4">
 				<Badge
@@ -148,7 +152,7 @@ const EventDetails = React.memo(({ event }: { event: HighlightEvent }) => {
 							? playerTimeToSessionAbsoluteTime({
 									sessionStartTime: sessionMetadata.startTime,
 									relativeTime: timeSinceStart,
-							  })
+								})
 							: MillisToMinutesAndSeconds(timeSinceStart)}
 					</Text>
 				</Tag>

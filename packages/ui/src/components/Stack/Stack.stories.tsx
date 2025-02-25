@@ -1,13 +1,13 @@
+import { Meta } from '@storybook/react'
 import React from 'react'
-import { ComponentMeta } from '@storybook/react'
 
-import { Stack } from './Stack'
 import { Box } from '../Box/Box'
+import { Stack } from './Stack'
 
 export default {
 	title: 'Components/Stack',
 	component: Stack,
-} as ComponentMeta<typeof Stack>
+} as Meta<typeof Stack>
 
 const Content: React.FC<React.PropsWithChildren> = ({ children }) => (
 	<Box background="n2" p="16">
@@ -39,7 +39,7 @@ export const Horizontal = () => (
 
 export const Wrapped = () => (
 	<>
-		<Stack direction="row" gap="24" wrap>
+		<Stack direction="row" gap="24">
 			<Content>Horizontal / Wrapped</Content>
 			<Content>Horizontal / Wrapped</Content>
 			<Content>Horizontal / Wrapped</Content>

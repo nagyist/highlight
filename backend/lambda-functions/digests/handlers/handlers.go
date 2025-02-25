@@ -4,20 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
+	"github.com/highlight-run/highlight/backend/env"
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
+
+	log "github.com/sirupsen/logrus"
+
+	"gorm.io/gorm"
+
+	"github.com/pkg/errors"
+	"github.com/sendgrid/sendgrid-go"
+	"github.com/sendgrid/sendgrid-go/helpers/mail"
 
 	"github.com/highlight-run/highlight/backend/email"
 	"github.com/highlight-run/highlight/backend/lambda-functions/digests/utils"
 	"github.com/highlight-run/highlight/backend/model"
-	"github.com/pkg/errors"
-	"github.com/sendgrid/sendgrid-go"
-	"github.com/sendgrid/sendgrid-go/helpers/mail"
-	"gorm.io/gorm"
 )
 
 type Handlers interface {
@@ -40,12 +43,12 @@ func InitHandlers(db *gorm.DB, sendgridClient *sendgrid.Client) *handlers {
 
 func NewHandlers() *handlers {
 	ctx := context.TODO()
-	db, err := model.SetupDB(ctx, os.Getenv("PSQL_DB"))
+	db, err := model.SetupDB(ctx, env.Config.SQLDatabase)
 	if err != nil {
 		log.WithContext(ctx).Fatal(errors.Wrap(err, "error setting up DB"))
 	}
 
-	sendgridClient := sendgrid.NewSendClient(os.Getenv("SENDGRID_API_KEY"))
+	sendgridClient := sendgrid.NewSendClient(env.Config.SendgridKey)
 
 	return InitHandlers(db, sendgridClient)
 }
@@ -461,6 +464,9 @@ func (h *handlers) SendDigestEmails(ctx context.Context, input utils.DigestDataR
 			WHERE eoo.admin_id = a.id
 			AND eoo.category IN ('All', 'Digests')
 		)
+		AND (
+			wa.project_ids IS NULL 
+			OR p.id = ANY(wa.project_ids))
 	`, input.ProjectId).Scan(&toAddrs).Error; err != nil {
 		return errors.Wrap(err, "error querying recipient emails")
 	}

@@ -1,4 +1,3 @@
-import { Ariakit } from '@highlight-run/ui'
 import { createContext } from '@util/context/context'
 
 interface GlobalContext {
@@ -6,7 +5,6 @@ interface GlobalContext {
 	toggleShowKeyboardShortcutsGuide: (nextValue?: boolean) => void
 	showBanner: boolean
 	toggleShowBanner: (nextValue?: boolean) => void
-	commandBarDialog: Ariakit.DialogState
 }
 
 export const [useGlobalContext, GlobalContextProvider] =

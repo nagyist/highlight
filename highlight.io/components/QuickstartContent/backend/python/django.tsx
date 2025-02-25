@@ -1,4 +1,3 @@
-import { siteUrl } from '../../../../utils/urls'
 import { QuickStartContent } from '../../QuickstartContent'
 import {
 	downloadSnippet,
@@ -10,10 +9,9 @@ export const PythonDjangoContext: QuickStartContent = {
 	title: 'Python Django',
 	subtitle:
 		'Learn how to set up highlight.io on your Python Django backend API.',
-	logoUrl: siteUrl('/images/quickstart/django.svg'),
 	entries: [
 		setupFrontendSnippet,
-		downloadSnippet('Django'),
+		downloadSnippet(),
 		{
 			title: 'Initialize the Highlight SDK.',
 			content:
@@ -23,7 +21,16 @@ export const PythonDjangoContext: QuickStartContent = {
 					text: `import highlight_io
 from highlight_io.integrations.django import DjangoIntegration
 
-H = highlight_io.H("<YOUR_PROJECT_ID>", integrations=[DjangoIntegration()], instrument_logging=True)`,
+# \`instrument_logging=True\` sets up logging instrumentation.
+# if you do not want to send logs or are using \`loguru\`, pass \`instrument_logging=False\`
+H = highlight_io.H(
+	"<YOUR_PROJECT_ID>",
+	integrations=[DjangoIntegration()],
+	instrument_logging=True,
+	service_name="my-django-app",
+	service_version="git-sha",
+	environment="production",
+)`,
 					language: 'python',
 				},
 			],

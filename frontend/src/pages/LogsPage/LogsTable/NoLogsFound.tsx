@@ -1,6 +1,5 @@
 import { LinkButton } from '@components/LinkButton'
-import { Box, Callout, Text } from '@highlight-run/ui'
-import React from 'react'
+import { Box, Callout, Text } from '@highlight-run/ui/components'
 
 const NoLogsFound = () => {
 	return (
@@ -20,7 +19,7 @@ const NoLogsFound = () => {
 					<LinkButton
 						trackingId="logs-empty-state_specification-docs"
 						kind="secondary"
-						to="https://highlight.io/docs/general/product-features/logging/log-search"
+						to="https://www.highlight.io/docs/general/product-features/general-features/search"
 						target="_blank"
 					>
 						Log search specification

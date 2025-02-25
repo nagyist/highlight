@@ -1,41 +1,40 @@
-import React from 'react'
-import { ComponentMeta } from '@storybook/react'
+import { Meta } from '@storybook/react'
 
-import { Text } from './Text'
-import { typographyStyles } from './styles.css'
 import { Box } from '../Box/Box'
 import { Heading } from '../Heading/Heading'
+import { typographyStyles } from './styles.css'
+import { Text } from './Text'
 
 export default {
 	title: 'Components/Text',
 	component: Text,
-} as ComponentMeta<typeof Text>
+} as Meta<typeof Text>
 
 export const Sizes = () => {
-	return Object.keys(typographyStyles.size).map(
-		(size: keyof typeof typographyStyles.size) => (
-			<Box marginBottom="24" key={size}>
-				{Object.keys(typographyStyles.weight).map(
-					(weight: keyof typeof typographyStyles.weight) => (
-						<Box marginBottom="10" key={weight}>
-							<Text
-								size={size}
-								weight={weight}
-								transform="capitalize"
-							>
-								{size} ({weight})
-							</Text>
-						</Box>
-					),
-				)}
-				<Box marginBottom="10">
-					<Text size={size} transform="capitalize" family="monospace">
-						{size} Monospace
+	return Object.keys(typographyStyles.size).map((size) => (
+		<Box marginBottom="24" key={size}>
+			{Object.keys(typographyStyles.weight).map((weight) => (
+				<Box marginBottom="10" key={weight}>
+					<Text
+						size={size as keyof typeof typographyStyles.size}
+						weight={weight as keyof typeof typographyStyles.weight}
+						transform="capitalize"
+					>
+						{size} ({weight})
 					</Text>
 				</Box>
+			))}
+			<Box marginBottom="10">
+				<Text
+					size={size as keyof typeof typographyStyles.size}
+					transform="capitalize"
+					family="monospace"
+				>
+					{size} Monospace
+				</Text>
 			</Box>
-		),
-	)
+		</Box>
+	))
 }
 
 export const Elements = () => (

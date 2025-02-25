@@ -1,15 +1,11 @@
 import { useAuthContext } from '@authentication/AuthContext'
-import {
-	AutoJoinEmailsInput,
-	getEmailDomain,
-} from '@components/AutoJoinEmailsInput'
 import { Button } from '@components/Button'
+import { toast } from '@components/Toaster'
 import {
 	AppLoadingState,
 	useAppLoadingContext,
 } from '@context/AppLoadingContext'
 import {
-	useGetProjectsAndWorkspacesQuery,
 	useGetWorkspacesQuery,
 	useUpdateAdminAboutYouDetailsMutation,
 	useUpdateAdminAndCreateWorkspaceMutation,
@@ -19,18 +15,20 @@ import {
 	ButtonLink,
 	Callout,
 	Form,
+	IconSolidCheckCircle,
 	Stack,
+	SwitchButton,
 	Text,
-	useFormState,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
 import { AuthBody, AuthFooter, AuthHeader } from '@pages/Auth/Layout'
 import { Landing } from '@pages/Landing/Landing'
+import useLocalStorage from '@rehooks/local-storage'
+import { INVITE_TEAM_ROUTE } from '@routers/AppRouter/AppRouter'
 import analytics from '@util/analytics'
 import { getAttributionData } from '@util/attribution'
-import { message } from 'antd'
+import { isOnPrem } from '@util/onPrem/onPremUtils'
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useLocalStorage } from 'react-use'
 
 import { namedOperations } from '@/graph/generated/operations'
 import { DISMISS_JOIN_WORKSPACE_LOCAL_STORAGE_KEY } from '@/pages/Auth/JoinWorkspace'
@@ -38,17 +36,56 @@ import { DISMISS_JOIN_WORKSPACE_LOCAL_STORAGE_KEY } from '@/pages/Auth/JoinWorks
 import * as styles from './AdminForm.css'
 import * as authRouterStyles from './AuthRouter.css'
 
-const COMMON_EMAIL_PROVIDERS = [
-	'gmail',
-	'yahoo',
-	'hotmail',
-	'fastmail',
-	'protonmail',
-	'hey.com',
-] as const
+enum TeamSize {
+	One = '1',
+	Two = '2',
+	Ten = '3-10',
+	Thirty = '11-30',
+	Fifty = '31-50',
+	Hundred = '51-100',
+	FiveHundred = '101-500',
+	Thousand = '501-1000+',
+}
+
+enum HeardAbout {
+	youtube = 'YouTube',
+	linkedin = 'LinkedIn',
+	hackernews = 'Hacker News',
+	twitter = 'Twitter / X',
+	google = 'Google',
+	other = 'Other',
+}
+
+const ROLE_OPTIONS = [
+	{
+		name: 'Product',
+		value: 'Product',
+	},
+	{
+		name: 'Engineering',
+		value: 'Engineer',
+	},
+	{
+		name: 'Founder',
+		value: 'Founder',
+	},
+	{
+		name: 'Business / Finance',
+		value: 'Sales',
+	},
+]
+
+const TEAM_SIZE_OPTIONS = Object.entries(TeamSize).map(([k, v]) => ({
+	name: v,
+	value: k,
+}))
+
+const HEARD_ABOUT_OPTIONS = Object.entries(HeardAbout).map(([k, v]) => ({
+	name: v,
+	value: k,
+}))
 
 export const AdminForm: React.FC = () => {
-	const { refetch: refetchProjects } = useGetProjectsAndWorkspacesQuery()
 	const [showPromoCodeField, setShowPromoCodeField] = useState(false)
 	const { setLoadingState } = useAppLoadingContext()
 	const { admin, fetchAdmin } = useAuthContext()
@@ -64,7 +101,7 @@ export const AdminForm: React.FC = () => {
 	)
 
 	if (admin?.about_you_details_filled) {
-		navigate('/setup')
+		navigate(INVITE_TEAM_ROUTE)
 	}
 
 	if (
@@ -75,36 +112,37 @@ export const AdminForm: React.FC = () => {
 		navigate('/join_workspace', { replace: true })
 	}
 
-	const adminEmailDomain = getEmailDomain(admin?.email)
-	const isCommonEmailDomain = COMMON_EMAIL_PROVIDERS.some(
-		(p) => adminEmailDomain.indexOf(p) !== -1,
-	)
-
 	const workspace = workspacesData?.workspaces && workspacesData.workspaces[0]
 	const inWorkspace = !!workspace
 
-	const formState = useFormState({
+	const formStore = Form.useStore({
 		defaultValues: {
 			firstName: '',
 			lastName: '',
 			role: '',
 			companyName: '',
-			autoJoinDomains: '',
 			promoCode: '',
+			teamSize: '',
+			heardAbout: '',
+			phoneHomeContactAllowed: true,
 		},
 	})
 
-	const disableForm = loading || formState.submitSucceed > 0
+	const submitSucceeded = formStore.useState('submitSucceed')
+	const phoneHomeContactAllowed = formStore.useValue(
+		formStore.names.phoneHomeContactAllowed,
+	)
+	const disableForm = loading || submitSucceeded > 0
 
-	formState.useSubmit(async () => {
+	formStore.useSubmit(async (formState) => {
 		if (disableForm) {
 			return
 		}
 
 		if (!formState.valid) {
 			analytics.track('About you submission failed')
-			formState.setError(
-				'__error',
+			formStore.setError(
+				'general',
 				'Please fill out all form fields correctly.',
 			)
 			return
@@ -127,6 +165,10 @@ export const AdminForm: React.FC = () => {
 							last_name: formState.values.lastName,
 							user_defined_role: formState.values.role,
 							user_defined_persona: '',
+							user_defined_team_size: formState.values.teamSize,
+							heard_about: formState.values.heardAbout,
+							phone_home_contact_allowed:
+								formState.values.phoneHomeContactAllowed,
 							referral: attributionData.referral,
 						},
 					},
@@ -142,29 +184,26 @@ export const AdminForm: React.FC = () => {
 							first_name: formState.values.firstName,
 							last_name: formState.values.lastName,
 							user_defined_role: formState.values.role,
+							user_defined_team_size: formState.values.teamSize,
 							workspace_name: formState.values.companyName,
-							allowed_auto_join_email_origins:
-								formState.values.autoJoinDomains,
 							promo_code: formState.values.promoCode || undefined,
+							heard_about: formState.values.heardAbout,
+							phone_home_contact_allowed:
+								formState.values.phoneHomeContactAllowed,
 							referral: attributionData.referral,
 						},
 					},
 				})
 			}
 
-			message.success(
+			toast.success(
 				`Nice to meet you ${formState.values.firstName}, let's get started!`,
 			)
 
-			const projects = await refetchProjects()
 			await fetchAdmin() // updates admin in auth context
-
-			if (projects.data?.projects?.length) {
-				const projectId = projects.data?.projects[0]?.id
-				navigate(`/${projectId}/setup`)
-			} else {
-				navigate('/setup')
-			}
+			navigate(
+				`${INVITE_TEAM_ROUTE}${inWorkspace ? '' : '?new_workspace=1'}`,
+			)
 		} catch (e: any) {
 			if (import.meta.env.DEV) {
 				console.error(e)
@@ -179,7 +218,7 @@ export const AdminForm: React.FC = () => {
 				errorMessage = 'Something went wrong. Please try again.'
 			}
 
-			formState.setError('__error', errorMessage)
+			formStore.setError('general', errorMessage)
 		}
 	})
 
@@ -188,7 +227,7 @@ export const AdminForm: React.FC = () => {
 			setLoadingState(AppLoadingState.LOADED)
 
 			if (inWorkspace) {
-				formState.setValue('companyName', workspace.name)
+				formStore.setValue('companyName', workspace.name)
 			}
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -198,11 +237,13 @@ export const AdminForm: React.FC = () => {
 		return null
 	}
 
+	const formError = formStore.getError('general')
+
 	return (
 		<Landing>
 			<Form
 				className={authRouterStyles.container}
-				state={formState}
+				store={formStore}
 				resetOnSubmit={false}
 			>
 				<AuthHeader>
@@ -210,62 +251,60 @@ export const AdminForm: React.FC = () => {
 				</AuthHeader>
 				<AuthBody>
 					<Stack gap="12">
+						<Stack direction="column" gap="4">
+							<Form.Label
+								label="Your Name"
+								name={formStore.names.firstName}
+							/>
+							<Stack gap="0">
+								<Form.Input
+									name={formStore.names.firstName}
+									placeholder="First Name"
+									autoFocus
+									required
+									rounded="first"
+								/>
+								<Form.Input
+									name={formStore.names.lastName}
+									placeholder="Last Name"
+									required
+									rounded="last"
+									cssClass={styles.lastName}
+								/>
+							</Stack>
+						</Stack>
 						<Form.Input
-							name={formState.names.firstName}
-							label="First Name"
-							autoFocus
-							required
-						/>
-						<Form.Input
-							name={formState.names.lastName}
-							label="Last Name"
-							required
-						/>
-						<Form.Input
-							name={formState.names.companyName}
+							name={formStore.names.companyName}
 							label="Company"
 							disabled={inWorkspace}
 							required
 						/>
-						<Form.NamedSection
+
+						<Form.Select
+							name={formStore.names.role}
 							label="Role"
-							name={formState.names.role}
-							optional
-						>
-							<select
-								className={styles.select}
-								value={formState.values.role}
-								onChange={(e) =>
-									formState.setValue(
-										formState.names.role,
-										e.target.value,
-									)
-								}
-							>
-								<option value="" disabled>
-									Select your role
-								</option>
-								<option value="Product">Product</option>
-								<option value="Engineer">Engineering</option>
-								<option value="Founder">Founder</option>
-							</select>
-						</Form.NamedSection>
-						{!isCommonEmailDomain && !inWorkspace && (
-							<Box mt="4">
-								<AutoJoinEmailsInput
-									onChange={(domains) =>
-										formState.setValue(
-											formState.names.autoJoinDomains,
-											domains.join(', '),
-										)
-									}
-								/>
-							</Box>
-						)}
+							required
+							options={ROLE_OPTIONS}
+							placeholder="Select your role"
+						/>
+						<Form.Select
+							name={formStore.names.teamSize}
+							label="Team Size"
+							required
+							options={TEAM_SIZE_OPTIONS}
+							placeholder="Select your team size"
+						/>
+						<Form.Select
+							name={formStore.names.heardAbout}
+							label="Where did you hear about us?"
+							required
+							options={HEARD_ABOUT_OPTIONS}
+							placeholder="Select how you heard about us"
+						/>
 						{!inWorkspace &&
 							(showPromoCodeField ? (
 								<Form.Input
-									name={formState.names.promoCode}
+									name={formStore.names.promoCode}
 									label="Promo Code"
 								/>
 							) : (
@@ -279,22 +318,66 @@ export const AdminForm: React.FC = () => {
 									</ButtonLink>
 								</Box>
 							))}
-						{(formState.errors as any).__error && (
-							<Callout kind="error">
-								{(formState.errors as any).__error}
-							</Callout>
+						{formError && (
+							<Callout kind="error">{formError}</Callout>
 						)}
 					</Stack>
 				</AuthBody>
 				<AuthFooter>
-					<Button
-						trackingId="about-you-submit"
-						disabled={disableForm}
-						loading={disableForm}
-						type="submit"
-					>
-						{inWorkspace ? 'Submit' : 'Create Workspace'}
-					</Button>
+					<Stack gap="12">
+						{isOnPrem ? (
+							<Box width="full">
+								<Callout icon={false}>
+									<Stack gap="8">
+										<Box
+											display="flex"
+											alignItems="center"
+											gap="6"
+										>
+											<SwitchButton
+												type="button"
+												size="xxSmall"
+												iconLeft={
+													<IconSolidCheckCircle
+														size={12}
+													/>
+												}
+												checked={
+													phoneHomeContactAllowed
+												}
+												onChange={() => {
+													formStore.setValue(
+														formStore.names
+															.phoneHomeContactAllowed,
+														!phoneHomeContactAllowed,
+													)
+												}}
+											/>
+											<Text
+												size="small"
+												weight="bold"
+												color="strong"
+											>
+												Help improve highlight.io
+											</Text>
+										</Box>
+										<Text size="small" weight="medium">
+											Allow us to reach out for feedback
+											about the self-hosted version.
+										</Text>
+									</Stack>
+								</Callout>
+							</Box>
+						) : null}
+						<Button
+							trackingId="about-you-submit"
+							disabled={disableForm}
+							loading={disableForm}
+							type="submit"
+						>
+							{inWorkspace ? 'Submit' : 'Create Workspace'}
+						</Button>
+					</Stack>
 				</AuthFooter>
 			</Form>
 		</Landing>

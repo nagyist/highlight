@@ -1,9 +1,8 @@
-import { BiCopy } from 'react-icons/bi'
 import classNames from 'classnames'
-import React from 'react'
-import CopyToClipboard from 'react-copy-to-clipboard'
-import { SyntaxHighlighterProps } from 'react-syntax-highlighter'
 import { CodeBlock as ReactCodeBlock } from 'react-code-blocks'
+import CopyToClipboard from 'react-copy-to-clipboard'
+import { BiCopy } from 'react-icons/bi'
+import { SyntaxHighlighterProps } from 'react-syntax-highlighter'
 
 import styles from './CodeBlock.module.scss'
 
@@ -67,17 +66,20 @@ export const CodeBlock = ({
 				<ReactCodeBlock
 					text={text}
 					language={language}
-					customStyle={{
-						padding: '2px 8px',
-						color: 'var(--color-white)',
-						backgroundColor:
-							'var(--color-primary-inverted-background)',
-					}}
+					customStyle={
+						{
+							padding: '2px 8px',
+							color: 'var(--color-white)',
+							backgroundColor:
+								'var(--color-primary-inverted-background)',
+						} as any
+					}
 					showLineNumbers={showLineNumbers}
 					{...props}
 				/>
 				{!hideCopy && (
 					<span className={styles.copyButton}>
+						{/*@ts-ignore invalid types for react*/}
 						<CopyToClipboard
 							text={text}
 							onCopy={() => {

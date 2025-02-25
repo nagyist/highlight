@@ -1,5 +1,6 @@
 import { ApolloError } from '@apollo/client'
 import { Button } from '@components/Button'
+import { toast } from '@components/Toaster'
 import {
 	AppLoadingState,
 	useAppLoadingContext,
@@ -9,16 +10,15 @@ import {
 	useGetWorkspaceForInviteLinkQuery,
 	useGetWorkspacesQuery,
 } from '@graph/hooks'
-import { Box, Callout, Stack, Text } from '@highlight-run/ui'
+import { Box, Callout, Stack, Text } from '@highlight-run/ui/components'
 import { AuthBody, AuthFooter, AuthHeader } from '@pages/Auth/Layout'
 import { Landing } from '@pages/Landing/Landing'
 import useLocalStorage from '@rehooks/local-storage'
-import { message } from 'antd'
 import { H } from 'highlight.run'
-import React, { useEffect } from 'react'
+import { useEffect } from 'react'
 import { Navigate, useMatch, useNavigate } from 'react-router-dom'
 
-import { showIntercomMessage } from '@/util/window'
+import { showSupportMessage } from '@/util/window'
 
 import * as styles from './AuthRouter.css'
 
@@ -45,9 +45,9 @@ export const WorkspaceInvitation = () => {
 		(w) => w?.id && w.id === workspaceId,
 	)
 
-	const clearInviteAndRedirect = () => {
+	const clearInviteAndRedirect = (projectId?: string | undefined) => {
 		setInviteCode('')
-		navigate('/')
+		navigate(`/${projectId ?? ''}`)
 	}
 
 	useEffect(() => {
@@ -59,17 +59,17 @@ export const WorkspaceInvitation = () => {
 			clearInviteAndRedirect()
 
 			if (error.message.indexOf('expired') > -1) {
-				message.error(
+				toast.error(
 					'This invite link has expired. Please ask your admin for a new one.',
 				)
 			} else {
-				message.error('Invalid invite code.')
+				toast.error('Invalid invite code.')
 			}
 		}
 
 		if (alreadyInWorkspace) {
-			clearInviteAndRedirect()
-			message.success('You are already a member of this workspace.')
+			clearInviteAndRedirect(data?.workspace_for_invite_link.project_id)
+			toast.success('You are already a member of this workspace.')
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [alreadyInWorkspace, error])
@@ -119,16 +119,19 @@ export const WorkspaceInvitation = () => {
 										},
 									})
 
-									message.success(
+									toast.success(
 										`Successfully joined workspace "${workspaceName}"!`,
 									)
 
-									clearInviteAndRedirect()
+									clearInviteAndRedirect(
+										data?.workspace_for_invite_link
+											.project_id,
+									)
 								} catch (_e) {
-									message.error(
+									toast.error(
 										'Failed to join the workspace. Please try again.',
 									)
-									showIntercomMessage(
+									showSupportMessage(
 										`I'm having trouble joining the "${workspaceName}" workspace....`,
 									)
 								}

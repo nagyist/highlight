@@ -1,14 +1,14 @@
+import { Meta } from '@storybook/react'
 import React from 'react'
-import { ComponentMeta } from '@storybook/react'
 
-import { Column } from './Column'
 import { Box } from '../Box/Box'
 import { Text } from '../Text/Text'
+import { Column } from './Column'
 
 export default {
 	title: 'Components/Column',
 	component: Column,
-} as ComponentMeta<typeof Column>
+} as Meta<typeof Column>
 
 const Content: React.FC<React.PropsWithChildren> = ({ children }) => (
 	<Box background="n2" p="12">

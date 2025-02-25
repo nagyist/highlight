@@ -1,4 +1,5 @@
 from fastapi import Request, Response
+from opentelemetry.semconv.trace import SpanAttributes
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 import highlight_io
@@ -18,7 +19,8 @@ class FastAPIMiddleware(BaseHTTPMiddleware):
         except (AttributeError, KeyError, ValueError):
             pass
 
-        with highlight_io.H.get_instance().trace(session_id, request_id):
+        span_name = f"{request.method} {request.base_url}"
+        with highlight_io.H.get_instance().trace(span_name, session_id, request_id):
             resp = await call_next(request)
             # if the request raises an `HTTPException`, the exception isn't propagated.
             # we detect this by checking the status code and recording a special type of error
@@ -33,8 +35,13 @@ class FastAPIMiddleware(BaseHTTPMiddleware):
                         body += chunk
                 highlight_io.H.get_instance().record_http_error(
                     status_code=resp.status_code,
-                    headers=resp.headers.__dict__,
                     detail=body.decode(),
+                    attributes={
+                        "http.response.headers": resp.headers,
+                        "http.request.headers": request.headers,
+                        SpanAttributes.HTTP_METHOD: request.method,
+                        SpanAttributes.HTTP_URL: str(request.url),
+                    },
                 )
                 return Response(
                     content=body,

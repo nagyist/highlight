@@ -1,10 +1,10 @@
 import { LoadingBar } from '@components/Loading/Loading'
 import Select from '@components/Select/Select'
 import TextHighlighter from '@components/TextHighlighter/TextHighlighter'
+import { toast } from '@components/Toaster'
 import { useGetIdentifierSuggestionsQuery } from '@graph/hooks'
-import { Form, Stack } from '@highlight-run/ui'
+import { Form, Stack } from '@highlight-run/ui/components'
 import { useParams } from '@util/react-router/useParams'
-import { message } from 'antd'
 import { useState } from 'react'
 
 import BorderBox from '@/components/BorderBox/BorderBox'
@@ -54,7 +54,7 @@ export const ExcludedUsersForm = () => {
 					),
 					id: suggestion,
 				}),
-		  )
+			)
 
 	const handleIdentifierSearch = (query = '') => {
 		setIdentifierQuery(query)
@@ -63,64 +63,74 @@ export const ExcludedUsersForm = () => {
 
 	return (
 		<BorderBox>
-			<Stack gap="8">
-				<BoxLabel
-					label="Excluded sessions"
-					info="
-					Enter user identifiers or emails to hide (regular
+			<Form>
+				<Stack gap="8">
+					<BoxLabel
+						label="Excluded users"
+						info="
+					Enter user identifiers or emails to filter (regular
 					expressions are accepted). On completion, sessions from
 					these users will be excluded from your searches and quota."
-				/>
-				<Form.NamedSection label="Excluded users" name="Excluded users">
-					<Select
-						mode="tags"
-						placeholder=".*@yourdomain.com"
-						value={
-							data?.projectSettings?.excluded_users || undefined
-						}
-						onSearch={handleIdentifierSearch}
-						options={identifierSuggestions}
-						onChange={(excluded: string[]) => {
-							const validRegexes: string[] = []
-							const invalidRegexes: string[] = []
-							excluded.forEach((expression) => {
-								try {
-									new RegExp(expression)
-									validRegexes.push(expression)
-								} catch (e) {
-									invalidRegexes.push(expression)
-								}
-							})
-							if (
-								excluded.length > 0 &&
-								invalidRegexes.length > 0 &&
-								excluded[excluded.length - 1] ===
-									invalidRegexes[invalidRegexes.length - 1]
-							) {
-								message.error(
-									"'" +
-										excluded[excluded.length - 1] +
-										"' is not a valid regular expression",
-									5,
-								)
-							}
-							setInvalidExcludedUsers(invalidRegexes)
-							handleIdentifierSearch('')
-							setAllProjectSettings((currentProjectSettings) =>
-								currentProjectSettings?.projectSettings
-									? {
-											projectSettings: {
-												...currentProjectSettings.projectSettings,
-												excluded_users: validRegexes,
-											},
-									  }
-									: currentProjectSettings,
-							)
-						}}
 					/>
-				</Form.NamedSection>
-				{invalidExcludedUsers.length > 0 && <div></div>}
-			</Stack>
+					<Form.NamedSection
+						label="Filtered users"
+						name="Filtered users"
+					>
+						<Select
+							mode="tags"
+							placeholder=".*@yourdomain.com"
+							value={
+								data?.projectSettings?.excluded_users ||
+								undefined
+							}
+							onSearch={handleIdentifierSearch}
+							options={identifierSuggestions}
+							onChange={(excluded: string[]) => {
+								const validRegexes: string[] = []
+								const invalidRegexes: string[] = []
+								excluded.forEach((expression) => {
+									try {
+										new RegExp(expression)
+										validRegexes.push(expression)
+									} catch (e) {
+										invalidRegexes.push(expression)
+									}
+								})
+								if (
+									excluded.length > 0 &&
+									invalidRegexes.length > 0 &&
+									excluded[excluded.length - 1] ===
+										invalidRegexes[
+											invalidRegexes.length - 1
+										]
+								) {
+									toast.error(
+										"'" +
+											excluded[excluded.length - 1] +
+											"' is not a valid regular expression",
+										{ duration: 5000 },
+									)
+								}
+								setInvalidExcludedUsers(invalidRegexes)
+								handleIdentifierSearch('')
+								setAllProjectSettings(
+									(currentProjectSettings) =>
+										currentProjectSettings?.projectSettings
+											? {
+													projectSettings: {
+														...currentProjectSettings.projectSettings,
+														excluded_users:
+															validRegexes,
+													},
+												}
+											: currentProjectSettings,
+								)
+							}}
+						/>
+					</Form.NamedSection>
+					{invalidExcludedUsers.length > 0 && <div></div>}
+				</Stack>
+			</Form>
 		</BorderBox>
 	)
 }

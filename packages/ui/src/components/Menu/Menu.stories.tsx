@@ -1,13 +1,12 @@
-import React from 'react'
-import { ComponentMeta } from '@storybook/react'
+import { Meta } from '@storybook/react'
 
-import { Menu } from './Menu'
 import { TextLink } from '../TextLink/TextLink'
+import { Menu } from './Menu'
 
 export default {
 	title: 'Components/Menu',
 	component: Menu,
-} as ComponentMeta<typeof Menu>
+} as Meta<typeof Menu>
 
 // TODO: Document individual components
 export const FullExample = () => (

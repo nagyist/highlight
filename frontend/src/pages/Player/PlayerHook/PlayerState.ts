@@ -11,15 +11,6 @@ import {
 	SessionResults,
 	TimelineIndicatorEvent,
 } from '@graph/schemas'
-import { EventType, Replayer } from '@highlight-run/rrweb'
-import {
-	customEvent,
-	metaEvent,
-	playerMetaData,
-	SessionInterval,
-	viewportResizeDimension,
-} from '@highlight-run/rrweb-types'
-import { usefulEvent } from '@pages/Player/components/EventStreamV2/utils'
 import {
 	HighlightEvent,
 	HighlightJankPayload,
@@ -47,26 +38,39 @@ import {
 	getAllUrlEvents,
 	getBrowserExtensionScriptURLs,
 } from '@pages/Player/SessionLevelBar/utils/utils'
+import {
+	customEvent,
+	IncrementalSource,
+	metaEvent,
+	playerMetaData,
+	SessionInterval,
+	viewportResizeDimension,
+} from '@rrweb/types'
 import analytics from '@util/analytics'
-import log from '@util/log'
+import log, { verboseLoggingEnabled } from '@util/log'
 import { timedCall } from '@util/perf/instrument'
 import { H } from 'highlight.run'
+import { throttle } from 'lodash'
 import moment from 'moment/moment'
-import { MutableRefObject, SetStateAction } from 'react'
+import { MutableRefObject, RefObject, SetStateAction } from 'react'
+import { EventType, Replayer } from 'rrweb'
 
 const EMPTY_SESSION_METADATA = {
 	startTime: 0,
 	endTime: 0,
 	totalTime: 0,
 }
-const PROJECTS_WITH_CSS_ANIMATIONS: string[] = ['1', '1020', '1021']
+const PROJECTS_WITH_CSS_ANIMATIONS: string[] = ['1', '1020', '1021', '102751']
 
 // assuming 120 fps
 export const FRAME_MS = 1000 / 120
+// update every N frames
+export const THROTTLED_UPDATE_MS = FRAME_MS * 15
 
 export const CHUNKING_DISABLED_PROJECTS: string[] = []
-export const LOOKAHEAD_MS = 1000 * 60
-export const MAX_CHUNK_COUNT = 8
+export const LOOKAHEAD_MS = 1000 * 30
+export const BUFFER_MS = 1000 * 3
+export const MAX_CHUNK_COUNT = 5
 
 export enum SessionViewability {
 	VIEWABLE,
@@ -84,7 +88,6 @@ interface PlayerState {
 	chunkEventsRef: MutableRefObject<
 		Omit<Map<number, HighlightEvent[]>, 'clear' | 'set' | 'delete'>
 	>
-	currentEvent: string
 	currentUrl: string | undefined
 	errors: ErrorObject[]
 	eventsForTimelineIndicator: ParsedHighlightEvent[]
@@ -142,7 +145,6 @@ export enum PlayerActionType {
 	play,
 	reset,
 	seek,
-	setCurrentEvent,
 	setIsLiveMode,
 	setScale,
 	setSessionResults,
@@ -164,7 +166,6 @@ type PlayerAction =
 	| play
 	| reset
 	| seek
-	| setCurrentEvent
 	| setIsLiveMode
 	| setScale
 	| setSessionResults
@@ -238,7 +239,8 @@ interface startChunksLoad {
 interface onChunksLoad {
 	type: PlayerActionType.onChunksLoad
 	showPlayerMouseTail: boolean
-	time: number
+	time: number | undefined
+	playerRef: RefObject<HTMLDivElement>
 	action: ReplayerState
 }
 
@@ -269,16 +271,11 @@ interface setSessionResults {
 interface setIsLiveMode {
 	type: PlayerActionType.setIsLiveMode
 	isLiveMode: SetStateAction<boolean>
-}
-
-interface setCurrentEvent {
-	type: PlayerActionType.setCurrentEvent
-	currentEvent: SetStateAction<string>
+	playerRef: RefObject<HTMLDivElement>
 }
 
 export const PlayerInitialState = {
 	browserExtensionScriptURLs: [],
-	currentEvent: '',
 	currentUrl: undefined,
 	errors: [],
 	eventsDataLoaded: false,
@@ -295,14 +292,19 @@ export const PlayerInitialState = {
 	project_id: '',
 	rageClicks: [],
 	replayer: undefined,
-	replayerState: ReplayerState.Empty,
+	replayerState: ReplayerState.Loading,
 	scale: 1,
 	session: undefined,
 	sessionComments: [],
 	sessionEndTime: 0,
 	sessionIntervals: [],
 	sessionMetadata: EMPTY_SESSION_METADATA,
-	sessionResults: { sessions: [], totalCount: -1 },
+	sessionResults: {
+		sessions: [],
+		totalCount: 0,
+		totalLength: 0,
+		totalActiveLength: 0,
+	},
 	sessionViewability: SessionViewability.VIEWABLE,
 	session_secure_id: '',
 	time: 0,
@@ -343,6 +345,10 @@ export const PlayerReducer = (
 			break
 		case PlayerActionType.setTime:
 			s.time = action.time
+			s.currentUrl = findLatestUrl(
+				getAllUrlEvents(events),
+				action.time + s.sessionMetadata.startTime,
+			)
 			if (
 				s.replayerState === ReplayerState.SessionEnded &&
 				s.time < state.sessionEndTime
@@ -360,7 +366,7 @@ export const PlayerReducer = (
 		case PlayerActionType.loadSession:
 			s.session_secure_id = action.data!.session?.secure_id ?? ''
 			if (action.data.session) {
-				s.session = action.data?.session as Session
+				s.session = action.data.session as Session
 				s.isLiveMode = false
 			}
 			if (!action.data.session || action.data.session.excluded) {
@@ -396,7 +402,6 @@ export const PlayerReducer = (
 		case PlayerActionType.reset:
 			s = {
 				...s,
-				currentEvent: '',
 				currentUrl: undefined,
 				errors: [],
 				eventsLoaded: false,
@@ -419,6 +424,7 @@ export const PlayerReducer = (
 			break
 		case PlayerActionType.updateEvents:
 			if (s.replayer) {
+				log('updateEvents', { events })
 				s.replayer.replaceEvents(events)
 			}
 			break
@@ -443,7 +449,7 @@ export const PlayerReducer = (
 				PlayerActionType.startChunksLoad,
 				s,
 				ReplayerState.Paused,
-				getTimeFromReplayer(s.replayer, s.sessionMetadata),
+				undefined,
 				true,
 			)
 			break
@@ -457,11 +463,17 @@ export const PlayerReducer = (
 				break
 			}
 			if (s.replayer === undefined) {
-				s = initReplayer(s, events, action.showPlayerMouseTail)
+				s = initReplayer(
+					s,
+					events,
+					action.showPlayerMouseTail,
+					action.playerRef,
+				)
 				if (s.onSessionPayloadLoadedPayload) {
 					s = processSessionMetadata(s, events)
 				}
 			} else {
+				log('onChunksLoad', { events })
 				s.replayer.replaceEvents(events)
 			}
 			s = replayerAction(
@@ -474,35 +486,10 @@ export const PlayerReducer = (
 			break
 		case PlayerActionType.onFrame:
 			if (!s.replayer) break
-			const time = getTimeFromReplayer(s.replayer, s.sessionMetadata)
-			// Compute the string rather than number here, so that dependencies don't
-			// have to re-render on every tick
-			if (s.isLiveMode && s.lastActiveTimestamp != 0) {
-				if (s.lastActiveTimestamp > time - 1000 * 60) {
-					s.lastActiveString = 'less than 1 minute ago'
-				} else {
-					s.lastActiveString = moment(s.lastActiveTimestamp).from(
-						time,
-					)
-				}
-			} else if (s.lastActiveString !== null) {
-				s.lastActiveString = null
-			}
-
-			if (!s.isLiveMode && s.replayerState !== ReplayerState.Playing) {
-				break
-			}
-			s.time = time
-			if (s.time >= s.sessionMetadata.totalTime) {
-				s.replayerState = s.isLiveMode
-					? ReplayerState.Paused // Waiting for more data
-					: ReplayerState.SessionEnded
-			}
+			s = updatePlayerTime(s)
 			break
 		case PlayerActionType.onEvent:
-			if (usefulEvent(action.event)) {
-				s.currentEvent = action.event.identifier
-			}
+			if (!s.replayer) break
 			if ((action.event as customEvent)?.data?.tag === 'Stop') {
 				s.replayerState = ReplayerState.SessionRecordingStopped
 			}
@@ -532,16 +519,15 @@ export const PlayerReducer = (
 			break
 		case PlayerActionType.setIsLiveMode:
 			s.isLiveMode = handleSetStateAction(s.isLiveMode, action.isLiveMode)
-			s = initReplayer(s, events, !!s.replayer?.config.mouseTail)
+			s = initReplayer(
+				s,
+				events,
+				!!s.replayer?.config.mouseTail,
+				action.playerRef,
+			)
 			analytics.track('Session live mode toggled', {
 				isLiveMode: s.isLiveMode,
 			})
-			break
-		case PlayerActionType.setCurrentEvent:
-			s.currentEvent = handleSetStateAction(
-				s.currentEvent,
-				action.currentEvent,
-			)
 			break
 		case PlayerActionType.setSessionResults:
 			s.sessionResults = handleSetStateAction(
@@ -550,24 +536,6 @@ export const PlayerReducer = (
 			)
 			break
 	}
-	log(
-		'PlayerState.ts',
-		new Set<PlayerActionType>([
-			PlayerActionType.onFrame,
-			PlayerActionType.onEvent,
-			PlayerActionType.updateCurrentUrl,
-		]).has(action.type)
-			? 'PlayerStateUpdate'
-			: 'PlayerStateTransition',
-		PlayerActionType[action.type],
-		s.time,
-		{
-			numEvents: events.length,
-			initialState: state,
-			finalState: s,
-			action,
-		},
-	)
 	return s
 }
 
@@ -583,9 +551,9 @@ const initReplayer = (
 	s: PlayerState,
 	events: HighlightEvent[],
 	showPlayerMouseTail: boolean,
+	playerRef: RefObject<HTMLDivElement>,
 ) => {
-	// Load the first chunk of events. The rest of the events will be loaded in requestAnimationFrame.
-	const playerMountingRoot = document.getElementById('player') as HTMLElement
+	const playerMountingRoot = playerRef.current
 	if (!playerMountingRoot) {
 		s.replayerState = ReplayerState.Empty
 		return s
@@ -606,9 +574,33 @@ const initReplayer = (
 		mouseTail: showPlayerMouseTail,
 		UNSAFE_replayCanvas: true,
 		liveMode: s.isLiveMode,
-		useVirtualDom: false,
+		useVirtualDom: true,
+		showWarning: verboseLoggingEnabled,
+		showDebug: verboseLoggingEnabled,
 		pauseAnimation: !PROJECTS_WITH_CSS_ANIMATIONS.includes(s.project_id),
+		logger: {
+			log: throttle(console.log, 100),
+			warn: throttle(console.warn, 100),
+		},
 	})
+
+	// Hide the mouse cursor until we get a movement event and know where to place it.
+	playerMountingRoot.classList.add('hide-mouse-cursor')
+	const mouseMoveEvents = [
+		IncrementalSource.MouseMove,
+		IncrementalSource.TouchMove,
+		IncrementalSource.Drag,
+	]
+	const castEventHandler = (event: any) => {
+		const source = event.data.source
+		const isMouseMove = mouseMoveEvents.includes(source)
+
+		if (isMouseMove) {
+			playerMountingRoot.classList.remove('hide-mouse-cursor')
+			s.replayer?.off('event-cast', castEventHandler)
+		}
+	}
+	s.replayer.on('event-cast', castEventHandler)
 
 	s.browserExtensionScriptURLs = getBrowserExtensionScriptURLs(events)
 
@@ -701,6 +693,32 @@ const replayerAction = (
 	return s
 }
 
+const updatePlayerTime = (s: PlayerState): PlayerState => {
+	const time = getTimeFromReplayer(s.replayer, s.sessionMetadata)
+	// Compute the string rather than number here, so that dependencies don't
+	// have to re-render on every tick
+	if (s.isLiveMode && s.lastActiveTimestamp != 0) {
+		if (s.lastActiveTimestamp > time - 1000 * 60) {
+			s.lastActiveString = 'less than 1 minute ago'
+		} else {
+			s.lastActiveString = moment(s.lastActiveTimestamp).from(time)
+		}
+	} else if (s.lastActiveString !== null) {
+		s.lastActiveString = null
+	}
+
+	if (!s.isLiveMode && s.replayerState !== ReplayerState.Playing) {
+		return s
+	}
+	s.time = time
+	if (s.time >= s.sessionMetadata.totalTime) {
+		s.replayerState = s.isLiveMode
+			? ReplayerState.Paused // Waiting for more data
+			: ReplayerState.SessionEnded
+	}
+	return s
+}
+
 const processSessionMetadata = (
 	s: PlayerState,
 	events: HighlightEvent[],
@@ -720,9 +738,6 @@ const processSessionMetadata = (
 		return s
 	}
 
-	if (s.replayerState < ReplayerState.Playing) {
-		s.replayerState = ReplayerState.Paused
-	}
 	if (s.onSessionPayloadLoadedPayload.sessionPayload?.errors) {
 		s.errors = s.onSessionPayloadLoadedPayload.sessionPayload
 			.errors as ErrorObject[]
@@ -746,7 +761,7 @@ const processSessionMetadata = (
 							active: interval.active,
 						}
 					},
-			  )
+				)
 			: s.replayer.getActivityIntervals()
 	const sm: playerMetaData = parsedSessionIntervalsData
 		? {
@@ -765,7 +780,7 @@ const processSessionMetadata = (
 						].endTime,
 					).getTime() -
 					new Date(parsedSessionIntervalsData[0].startTime).getTime(),
-		  }
+			}
 		: s.replayer.getMetaData()
 
 	const sessionIntervals = getSessionIntervals(sm, parsedSessionIntervalsData)
@@ -775,7 +790,7 @@ const processSessionMetadata = (
 		s.onSessionPayloadLoadedPayload.timelineIndicatorEvents.length > 0
 			? toHighlightEvents(
 					s.onSessionPayloadLoadedPayload.timelineIndicatorEvents,
-			  )
+				)
 			: events
 	s.sessionIntervals = getCommentsInSessionIntervalsRelative(
 		addEventsToSessionIntervals(
@@ -905,6 +920,21 @@ export const getTimeFromReplayer = function (
 	)
 }
 
+const MAX_SHORT_INT_SIZE = 65536
+
+// events are passed into an functions which does an array.splice or Math.max
+// When the number of events is greater than MAX_SHORT_INT_SIZE, the browser can crash.
+// Hence, we instead take a sample of events to ensure we stay under MAX_SHORT_INT_SIZE.
+export const truncate = function* <T>(data: IterableIterator<T> | T[]) {
+	let idx = 0
+	for (const obj of data) {
+		if (idx++ >= MAX_SHORT_INT_SIZE) {
+			break
+		}
+		yield obj
+	}
+}
+
 export const getEvents = (
 	chunkEvents: Omit<
 		Map<number, HighlightEvent[]>,
@@ -912,12 +942,13 @@ export const getEvents = (
 	>,
 ) => {
 	const events = []
-	for (const [, v] of [...chunkEvents.entries()].sort(
-		(a, b) => a[0] - b[0],
-	)) {
+	for (const [, v] of [...chunkEvents.entries()]) {
 		for (const val of v) {
-			events.push(val)
+			if (val) {
+				events.push(val)
+			}
 		}
 	}
+
 	return events
 }

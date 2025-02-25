@@ -1,4 +1,10 @@
-import { Box, IconSolidPlayCircle, Stack, Tag, Text } from '@highlight-run/ui'
+import {
+	Box,
+	IconSolidPlayCircle,
+	Stack,
+	Tag,
+	Text,
+} from '@highlight-run/ui/components'
 import {
 	createColumnHelper,
 	flexRender,
@@ -11,10 +17,11 @@ import { createSearchParams } from 'react-router-dom'
 
 import { useAuthContext } from '@/authentication/AuthContext'
 import { Link } from '@/components/Link'
-import TextHighlighter from '@/components/TextHighlighter/TextHighlighter'
-import { ErrorObjectEdge } from '@/graph/generated/schemas'
+import { ErrorObjectNode } from '@/graph/generated/schemas'
 import { useProjectId } from '@/hooks/useProjectId'
 import { PlayerSearchParameters } from '@/pages/Player/PlayerHook/utils'
+
+import * as styles from './ErrorInstancesTable.css'
 
 const toYearMonthDay = (timestamp: string) => {
 	const date = new Date(timestamp)
@@ -22,8 +29,8 @@ const toYearMonthDay = (timestamp: string) => {
 }
 
 type Props = {
-	edges: ErrorObjectEdge[]
-	searchedEmail: string
+	nodes: ErrorObjectNode[]
+	errorGroupSecureId: string | undefined
 }
 
 function truncateVersion(version: string) {
@@ -35,59 +42,70 @@ function truncateVersion(version: string) {
 	}
 }
 
-export const ErrorInstancesTable = ({ edges, searchedEmail }: Props) => {
+export const ErrorInstancesTable = ({ nodes, errorGroupSecureId }: Props) => {
 	const { projectId } = useProjectId()
 	const { isLoggedIn } = useAuthContext()
-	const columnHelper = createColumnHelper<ErrorObjectEdge>()
+	const columnHelper = createColumnHelper<ErrorObjectNode>()
 
 	const columns = [
-		columnHelper.accessor('node.event', {
+		columnHelper.accessor('event', {
 			cell: ({ getValue }) => (
 				<Box display="flex" flexGrow={1} flexBasis={1}>
 					<Text lines="1">{getValue()}</Text>
 				</Box>
 			),
 		}),
-		columnHelper.accessor('node.createdAt', {
+		columnHelper.accessor('timestamp', {
 			cell: ({ getValue }) => (
 				<Tag shape="basic" kind="secondary">
 					{toYearMonthDay(getValue())}
 				</Tag>
 			),
 		}),
-		columnHelper.accessor('node.session', {
+		columnHelper.accessor('serviceName', {
 			cell: ({ getValue }) => {
-				const session = getValue()
-				if (!session?.appVersion) {
+				const serviceVersion = getValue()
+				if (!serviceVersion) {
 					return null
 				}
 
 				return (
 					<Tag shape="basic" kind="secondary">
-						{truncateVersion(session.appVersion)}
+						{serviceVersion}
 					</Tag>
 				)
 			},
 		}),
-		columnHelper.accessor('node', {
+		columnHelper.accessor('serviceVersion', {
 			cell: ({ getValue }) => {
-				const errorObjectId = getValue().id
-				const timestamp = getValue().timestamp
-				const session = getValue().session
+				const serviceVersion = getValue()
+				if (!serviceVersion) {
+					return null
+				}
+
+				return (
+					<Tag shape="basic" kind="secondary">
+						{truncateVersion(serviceVersion)}
+					</Tag>
+				)
+			},
+		}),
+		columnHelper.accessor('id', {
+			cell: ({ row }) => {
+				const errorObjectId = row.original.id
+				const timestamp = row.original.timestamp
+				const session = row.original.session
 
 				let content = <>no session</>
 				let sessionLink = ''
 
-				if (session) {
+				if (session && !session.excluded) {
 					if (session.email) {
-						content = (
-							<TextHighlighter
-								searchWords={[searchedEmail]}
-								textToHighlight={session.email}
-							/>
-						)
+						content = <>{session.email}</>
 					} else {
-						content = <>{session.fingerprint?.toString()}</> ?? (
+						content = session.fingerprint ? (
+							<>{session.fingerprint.toString()}</>
+						) : (
 							<>(no value)</>
 						)
 					}
@@ -119,27 +137,28 @@ export const ErrorInstancesTable = ({ edges, searchedEmail }: Props) => {
 
 	const table = useReactTable({
 		columns,
-		data: edges,
+		data: nodes,
 		getCoreRowModel: getCoreRowModel(),
 	})
 
 	return (
-		<Box>
+		<Box width="full">
 			{table.getRowModel().rows.map((row) => {
 				return (
 					<Link
-						to={`/${projectId}/errors/${row.original.node.errorGroupSecureID}/instances/${row.original.cursor}`}
 						key={row.id}
+						to={{
+							pathname: `/${projectId}/errors/${errorGroupSecureId}/instances/${row.original.id}`,
+							search: location.search,
+						}}
+						className={styles.rowLink}
 					>
 						<Stack
-							key={row.id}
 							direction="row"
 							gap="4"
-							mb="8"
-							px="8"
-							py="2"
+							px="12"
+							py="6"
 							alignItems="center"
-							cursor="pointer"
 						>
 							{row.getVisibleCells().map((cell) => {
 								return (

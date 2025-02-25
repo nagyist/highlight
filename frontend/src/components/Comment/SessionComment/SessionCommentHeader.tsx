@@ -1,4 +1,5 @@
 import NewIssueModal from '@components/NewIssueModal/NewIssueModal'
+import { toast } from '@components/Toaster'
 import { IntegrationType, SessionCommentType } from '@graph/schemas'
 import {
 	Box,
@@ -10,13 +11,15 @@ import {
 	Menu,
 	Stack,
 	Text,
-} from '@highlight-run/ui'
-import { vars } from '@highlight-run/ui/src/css/vars'
+} from '@highlight-run/ui/components'
+import { vars } from '@highlight-run/ui/vars'
 import { useIsProjectIntegratedWith } from '@pages/IntegrationsPage/components/common/useIsProjectIntegratedWith'
 import { useLinearIntegration } from '@pages/IntegrationsPage/components/LinearIntegration/utils'
 import {
 	CLICKUP_INTEGRATION,
+	GITLAB_INTEGRATION,
 	HEIGHT_INTEGRATION,
+	JIRA_INTEGRATION,
 	LINEAR_INTEGRATION,
 } from '@pages/IntegrationsPage/Integrations'
 import { IssueTrackerIntegration } from '@pages/IntegrationsPage/IssueTrackerIntegrations'
@@ -27,7 +30,6 @@ import {
 } from '@pages/Player/ReplayerContext'
 import { onGetLinkWithTimestamp } from '@pages/Player/SessionShareButton/utils/utils'
 import analytics from '@util/analytics'
-import { message } from 'antd'
 import moment from 'moment'
 import React, { useMemo, useState } from 'react'
 
@@ -37,6 +39,8 @@ import {
 	useDeleteComment,
 	useNavigateToComment,
 } from '@/components/Comment/utils/utils'
+import { useGitlabIntegration } from '@/pages/IntegrationsPage/components/GitlabIntegration/utils'
+import { useJiraIntegration } from '@/pages/IntegrationsPage/components/JiraIntegration/utils'
 
 interface Props {
 	comment: ParsedSessionComment
@@ -49,6 +53,10 @@ const SessionCommentHeader: React.FC<Props> = ({ comment, isReply }) => {
 	const deleteComment = useDeleteComment(comment)
 
 	const { isLinearIntegratedWithProject } = useLinearIntegration()
+
+	const { settings: jiraSettings } = useJiraIntegration()
+	const { settings: gitlabSettings } = useGitlabIntegration()
+
 	const { isIntegrated: isClickupIntegrated } = useIsProjectIntegratedWith(
 		IntegrationType.ClickUp,
 	)
@@ -73,8 +81,14 @@ const SessionCommentHeader: React.FC<Props> = ({ comment, isReply }) => {
 	const issueTrackers: [boolean | undefined, IssueTrackerIntegration][] = [
 		[isLinearIntegratedWithProject, LINEAR_INTEGRATION],
 		[isClickupIntegrated, CLICKUP_INTEGRATION],
+		[jiraSettings.isIntegrated, JIRA_INTEGRATION],
 		[isHeightIntegrated, HEIGHT_INTEGRATION],
+		[gitlabSettings.isIntegrated, GITLAB_INTEGRATION],
 	]
+
+	const anyIssueTrackerIntegrated = issueTrackers.some(
+		([isIntegrated]) => isIntegrated,
+	)
 
 	const createIssueMenuItems = (
 		<>
@@ -93,10 +107,10 @@ const SessionCommentHeader: React.FC<Props> = ({ comment, isReply }) => {
 								? window.open(
 										getAttachmentUrl(existingAttachment),
 										'_blank',
-								  )
+									)
 								: analytics.track(
 										`Create ${integration.name} Issue from Comment`,
-								  )
+									)
 							setShowNewIssueModal(integration)
 						}}
 					>
@@ -126,8 +140,8 @@ const SessionCommentHeader: React.FC<Props> = ({ comment, isReply }) => {
 	const authorName =
 		comment.type === SessionCommentType.Feedback
 			? comment.metadata?.name ||
-			  comment.metadata?.email?.split('@')[0] ||
-			  'Anonymous'
+				comment.metadata?.email?.split('@')[0] ||
+				'Anonymous'
 			: comment.author?.name || comment.author?.email.split('@')[0]
 
 	const timeAgo = moment(comment.created_at).fromNow()
@@ -141,14 +155,7 @@ const SessionCommentHeader: React.FC<Props> = ({ comment, isReply }) => {
 			>
 				<Stack direction="row" gap="4" alignItems="center">
 					{comment.type === SessionCommentType.Feedback ? (
-						<Avatar
-							seed={
-								comment.metadata?.name ||
-								comment.metadata?.email ||
-								'Anonymous'
-							}
-							style={{ height: 20, width: 20 }}
-						/>
+						<Avatar />
 					) : (
 						<AdminAvatar
 							adminInfo={{
@@ -200,7 +207,7 @@ const SessionCommentHeader: React.FC<Props> = ({ comment, isReply }) => {
 								<Menu.Item
 									onClick={() => {
 										const url = getCommentLink()
-										message.success('Copied link!')
+										toast.success('Copied link!')
 										navigator.clipboard.writeText(url.href)
 									}}
 								>
@@ -223,8 +230,12 @@ const SessionCommentHeader: React.FC<Props> = ({ comment, isReply }) => {
 										Delete comment
 									</Stack>
 								</Menu.Item>
-								<Menu.Divider />
-								{session && createIssueMenuItems}
+								{session && anyIssueTrackerIntegrated && (
+									<>
+										<Menu.Divider />
+										{createIssueMenuItems}
+									</>
+								)}
 							</Menu.List>
 						</Menu>
 					</Box>

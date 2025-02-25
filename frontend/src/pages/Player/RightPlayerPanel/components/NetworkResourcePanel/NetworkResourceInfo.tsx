@@ -1,16 +1,17 @@
-import { Box, Text } from '@highlight-run/ui'
+import { Box, Text } from '@highlight-run/ui/components'
+import { getResponseStatusCode } from '@pages/Player/helpers'
+import { useEffect, useMemo } from 'react'
 
 import { TableList, TableListItem } from '@/components/TableList/TableList'
 import { ErrorObject } from '@/graph/generated/schemas'
-import RequestMetrics from '@/pages/Player/Toolbar/DevToolsWindow/ResourcePage/components/RequestMetrics/RequestMetrics'
 import { UnknownRequestStatusCode } from '@/pages/Player/Toolbar/DevToolsWindowV2/NetworkPage/NetworkPage'
 import {
 	formatSize,
 	getNetworkResourcesDisplayName,
 	NetworkResource,
 } from '@/pages/Player/Toolbar/DevToolsWindowV2/utils'
-import { REQUEST_INITIATOR_TYPES } from '@/pages/Player/utils/utils'
-import { CodeBlock } from '@/pages/Setup/CodeBlock/CodeBlock'
+import { CodeBlock } from '@/pages/Connect/CodeBlock'
+import analytics from '@/util/analytics'
 import { formatTime } from '@/util/time'
 
 enum NetworkResourceMeta {
@@ -33,6 +34,35 @@ export const NetworkResourceInfo = ({
 	const responseHeadersData: TableListItem[] = []
 	const responsePayloadData: TableListItem[] = []
 
+	const statusCode = getResponseStatusCode(selectedNetworkResource)
+
+	useEffect(() => {
+		analytics.track('session_network-resource-info_view', {
+			type: selectedNetworkResource?.initiatorType,
+		})
+	}, [selectedNetworkResource?.initiatorType])
+
+	const duration = useMemo(() => {
+		if (
+			selectedNetworkResource?.responseEndAbs &&
+			selectedNetworkResource?.startTimeAbs
+		) {
+			return (
+				selectedNetworkResource.responseEndAbs -
+				selectedNetworkResource.startTimeAbs
+			)
+		} else if (
+			selectedNetworkResource?.responseEnd &&
+			selectedNetworkResource?.startTime
+		) {
+			// used in highlight.run <8.8.0 for websocket events and <7.5.4 for requests
+			return (
+				selectedNetworkResource.responseEnd -
+				selectedNetworkResource.startTime
+			)
+		}
+	}, [selectedNetworkResource])
+
 	const generalData: TableListItem[] = [
 		{
 			keyDisplayValue: 'Request URL',
@@ -47,16 +77,15 @@ export const NetworkResourceInfo = ({
 		{
 			keyDisplayValue: 'Status',
 			valueDisplayValue:
-				selectedNetworkResource?.initiatorType === 'websocket'
-					? 101
-					: selectedNetworkResource?.requestResponsePairs?.response
-							.status ?? (
-							<UnknownRequestStatusCode
-								networkRequestAndResponseRecordingEnabled={
-									networkRecordingEnabledForSession
-								}
-							/>
-					  ),
+				statusCode === 'Unknown' ? (
+					<UnknownRequestStatusCode
+						networkRequestAndResponseRecordingEnabled={
+							networkRecordingEnabledForSession
+						}
+					/>
+				) : (
+					statusCode
+				),
 			valueInfoTooltipMessage:
 				selectedNetworkResource?.requestResponsePairs?.response
 					.status === 0 &&
@@ -64,13 +93,7 @@ export const NetworkResourceInfo = ({
 		},
 		{
 			keyDisplayValue: 'Time',
-			valueDisplayValue:
-				selectedNetworkResource?.responseEnd &&
-				selectedNetworkResource?.startTime &&
-				formatTime(
-					selectedNetworkResource.responseEnd -
-						selectedNetworkResource.startTime,
-				),
+			valueDisplayValue: !!duration && formatTime(duration),
 		},
 		{
 			keyDisplayValue: 'Type',
@@ -106,14 +129,8 @@ export const NetworkResourceInfo = ({
 							</>
 						),
 					},
-			  ]),
+				]),
 	]
-
-	const showRequestMetrics =
-		selectedNetworkResource &&
-		REQUEST_INITIATOR_TYPES.indexOf(
-			selectedNetworkResource.initiatorType as typeof REQUEST_INITIATOR_TYPES[number],
-		) > -1
 
 	if (selectedNetworkResource?.requestResponsePairs) {
 		const { request, response, urlBlocked } =
@@ -156,46 +173,53 @@ export const NetworkResourceInfo = ({
 			try {
 				const parsedRequestBody = JSON.parse(request.body)
 
-				Object.keys(parsedRequestBody).forEach((key) => {
-					// `query` is a special for GraphQL requests.
-					// Check to see if the value for `query` is valid GraphQL, if so render it using a GraphQL formatter
-					if (key === 'query') {
-						const queryString = parsedRequestBody[key]
+				if (Array.isArray(parsedRequestBody)) {
+					requestPayloadData.push({
+						keyDisplayValue: 'json',
+						valueDisplayValue: parsedRequestBody,
+					})
+				} else {
+					Object.keys(parsedRequestBody).forEach((key) => {
+						// `query` is a special for GraphQL requests.
+						// Check to see if the value for `query` is valid GraphQL, if so render it using a GraphQL formatter
+						if (key === 'query') {
+							const queryString = parsedRequestBody[key]
 
-						requestPayloadData.push({
-							keyDisplayValue: key,
-							valueDisplayValue: (
-								<CodeBlock
-									language="graphql"
-									text={queryString}
-									wrapLines
-									wrapLongLines
-									hideCopy
-									customStyle={{
-										fontSize: '10px',
-									}}
-								/>
-							),
-							data: queryString,
-						})
-					} else {
-						const renderType =
-							typeof parsedRequestBody[key] === 'object'
-								? 'json'
-								: 'string'
-						requestPayloadData.push({
-							keyDisplayValue: key,
-							valueDisplayValue:
-								renderType === 'string'
-									? parsedRequestBody[key]?.toString()
-									: JSON.parse(
-											JSON.stringify(
-												parsedRequestBody[key],
+							requestPayloadData.push({
+								keyDisplayValue: key,
+								valueDisplayValue: (
+									<CodeBlock
+										language="graphql"
+										text={queryString}
+										wrapLines
+										wrapLongLines
+										hideCopy
+										customStyle={{
+											fontSize: '10px',
+										}}
+									/>
+								),
+								data: queryString,
+							})
+						} else {
+							const renderType =
+								typeof parsedRequestBody[key] === 'object'
+									? 'json'
+									: 'string'
+							requestPayloadData.push({
+								keyDisplayValue: key,
+								valueDisplayValue:
+									renderType === 'string'
+										? parsedRequestBody[key]?.toString()
+										: JSON.parse(
+												JSON.stringify(
+													parsedRequestBody[key],
+												),
 											),
-									  ),
-						})
-					}
-				})
+							})
+						}
+					})
+				}
 			} catch {
 				requestPayloadData.push({
 					keyDisplayValue: 'body',
@@ -230,20 +254,27 @@ export const NetworkResourceInfo = ({
 				} else {
 					parsedResponseBody = JSON.parse(response.body)
 				}
-				Object.keys(parsedResponseBody).forEach((key) => {
-					const renderType =
-						typeof parsedResponseBody[key] === 'object'
-							? 'json'
-							: 'string'
-
+				if (Array.isArray(parsedResponseBody)) {
 					responsePayloadData.push({
-						keyDisplayValue: key,
-						valueDisplayValue:
-							renderType === 'string'
-								? parsedResponseBody[key]?.toString()
-								: parsedResponseBody[key],
+						keyDisplayValue: 'json',
+						valueDisplayValue: parsedResponseBody,
 					})
-				})
+				} else {
+					Object.keys(parsedResponseBody).forEach((key) => {
+						const renderType =
+							typeof parsedResponseBody[key] === 'object'
+								? 'json'
+								: 'string'
+
+						responsePayloadData.push({
+							keyDisplayValue: key,
+							valueDisplayValue:
+								renderType === 'string'
+									? parsedResponseBody[key]?.toString()
+									: parsedResponseBody[key],
+						})
+					})
+				}
 			} catch (e) {
 				responsePayloadData.push({
 					keyDisplayValue: '-',
@@ -294,10 +325,6 @@ export const NetworkResourceInfo = ({
 
 	return (
 		<Box>
-			{showRequestMetrics && (
-				<RequestMetrics resource={selectedNetworkResource} />
-			)}
-
 			{sections.map(([key, value]) => (
 				<Box key={key} p="20">
 					<Box

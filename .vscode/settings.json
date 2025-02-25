@@ -3,8 +3,8 @@
 	"editor.formatOnSave": true,
 	"editor.defaultFormatter": "dbaeumer.vscode-eslint",
 	"editor.codeActionsOnSave": {
-		"source.fixAll.eslint": true,
-		"source.fixAll.stylelint": true
+		"source.fixAll.eslint": "explicit",
+		"source.fixAll.stylelint": "explicit"
 	},
 	"go.formatTool": "gofmt",
 	"go.useLanguageServer": true,
@@ -25,6 +25,7 @@
 		"CLICKHOUSE_PASSWORD": "",
 		"LOG_LEVEL": "debug",
 		"PSQL_HOST": "localhost",
+		"PSQL_DOCKER_HOST": "postgres",
 		"PSQL_PORT": "5432",
 		"PSQL_USER": "postgres",
 		"PSQL_PASSWORD": "postgres",
@@ -87,13 +88,45 @@
 		"**/yarn-error.log": true
 	},
 	"cSpell.words": [
+		"alexdanilo",
+		"Algora",
+		"Allarahkia",
 		"autoinject",
 		"Autoinjected",
 		"Blocklist",
+		"Clickhouse",
+		"Danilowicz",
+		"Esplin",
+		"Gazit",
+		"Glauber",
+		"glcst",
+		"Hostnames",
+		"incentivizing",
 		"interactable",
+		"Livestream",
+		"magicpatterns",
+		"Metry",
 		"munge",
+		"onboarded",
+		"opentelemetry",
+		"otel",
+		"otlp",
+		"pino",
+		"Replo",
+		"runtimes",
+		"Sigelman",
 		"snapshotting",
-		"unobfuscated"
+		"statfs",
+		"teddarific",
+		"Traceloop",
+		"traceparent",
+		"tracestate",
+		"Turso",
+		"unlisten",
+		"unobfuscated",
+		"Vadim",
+		"Yuxin",
+		"Zain"
 	],
 	"[yaml]": {
 		"editor.defaultFormatter": "esbenp.prettier-vscode"
@@ -127,5 +160,26 @@
 		"activityBar.background": "#301e79",
 		"titleBar.activeBackground": "#0d0225",
 		"titleBar.activeForeground": "#bea8f1"
+	},
+	"sqltools.connections": [
+		{
+			"server": "localhost",
+			"port": 8123,
+			"useHTTPS": false,
+			"database": "default",
+			"username": "default",
+			"password": "",
+			"tls": {},
+			"previewLimit": 50,
+			"driver": "ClickHouse",
+			"name": "clickhouse-dev"
+		}
+	],
+	"sort-imports.on-save": false,
+	"[javascript]": {
+		"editor.defaultFormatter": "esbenp.prettier-vscode"
+	},
+	"[dotenv]": {
+		"editor.defaultFormatter": "foxundermoon.shell-format"
 	}
 }

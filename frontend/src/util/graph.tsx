@@ -5,7 +5,6 @@ import {
 	ApolloLink,
 	createHttpLink,
 	from,
-	HttpLink,
 	InMemoryCache,
 	split,
 } from '@apollo/client'
@@ -15,7 +14,6 @@ import {
 	getMainDefinition,
 	relayStylePagination,
 } from '@apollo/client/utilities'
-import { namedOperations } from '@graph/operations'
 import { auth } from '@util/auth'
 import { IndexedDBLink } from '@util/db'
 import { invalidateRefetch } from '@util/gql'
@@ -67,9 +65,6 @@ try {
 	console.log('Error setting up websocket: ', error)
 }
 
-const graphCdnGraph = new HttpLink({
-	uri: 'https://graphcdn.highlight.run',
-})
 if (isOnPrem) {
 	console.log('Private Graph URI: ', PRIVATE_GRAPH_URI)
 }
@@ -77,51 +72,44 @@ if (isOnPrem) {
 const authLink = setContext((_, { headers }) => {
 	// get the authentication token from local storage if it exists
 	const user = auth.currentUser
+	if (!user) {
+		return { headers: { ...headers } }
+	}
 	// return the headers to the context so httpLink can read them
 	return user?.getIdToken().then((t) => {
 		return { headers: { ...headers, token: t } }
 	})
 })
 
-const { Query } = namedOperations
-/**
- * These are the queries that should be routed to GraphCDN instead of private graph.
- * We use GraphCDN for expensive queries.
- * */
-const GraphCDNOperations = [
-	Query.GetKeyPerformanceIndicators,
-	Query.GetDailyErrorFrequency,
-	Query.GetDailySessionsCount,
-	Query.GetReferrersCount,
-	Query.GetTopUsers,
-	Query.GetRageClicksForProject,
-] as const
-
 const cache = new InMemoryCache({
 	typePolicies: {
-		Session: {
-			keyFields: ['secure_id'],
-		},
-		ErrorGroup: {
-			keyFields: ['secure_id'],
-		},
-		DashboardPayload: {
-			fields: {
-				metrics_histogram: {
-					keyArgs: ['project_id', 'metric_name', 'params'],
-				},
-			},
-		},
-		HistogramPayload: {
-			fields: {
-				metrics_histogram: {
-					keyArgs: ['project_id', 'metric_name', 'params'],
-				},
-			},
+		WorkspaceAdminRole: {
+			keyFields: ['workspaceId', 'admin', ['id']],
 		},
 		Query: {
 			fields: {
-				logs: relayStylePagination(),
+				logs: relayStylePagination([
+					'project_id',
+					'at',
+					'direction',
+					'params',
+					['query', 'date_range', ['start_date', 'end_date']],
+				]),
+				traces: relayStylePagination([
+					'project_id',
+					'at',
+					'direction',
+					'params',
+					['query', 'date_range', ['start_date', 'end_date']],
+				]),
+				visualization: {
+					read(_, { args, toReference }) {
+						return toReference({
+							__typename: 'Visualization',
+							id: args?.id,
+						})
+					},
+				},
 			},
 		},
 	},
@@ -143,24 +131,7 @@ const projectIdLink = new ApolloLink((operation, forward) => {
 })
 
 export const client = new ApolloClient({
-	link: from([
-		projectIdLink,
-		ApolloLink.split(
-			(operation) => {
-				// Don't query GraphCDN for localhost.
-				// GraphCDN only caches production data.
-				if (import.meta.env.NODE_ENV === 'development') {
-					return false
-				}
-
-				// Check to see if the operation is one that we should send to GraphCDN instead of private graph.
-				// @ts-expect-error
-				return GraphCDNOperations.includes(operation.operationName)
-			},
-			authLink.concat(graphCdnGraph),
-			authLink.concat(splitLink || highlightGraph),
-		),
-	]),
+	link: from([projectIdLink, authLink.concat(splitLink || highlightGraph)]),
 	defaultOptions: {
 		mutate: {
 			onQueryUpdated: invalidateRefetch,

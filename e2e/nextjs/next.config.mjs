@@ -1,20 +1,24 @@
 // next.config.mjs
-import { dirname } from 'path'
-import { fileURLToPath } from 'url'
-import nextBuildId from 'next-build-id'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+import { withHighlightConfig } from '@highlight-run/next/config'
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-	generateBuildId: () => nextBuildId({ dir: __dirname }),
-	experimental: {
-		appDir: true,
-		instrumentationHook: true,
+	productionBrowserSourceMaps: false,
+	serverExternalPackages: ['pino', 'pino-pretty'],
+	images: {
+		remotePatterns: [{ protocol: 'https', hostname: 'i.travelapi.com' }],
 	},
-	productionBrowserSourceMaps: true,
-	images: { domains: ['i.travelapi.com'] },
+	webpack(config, options) {
+		if (options.isServer) {
+			config.ignoreWarnings = [{ module: /highlight-(run\/)?node/ }]
+		}
+		return config
+	},
+	rewrites: async () => [
+		{ source: '/example', destination: 'https://www.google.com' },
+	],
 }
 
-export default nextConfig
+export default withHighlightConfig(nextConfig, {
+	apiKey: 'abc123',
+})

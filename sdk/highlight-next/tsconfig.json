@@ -2,22 +2,31 @@
 	"compilerOptions": {
 		"allowSyntheticDefaultImports": true,
 		"declaration": true,
+		"declarationMap": true,
 		"declarationDir": "dist",
 		"emitDeclarationOnly": true,
 		"forceConsistentCasingInFileNames": true,
 		"jsx": "react",
+		"lib": [
+			"DOM",
+			"ESNext"
+		],
+		"target": "ESNext",
 		"module": "ESNext",
-		"moduleResolution": "node",
+		"moduleResolution": "Node",
 		"outDir": "dist",
+		"rootDir": "src",
 		"removeComments": true,
 		"resolveJsonModule": true,
 		"skipLibCheck": true,
 		"strict": true,
-		"target": "ESNext",
 		"types": [
 			"@highlight-run/sourcemap-uploader",
-			"@highlight-run/node",
-			"jest"
+			"@highlight-run/node"
+		],
+		"typeRoots": [
+			"./node_modules/@types",
+			"./node_modules",
 		]
 	},
 	"include": [

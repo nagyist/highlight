@@ -1,16 +1,13 @@
-import { IconSolidLogs, Tag } from '@highlight-run/ui'
+import { IconSolidLogs, Tag } from '@highlight-run/ui/components'
 import moment from 'moment'
 import { createSearchParams } from 'react-router-dom'
 
 import { useAuthContext } from '@/authentication/AuthContext'
-import { Link } from '@/components/Link'
+import { useRelatedResource } from '@/components/RelatedResources/hooks'
+import { DEFAULT_OPERATOR } from '@/components/Search/SearchForm/utils'
 import { GetErrorInstanceQuery } from '@/graph/generated/operations'
 import { ReservedLogKey } from '@/graph/generated/schemas'
-import {
-	DEFAULT_LOGS_OPERATOR,
-	LogsSearchParam,
-	stringifyLogsQuery,
-} from '@/pages/LogsPage/SearchForm/utils'
+import analytics from '@/util/analytics'
 
 const getLogsLink = (data: GetErrorInstanceQuery | undefined): string => {
 	const errorObject = data?.error_instance?.error_object
@@ -19,25 +16,16 @@ const getLogsLink = (data: GetErrorInstanceQuery | undefined): string => {
 		return ''
 	}
 
-	const queryParams: LogsSearchParam[] = []
-	let offsetStart = 1
+	let query = ''
 	if (errorObject.session?.secure_id) {
-		queryParams.push({
-			key: ReservedLogKey.SecureSessionId,
-			operator: DEFAULT_LOGS_OPERATOR,
-			value: errorObject.session?.secure_id,
-			offsetStart: offsetStart++,
-		})
+		query += `${ReservedLogKey.SecureSessionId}${DEFAULT_OPERATOR}"${errorObject.session?.secure_id}"`
 	}
 	if (errorObject.trace_id) {
-		queryParams.push({
-			key: ReservedLogKey.TraceId,
-			operator: DEFAULT_LOGS_OPERATOR,
-			value: errorObject.trace_id,
-			offsetStart: offsetStart++,
-		})
+		query += `${query ? ' ' : ''}${
+			ReservedLogKey.TraceId
+		}${DEFAULT_OPERATOR}"${errorObject.trace_id}"`
 	}
-	const query = stringifyLogsQuery(queryParams)
+
 	const logCursor = errorObject.log_cursor
 	const params = createSearchParams({
 		query,
@@ -59,21 +47,53 @@ type Props = {
 
 export const RelatedLogs = ({ data }: Props) => {
 	const { isLoggedIn } = useAuthContext()
+	const { set } = useRelatedResource()
 
 	const logsLink = getLogsLink(data)
 
 	return (
-		<Link to={logsLink}>
-			<Tag
-				kind="secondary"
-				emphasis="high"
-				size="medium"
-				shape="basic"
-				disabled={!isLoggedIn || logsLink === ''}
-				iconLeft={<IconSolidLogs />}
-			>
-				Related logs
-			</Tag>
-		</Link>
+		<Tag
+			onClick={() => {
+				const errorObject = data?.error_instance?.error_object
+				if (!errorObject) {
+					return
+				}
+
+				const queryParts = []
+				if (errorObject.session?.secure_id) {
+					queryParts.push(
+						`${ReservedLogKey.SecureSessionId}${DEFAULT_OPERATOR}${errorObject.session?.secure_id}`,
+					)
+				}
+
+				if (errorObject.trace_id) {
+					queryParts.push(
+						`${ReservedLogKey.TraceId}${DEFAULT_OPERATOR}${errorObject.trace_id}`,
+					)
+				}
+
+				set({
+					type: 'logs',
+					query: queryParts.join(' '),
+					logCursor: errorObject.log_cursor ?? undefined,
+					startDate: moment(errorObject.timestamp)
+						.add(-5, 'minutes')
+						.toISOString(),
+					endDate: moment(errorObject.timestamp)
+						.add(5, 'minutes')
+						.toISOString(),
+				})
+
+				analytics.track('error_related-logs_click')
+			}}
+			kind="secondary"
+			emphasis="high"
+			size="medium"
+			shape="basic"
+			disabled={!isLoggedIn || logsLink === ''}
+			iconLeft={<IconSolidLogs size={11} />}
+		>
+			Related logs
+		</Tag>
 	)
 }

@@ -1,13 +1,25 @@
-#!/bin/bash -ex
+#!/bin/bash -e
 
 ./telemetry.sh
 source env.sh --go-docker
-./start-infra.sh --go-docker --hobby
 
-docker compose -f compose.yml -f compose.hobby.yml pull
-docker compose -f compose.yml -f compose.hobby.yml up --detach --remove-orphans
-echo 'waiting for highlight hobby deploy to come online'
-yarn dlx wait-on -l -s 3 https://localhost:3000/index.html http://localhost:8080/dist/index.js https://localhost:8082/health
+if [ -f "$ADMIN_PASSWORD" ]; then
+  echo 'Exiting because no ADMIN_PASSWORD_FOUND'
+  exit 1
+fi
 
-echo 'Highlight started on https://localhost:3000'
+./start-infra.sh --go-docker
+
+if [[ "$*" != *"--no-pull"* ]]; then
+  docker compose -f compose.hobby.yml pull
+fi
+
+if ! docker compose -f compose.hobby.yml up --detach backend frontend >>/tmp/highlightSetup.log 2>&1; then
+  echo 'Failed to start highlight hobby edition.'
+  docker ps -a
+  cat /tmp/highlightSetup.log
+  exit 1
+fi
+
+echo "Highlight started on ${REACT_APP_FRONTEND_URI}"
 wait

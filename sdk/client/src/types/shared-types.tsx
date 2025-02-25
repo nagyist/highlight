@@ -1,19 +1,23 @@
 import StackTrace from 'stacktrace-js'
 
 export type ConsoleMessage = {
-	value?: Array<any> | string
+	value?: Array<string>
+	attributes?: string
 	time: number
 	type: string
 	trace?: StackTrace.StackFrame[]
 }
 
+export type ErrorMessageType =
+	| 'console.error'
+	| 'window.onerror'
+	| 'window.onunhandledrejection'
+	| 'custom'
+	| 'React.ErrorBoundary'
+
 export type ErrorMessage = {
 	event: string
-	type:
-		| 'console.error'
-		| 'window.onerror'
-		| 'window.onunhandledrejection'
-		| 'custom'
+	type: ErrorMessageType
 	url: string
 	source: string
 	lineNumber: number

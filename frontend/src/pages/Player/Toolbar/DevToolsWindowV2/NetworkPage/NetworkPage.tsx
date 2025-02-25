@@ -6,7 +6,9 @@ import {
 	IconSolidExclamation,
 	Tag,
 	Text,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
+import { getResponseStatusCode } from '@pages/Player/helpers'
+import { THROTTLED_UPDATE_MS } from '@pages/Player/PlayerHook/PlayerState'
 import usePlayerConfiguration from '@pages/Player/PlayerHook/utils/usePlayerConfiguration'
 import {
 	LoadingError,
@@ -22,21 +24,29 @@ import {
 	RequestType,
 	Tab,
 } from '@pages/Player/Toolbar/DevToolsWindowV2/utils'
-import { useParams } from '@util/react-router/useParams'
-import { playerTimeToSessionAbsoluteTime } from '@util/session/utils'
 import { formatTime, MillisToMinutesAndSeconds } from '@util/time'
 import _ from 'lodash'
-import React, { useCallback, useEffect, useMemo, useRef } from 'react'
+import moment from 'moment'
+import {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from 'react'
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso'
 
 import { ErrorObject } from '@/graph/generated/schemas'
 import { useActiveNetworkResourceId } from '@/hooks/useActiveNetworkResourceId'
 import { styledVerticalScrollbar } from '@/style/common.css'
+import analytics from '@/util/analytics'
 
 import TextHighlighter from '../../../../../components/TextHighlighter/TextHighlighter'
 import Tooltip from '../../../../../components/Tooltip/Tooltip'
 import { ReplayerState, useReplayerContext } from '../../../ReplayerContext'
 import * as styles from './style.css'
+import { ApolloError } from '@apollo/client'
 
 export const NetworkPage = ({
 	time,
@@ -56,25 +66,22 @@ export const NetworkPage = ({
 	const startTime = sessionMetadata.startTime
 	const { showPlayerAbsoluteTime } = usePlayerConfiguration()
 	const { setActiveNetworkResourceId } = useActiveNetworkResourceId()
-	const { session_secure_id } = useParams<{ session_secure_id: string }>()
 
 	const virtuoso = useRef<VirtuosoHandle>(null)
 
 	const {
 		resources: parsedResources,
-		loadResources,
 		resourcesLoading: loading,
 		error: resourceLoadingError,
+		fetchMoreForward,
+		loadingAfter,
 	} = useResourcesContext()
-	useEffect(() => {
-		loadResources()
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [session_secure_id])
 
 	const networkRange = useMemo(() => {
 		if (parsedResources.length > 0) {
-			const start = parsedResources[0].startTime
-			const end = parsedResources[parsedResources.length - 1].responseEnd
+			const start = parsedResources[0].startTimeAbs
+			const end =
+				parsedResources[parsedResources.length - 1].responseEndAbs
 			return end - start
 		}
 		return 0
@@ -135,6 +142,20 @@ export const NetworkPage = ({
 					}
 				}) as NetworkResource[]) ?? []
 
+		// Need to have timestamp for findLastActiveEventIndex.
+		current.forEach((resource) => {
+			if (resource.startTimeAbs) {
+				resource.timestamp = resource.startTimeAbs
+				resource.relativeStartTime = Math.max(
+					resource.startTimeAbs - startTime,
+					0,
+				)
+			} else {
+				resource.timestamp = resource.startTime + startTime
+				resource.relativeStartTime = resource.startTime
+			}
+		})
+
 		if (filter !== '') {
 			return current.filter((resource) => {
 				if (!resource.name) {
@@ -148,15 +169,36 @@ export const NetworkPage = ({
 		}
 
 		return current
-	}, [parsedResources, filter, requestTypes, requestStatuses])
+	}, [parsedResources, filter, requestTypes, requestStatuses, startTime])
 
-	const currentResourceIdx = useMemo(() => {
-		return findLastActiveEventIndex(
+	const [currentResourceIdx, setCurrentResourceIdx] = useState(-1)
+
+	useEffect(() => {
+		// need to load data ahead because the player skipped past the last loaded node
+		const lastTraceTs = resourcesToRender.at(
+			resourcesToRender.length - 1,
+		)?.timestamp
+		if (lastTraceTs) {
+			const lastTraceTime = new Date(lastTraceTs).getTime()
+			if (sessionMetadata.startTime + time > lastTraceTime) {
+				fetchMoreForward()
+			}
+		}
+
+		const activeIndex = findLastActiveEventIndex(
 			Math.round(time),
 			startTime,
 			resourcesToRender,
 		)
-	}, [resourcesToRender, startTime, time])
+
+		setCurrentResourceIdx(activeIndex)
+	}, [
+		fetchMoreForward,
+		resourcesToRender,
+		sessionMetadata.startTime,
+		startTime,
+		time,
+	])
 
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	const scrollFunction = useCallback(
@@ -166,36 +208,53 @@ export const NetworkPage = ({
 					virtuoso.current.scrollToIndex({
 						index,
 						align: 'center',
-						behavior: 'smooth',
 					})
 				}
 			})
-		}, 1000 / 60),
+		}, THROTTLED_UPDATE_MS),
 		[],
 	)
 
-	useEffect(() => {
+	const fetchMoreWhenScrolled = useCallback(
+		async (e: React.UIEvent<'div'>) => {
+			if (!loadingAfter) {
+				const { scrollHeight, scrollTop, clientHeight } =
+					e.target as HTMLDivElement
+				//once the user has scrolled within 100px of the bottom of the table, fetch more data if there is any
+				if (scrollHeight - scrollTop - clientHeight < 100) {
+					await fetchMoreForward()
+				}
+			}
+		},
+		[fetchMoreForward, loadingAfter],
+	)
+
+	useLayoutEffect(() => {
 		if (autoScroll && state === ReplayerState.Playing) {
 			scrollFunction(currentResourceIdx)
 		}
 	}, [currentResourceIdx, scrollFunction, autoScroll, state])
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		// scroll network events on player timeline click
 		if (autoScroll && state === ReplayerState.Paused) {
 			scrollFunction(currentResourceIdx)
 		}
 	}, [autoScroll, currentResourceIdx, scrollFunction, state, time])
 
+	useEffect(() => {
+		analytics.track('session_view-network-requests')
+	}, [])
+
 	return (
-		<Box className={styles.container}>
+		<Box cssClass={styles.container}>
 			{resourceLoadingError ? (
 				<ResourceLoadingErrorCallout error={resourceLoadingError} />
 			) : !isPlayerReady || loading || !session ? (
 				<LoadingBox />
 			) : resourcesToRender.length > 0 ? (
-				<Box className={styles.container}>
-					<Box className={styles.networkHeader}>
+				<Box cssClass={styles.container}>
+					<Box cssClass={styles.networkHeader}>
 						<Text color="n11">Status</Text>
 						<Text color="n11">Type</Text>
 						<Text color="n11">Name</Text>
@@ -203,7 +262,7 @@ export const NetworkPage = ({
 						<Text color="n11">Latency</Text>
 						<Text color="n11">Waterfall</Text>
 					</Box>
-					<Box className={styles.networkBox}>
+					<Box cssClass={styles.networkBox}>
 						<Virtuoso
 							ref={virtuoso}
 							overscan={1024}
@@ -218,6 +277,7 @@ export const NetworkPage = ({
 									/>
 								),
 							}}
+							onScroll={fetchMoreWhenScrolled}
 							scrollSeekConfiguration={{
 								enter: (v) => v > 512,
 								exit: (v) => v < 128,
@@ -236,6 +296,9 @@ export const NetworkPage = ({
 										networkRange={networkRange}
 										isCurrentResource={
 											currentResourceIdx === index
+										}
+										startedInThePast={
+											currentResourceIdx >= index
 										}
 										searchTerm={filter}
 										onClickHandler={() => {
@@ -264,12 +327,14 @@ export const NetworkPage = ({
 				</Box>
 			) : (
 				resourcesToRender.length === 0 && (
-					<EmptyDevToolsCallout
-						kind={Tab.Network}
-						filter={filter}
-						requestTypes={requestTypes}
-						requestStatuses={requestStatuses}
-					/>
+					<Box p="8" height="full">
+						<EmptyDevToolsCallout
+							kind={Tab.Network}
+							filter={filter}
+							requestTypes={requestTypes}
+							requestStatuses={requestStatuses}
+						/>
+					</Box>
 				)
 			)}
 		</Box>
@@ -280,6 +345,7 @@ interface ResourceRowProps {
 	resource: NetworkResource
 	networkRange: number
 	isCurrentResource: boolean
+	startedInThePast: boolean
 	searchTerm: string
 	onClickHandler: () => void
 	setActiveNetworkResourceId: (resource: number | undefined) => void
@@ -294,18 +360,18 @@ const ResourceRow = ({
 	resource,
 	networkRange,
 	isCurrentResource,
+	startedInThePast,
 	searchTerm,
 	onClickHandler,
 	setActiveNetworkResourceId,
 	networkRequestAndResponseRecordingEnabled,
 	setTime,
-	playerStartTime,
 	errors,
 	showPlayerAbsoluteTime,
 }: ResourceRowProps) => {
-	const leftPaddingPercent = (resource.startTime / networkRange) * 100
+	const leftPaddingPercent = (resource.relativeStartTime / networkRange) * 100
 	const actualPercent = Math.max(
-		((resource.responseEnd - resource.startTime) / networkRange) * 100,
+		(resource.duration / networkRange) * 100,
 		0.1,
 	)
 	const rightPaddingPercent = 100 - actualPercent - leftPaddingPercent
@@ -313,16 +379,23 @@ const ResourceRow = ({
 	const { activeNetworkResourceId } = useActiveNetworkResourceId()
 	const showingDetails = activeNetworkResourceId === resource.id
 	const responseStatus = resource.requestResponsePairs?.response.status
+	const bodyErrors = hasErrorsInBody(resource)
+
 	const hasError =
+		bodyErrors ||
 		!!errors?.length ||
 		!!resource.errors?.length ||
-		!!(responseStatus && (responseStatus === 0 || responseStatus >= 400))
+		!!(responseStatus === 0 || (responseStatus && responseStatus >= 400))
+	const reponseStatuscode = getResponseStatusCode(resource)
 
 	return (
 		<Box
 			key={resource.id.toString()}
 			onClick={onClickHandler}
 			cursor="pointer"
+			style={{
+				opacity: startedInThePast ? 1 : 0.4,
+			}}
 		>
 			<Box
 				borderBottom="dividerWeak"
@@ -337,19 +410,15 @@ const ResourceRow = ({
 					weight={showingDetails ? 'bold' : 'medium'}
 					lines="1"
 				>
-					{/* NOTE - Showing '200' for all requests that aren't 'xmlhttprequest' or 'fetch' */}
-					{resource.initiatorType === 'xmlhttprequest' ||
-					resource.initiatorType === 'fetch'
-						? resource.requestResponsePairs?.response.status ?? (
-								<UnknownRequestStatusCode
-									networkRequestAndResponseRecordingEnabled={
-										networkRequestAndResponseRecordingEnabled
-									}
-								/>
-						  )
-						: resource.initiatorType === 'websocket'
-						? '101'
-						: '200'}
+					{reponseStatuscode === 'Unknown' ? (
+						<UnknownRequestStatusCode
+							networkRequestAndResponseRecordingEnabled={
+								networkRequestAndResponseRecordingEnabled
+							}
+						/>
+					) : (
+						reponseStatuscode
+					)}
 				</Text>
 				<Text
 					size="small"
@@ -372,26 +441,23 @@ const ResourceRow = ({
 					lines="1"
 				>
 					{showPlayerAbsoluteTime
-						? playerTimeToSessionAbsoluteTime({
-								sessionStartTime: playerStartTime,
-								relativeTime: resource.startTime,
-						  })
-						: MillisToMinutesAndSeconds(resource.startTime)}
+						? moment(resource.timestamp).format('h:mm:ss A')
+						: MillisToMinutesAndSeconds(resource.relativeStartTime)}
 				</Text>
 				<Text size="small" weight={showingDetails ? 'bold' : 'medium'}>
-					{resource.responseEnd && resource.startTime
-						? formatTime(resource.responseEnd - resource.startTime)
+					{!!resource.duration
+						? formatTime(resource.duration)
 						: 'N/A'}
 				</Text>
-				<Box className={styles.timingBarWrapper}>
+				<Box cssClass={styles.timingBarWrapper}>
 					<Box
 						style={{
 							width: `${leftPaddingPercent}%`,
 						}}
-						className={styles.timingBarEmptySection}
+						cssClass={styles.timingBarEmptySection}
 					/>
 					<Box
-						className={styles.timingBar}
+						cssClass={styles.timingBar}
 						style={{
 							width: `${actualPercent}%`,
 						}}
@@ -400,7 +466,7 @@ const ResourceRow = ({
 						style={{
 							width: `${rightPaddingPercent}%`,
 						}}
-						className={styles.timingBarEmptySection}
+						cssClass={styles.timingBarEmptySection}
 					/>
 				</Box>
 				<Tag
@@ -410,7 +476,7 @@ const ResourceRow = ({
 					size="medium"
 					onClick={(event) => {
 						event.stopPropagation() // prevent panel from closing when clicking a resource
-						setTime(resource.startTime)
+						setTime(resource.relativeStartTime)
 						setActiveNetworkResourceId(resource.id)
 					}}
 				>
@@ -455,7 +521,7 @@ export const UnknownRequestStatusCode = ({
 const ResourceLoadingErrorCallout = function ({
 	error,
 }: {
-	error: LoadingError
+	error: LoadingError | ApolloError
 }) {
 	return (
 		<Box
@@ -468,23 +534,30 @@ const ResourceLoadingErrorCallout = function ({
 			<Callout
 				border
 				title={`Failed to load session network resources: ${error}`}
-				icon={() => (
-					<Box
-						borderRadius="5"
-						style={{
-							alignItems: 'center',
-							backgroundColor: '#E9E9E9',
-							display: 'flex',
-							height: 22,
-							justifyContent: 'center',
-							textAlign: 'center',
-							width: 22,
-						}}
-					>
-						<IconSolidExclamation size={14} color="#777777" />
-					</Box>
-				)}
+				icon={IconSolidExclamation}
 			/>
 		</Box>
 	)
+}
+
+const hasErrorsInBody = (resource: NetworkResource): boolean => {
+	const body = resource?.requestResponsePairs?.response.body
+
+	if (!body) {
+		return false
+	}
+
+	try {
+		let parsedResponseBody: { [key: string]: any } = {}
+		if (typeof body === 'object') {
+			parsedResponseBody = JSON.parse(JSON.stringify(body))
+		} else {
+			parsedResponseBody = JSON.parse(body)
+		}
+
+		const errors = parsedResponseBody.errors
+		return Array.isArray(errors) ? errors.length > 0 : !!errors
+	} catch (error) {
+		return false
+	}
 }

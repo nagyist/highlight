@@ -1,6 +1,7 @@
 import tinycolor from '@ctrl/tinycolor'
-import { Box, Text, vars } from '@highlight-run/ui'
-import { colors } from '@highlight-run/ui/src/css/colors'
+import { colors } from '@highlight-run/ui/colors'
+import { Box, Text, TooltipContent } from '@highlight-run/ui/components'
+import { vars } from '@highlight-run/ui/vars'
 import moment from 'moment'
 import React, { useEffect, useMemo, useState } from 'react'
 import AutoSizer from 'react-virtualized-auto-sizer'
@@ -127,7 +128,13 @@ const Histogram = React.memo(
 			<div className={styles.container}>
 				<div>
 					<AutoSizer>
-						{({ height, width }) => (
+						{({
+							height,
+							width,
+						}: {
+							height: number
+							width: number
+						}) => (
 							<BarChart
 								data={chartData}
 								barGap={barGap}
@@ -283,45 +290,47 @@ const CustomTooltip: React.FC<{
 	const currentTime = bucketTimes[label]
 
 	return (
-		<Box
-			alignItems="center"
-			borderRadius="6"
-			border="secondary"
-			display="flex"
-			gap="4"
-			p="4"
-			background="white"
-			onMouseOver={() => {
-				setTooltipWantHidden(false)
-			}}
-			onMouseLeave={() => {
-				setTooltipWantHidden(true)
-			}}
-		>
-			<Text color="n9" size="xSmall" weight="medium">
-				{moment(currentTime).format('MMM D')}
-			</Text>
+		<TooltipContent>
+			<Box
+				alignItems="center"
+				display="flex"
+				gap="4"
+				onMouseOver={() => {
+					setTooltipWantHidden(false)
+				}}
+				onMouseLeave={() => {
+					setTooltipWantHidden(true)
+				}}
+			>
+				<Text color="n9" size="xSmall" weight="medium">
+					{moment(currentTime).format('MMM D')}
+				</Text>
 
-			{payload.map((p, index) => {
-				const series = seriesList.find((s) => s.label === p.dataKey)
-				const color = series?.color || 'black'
-				const colorIsDark = tinycolor(p.color).getBrightness() < 165
-				const rawValue = p.payload[`${p.name}-raw`]
+				{payload.map((p, index) => {
+					const series = seriesList.find((s) => s.label === p.dataKey)
+					const color = series?.color || 'black'
+					const colorIsDark = tinycolor(p.color).getBrightness() < 165
+					const rawValue = p.payload[`${p.name}-raw`]
 
-				return (
-					<Box
-						key={index}
-						borderRadius="3"
-						backgroundColor={color}
-						p="4"
-					>
-						<Text color={colorIsDark ? 'white' : 'n12'}>
-							{rawValue} {p.name}
-						</Text>
-					</Box>
-				)
-			})}
-		</Box>
+					return (
+						<Box
+							key={index}
+							borderRadius="3"
+							backgroundColor={color}
+							p="4"
+						>
+							<Text
+								size="xSmall"
+								weight="medium"
+								color={colorIsDark ? 'white' : 'n12'}
+							>
+								{rawValue} {p.name}
+							</Text>
+						</Box>
+					)
+				})}
+			</Box>
+		</TooltipContent>
 	)
 }
 

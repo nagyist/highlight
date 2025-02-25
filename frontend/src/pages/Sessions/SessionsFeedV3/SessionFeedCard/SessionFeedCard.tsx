@@ -1,63 +1,61 @@
 import { Avatar } from '@components/Avatar/Avatar'
+import { SearchExpression } from '@components/Search/Parser/listener'
+import { useSearchContext } from '@components/Search/SearchContext'
+import { stringifyExpression } from '@components/Search/utils'
 import { Session } from '@graph/schemas'
 import {
 	Box,
 	IconSolidCursorClick,
-	IconSolidExclamation,
 	IconSolidEyeOff,
+	IconSolidLightningBolt,
 	IconSolidUserCircle,
 	IconSolidUsers,
 	IconSolidVideoCamera,
 	Tag,
 	Text,
-} from '@highlight-run/ui'
+	Tooltip,
+} from '@highlight-run/ui/components'
 import { useProjectId } from '@hooks/useProjectId'
-import {
-	RightPanelView,
-	usePlayerUIContext,
-} from '@pages/Player/context/PlayerUIContext'
+import usePlayerConfiguration from '@pages/Player/PlayerHook/utils/usePlayerConfiguration'
 import { sessionIsBackfilled } from '@pages/Player/utils/utils'
-import { useSearchContext } from '@pages/Sessions/SearchContext/SearchContext'
 import ActivityGraph from '@pages/Sessions/SessionsFeedV3/ActivityGraph/ActivityGraph'
-import { formatDatetime } from '@pages/Sessions/SessionsFeedV3/SessionQueryBuilder/components/SessionFeedConfiguration/SessionFeedConfiguration'
-import { SessionFeedConfigurationContext } from '@pages/Sessions/SessionsFeedV3/SessionQueryBuilder/context/SessionFeedConfigurationContext'
+import { SessionFeedConfigurationContext } from '@pages/Sessions/SessionsFeedV3/context/SessionFeedConfigurationContext'
+import { useParams } from '@util/react-router/useParams'
 import moment from 'moment/moment'
 import React, { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-
-import { buildQueryStateString } from '@/util/url/params'
 
 import {
 	getDisplayName,
 	getIdentifiedUserProfileImage,
 } from '../MinimalSessionCard/utils/utils'
+import { formatDatetime } from '../SessionFeedConfigDropdown/helpers'
 import * as style from './SessionFeedCard.css'
 interface Props {
 	session: Session
-	showDetailedSessionView?: boolean
-	autoPlaySessions?: boolean
-	selected?: boolean
 	configuration?: Pick<
 		SessionFeedConfigurationContext,
 		'countFormat' | 'datetimeFormat'
 	>
 }
 export const SessionFeedCard = React.memo(
-	({
-		session,
-		showDetailedSessionView,
-		autoPlaySessions,
-		selected,
-		configuration,
-	}: Props) => {
+	({ session, configuration }: Props) => {
+		const { session_secure_id } = useParams<{
+			project_id: string
+			session_secure_id: string
+		}>()
 		const ref = useRef<HTMLDivElement | null>(null)
 		const { projectId } = useProjectId()
-		const { setSearchQuery } = useSearchContext()
+		const { onSubmit, queryParts } = useSearchContext()
 		const [eventCounts, setEventCounts] =
 			useState<{ ts: number; value: number }[]>()
 		const customAvatarImage = getIdentifiedUserProfileImage(session)
 		const backfilled = sessionIsBackfilled(session as Session | undefined)
 		const [viewed, setViewed] = useState(session.viewed || false)
+		const { autoPlaySessions, showDetailedSessionView } =
+			usePlayerConfiguration()
+
+		const selected = session?.secure_id === session_secure_id
 
 		useEffect(() => {
 			if (selected) {
@@ -86,7 +84,21 @@ export const SessionFeedCard = React.memo(
 			}
 		}, [autoPlaySessions, selected, session.secure_id])
 
-		const { setRightPanelView } = usePlayerUIContext()
+		const handleIconClick =
+			(key: string, value: boolean) => (e: React.MouseEvent) => {
+				e.preventDefault()
+
+				let newQueryParts = []
+				newQueryParts = queryParts.filter((part) => part.key !== key)
+				newQueryParts.push({
+					key,
+					operator: '=',
+					value: `${value}`,
+					text: `${key}=${value}`,
+				} as SearchExpression)
+
+				onSubmit(stringifyExpression(newQueryParts))
+			}
 
 		return (
 			<Box ref={ref}>
@@ -94,9 +106,6 @@ export const SessionFeedCard = React.memo(
 					to={{
 						pathname: `/${projectId}/sessions/${session.secure_id}`,
 						search: location.search,
-					}}
-					onClick={() => {
-						setRightPanelView(RightPanelView.Session)
 					}}
 				>
 					<Box
@@ -114,17 +123,12 @@ export const SessionFeedCard = React.memo(
 							},
 						]}
 					>
-						<Box color="n11" cssClass={style.sessionCardTitle}>
+						<Box color="strong" cssClass={style.sessionCardTitle}>
 							<Box
 								display="inline-flex"
 								gap="6"
 								alignItems="center"
 							>
-								<Avatar
-									seed={getDisplayName(session)}
-									style={{ height: 20, width: 20 }}
-									customImage={customAvatarImage}
-								/>
 								<Text
 									lines="1"
 									size="small"
@@ -143,6 +147,8 @@ export const SessionFeedCard = React.memo(
 									/>
 								)}
 							</Box>
+
+							<Avatar customImage={customAvatarImage} />
 						</Box>
 						<Box
 							alignItems="center"
@@ -161,69 +167,131 @@ export const SessionFeedCard = React.memo(
 									display="flex"
 									gap="4"
 									alignItems="center"
-									style={{ minHeight: 16 }}
+									style={{ minHeight: 18 }}
 								>
-									{!viewed && (
-										<Tag
-											shape="basic"
-											kind="secondary"
-											emphasis="low"
-											size="small"
-											icon={<IconSolidEyeOff size={12} />}
-											onClick={() => {
-												setSearchQuery(
-													buildQueryStateString({
-														custom_viewed: false,
-													}),
-												)
-											}}
-										/>
+									{session.has_errors && (
+										<Tooltip
+											trigger={
+												<Tag
+													shape="basic"
+													kind="secondary"
+													emphasis="low"
+													size="small"
+													icon={
+														<IconSolidLightningBolt
+															size={12}
+														/>
+													}
+													onClick={handleIconClick(
+														'has_errors',
+														true,
+													)}
+												/>
+											}
+										>
+											<Box padding="4">
+												<Text
+													size="xSmall"
+													color="moderate"
+												>
+													Filter by sessions with
+													errors
+												</Text>
+											</Box>
+										</Tooltip>
 									)}
 									{session.first_time && (
-										<Tag
-											shape="basic"
-											kind="secondary"
-											emphasis="low"
-											size="small"
-											icon={
-												<IconSolidUserCircle
-													size={12}
+										<Tooltip
+											trigger={
+												<Tag
+													shape="basic"
+													kind="secondary"
+													emphasis="low"
+													size="small"
+													icon={
+														<IconSolidUserCircle
+															size={12}
+														/>
+													}
+													onClick={handleIconClick(
+														'first_time',
+														true,
+													)}
 												/>
 											}
-											onClick={() => {
-												setSearchQuery(
-													buildQueryStateString({
-														custom_first_time: true,
-													}),
-												)
-											}}
-										/>
-									)}
-									{session.has_errors && (
-										<Tag
-											shape="basic"
-											kind="secondary"
-											emphasis="low"
-											size="small"
-											icon={
-												<IconSolidExclamation
-													size={12}
-												/>
-											}
-										/>
+										>
+											<Box padding="4">
+												<Text
+													size="xSmall"
+													color="moderate"
+												>
+													Filter by first time users
+												</Text>
+											</Box>
+										</Tooltip>
 									)}
 									{session.has_rage_clicks && (
-										<Tag
-											shape="basic"
-											kind="secondary"
-											emphasis="low"
-											size="small"
-											icon={
-												<IconSolidCursorClick
-													size={12}
+										<Tooltip
+											trigger={
+												<Tag
+													shape="basic"
+													kind="secondary"
+													emphasis="low"
+													size="small"
+													icon={
+														<IconSolidCursorClick
+															size={12}
+														/>
+													}
+													onClick={handleIconClick(
+														'has_rage_click',
+														true,
+													)}
 												/>
 											}
-										/>
+										>
+											<Box padding="4">
+												<Text
+													size="xSmall"
+													color="moderate"
+												>
+													Filter by sessions with rage
+													clicks
+												</Text>
+											</Box>
+										</Tooltip>
+									)}
+									{!viewed && (
+										<Tooltip
+											maxWidth={177}
+											delayed
+											trigger={
+												<Tag
+													shape="basic"
+													kind="secondary"
+													emphasis="low"
+													size="small"
+													icon={
+														<IconSolidEyeOff
+															size={12}
+														/>
+													}
+													onClick={handleIconClick(
+														'viewed_by_anyone',
+														false,
+													)}
+												/>
+											}
+										>
+											<Box padding="4">
+												<Text
+													size="xSmall"
+													color="moderate"
+												>
+													Filter by unviewed sessions
+												</Text>
+											</Box>
+										</Tooltip>
 									)}
 								</Box>
 								<Box display="flex" gap="4" alignItems="center">
@@ -233,43 +301,58 @@ export const SessionFeedCard = React.memo(
 											kind="secondary"
 											size="small"
 										>
-											<Text size="xSmall">
-												{moment
-													.utc(session.active_length)
-													.format('H:mm:ss')}
-											</Text>
+											{moment
+												.utc(session.active_length)
+												.format('H:mm:ss')}
 										</Tag>
 									) : (
-										<Tag
-											shape="basic"
-											kind="primary"
-											size="small"
-											iconLeft={<IconSolidVideoCamera />}
-											onClick={() => {
-												setSearchQuery(
-													buildQueryStateString({
-														custom_processed: false,
-													}),
-												)
-											}}
+										<Tooltip
+											trigger={
+												<Tag
+													shape="basic"
+													kind="primary"
+													size="small"
+													iconLeft={
+														<IconSolidVideoCamera />
+													}
+													onClick={handleIconClick(
+														'completed',
+														false,
+													)}
+												>
+													Live
+												</Tag>
+											}
 										>
-											<Text size="xSmall">Live</Text>
-										</Tag>
+											<Box padding="4">
+												<Text
+													size="xSmall"
+													color="moderate"
+												>
+													Filter by live sessions
+												</Text>
+											</Box>
+										</Tooltip>
 									)}
-									<Text lines="1" size="xSmall">
+									<Tag
+										size="small"
+										kind="secondary"
+										emphasis="low"
+										shape="basic"
+									>
 										{configuration?.datetimeFormat
 											? formatDatetime(
 													session.created_at,
 													configuration.datetimeFormat,
-											  )
+												)
 											: `${new Date(
 													session.created_at,
-											  ).toLocaleString('en-us', {
+												).toLocaleString('en-us', {
 													day: 'numeric',
 													month: 'long',
 													year: 'numeric',
-											  })}`}
-									</Text>
+												})}`}
+									</Tag>
 								</Box>
 							</Box>
 							{showDetailedSessionView && eventCounts?.length && (

@@ -4,10 +4,11 @@ import { GetErrorGroupQuery } from '@graph/operations'
 import {
 	Box,
 	IconSolidCheveronRight,
+	IconSolidDesktopComputer,
 	IconSolidLocationMarker,
 	Tag,
 	Text,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
 import { getProjectPrefix } from '@pages/ErrorsV2/utils'
 import React from 'react'
 
@@ -38,6 +39,17 @@ const ErrorTag = React.memo(
 				</Tag>
 
 				<IconSolidCheveronRight />
+				{errorGroup?.error_tag?.title && (
+					<Tag
+						shape="basic"
+						kind="secondary"
+						emphasis="medium"
+						iconLeft={<IconSolidDesktopComputer size={12} />}
+						lines="1"
+					>
+						{errorGroup.error_tag.title}
+					</Tag>
+				)}
 				<Text size="small" weight="medium" color="moderate" lines="1">
 					{getProjectPrefix(projectData?.project)}-{errorGroup.id}
 				</Text>

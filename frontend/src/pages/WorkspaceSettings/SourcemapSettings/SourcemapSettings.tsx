@@ -8,7 +8,7 @@ import {
 	useGetSourcemapFilesLazyQuery,
 	useGetSourcemapVersionsQuery,
 } from '@graph/hooks'
-import { Box, Stack } from '@highlight-run/ui'
+import { Box, Stack } from '@highlight-run/ui/components'
 import { useParams } from '@util/react-router/useParams'
 import { debounce } from 'lodash'
 import React, { useEffect } from 'react'
@@ -191,8 +191,8 @@ const SourcemapSettings = () => {
 							query.length
 								? 'Nothing to see here'
 								: needToSelectVersion
-								? 'Select a version'
-								: 'No sourcemap data yet 😔'
+									? 'Select a version'
+									: 'No sourcemap data yet 😔'
 						}
 					/>
 				</Card>

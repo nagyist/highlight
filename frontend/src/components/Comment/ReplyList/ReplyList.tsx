@@ -1,8 +1,8 @@
 import { CommentReply, Maybe } from '@graph/schemas'
-import { Box } from '@highlight-run/ui'
+import { Box } from '@highlight-run/ui/components'
 import React from 'react'
 
-import SessionComment from '@/components/Comment/SessionComment/SessionComment'
+import { SessionComment } from '@/components/Comment/SessionComment/SessionComment'
 import { ParsedSessionComment } from '@/pages/Player/ReplayerContext'
 
 interface Props {

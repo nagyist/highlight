@@ -1,20 +1,20 @@
+import { toast } from '@components/Toaster'
 import {
 	useGetSessionCommentsQuery,
 	useMuteSessionCommentThreadMutation,
 } from '@graph/hooks'
-import { Box } from '@highlight-run/ui'
+import { Box } from '@highlight-run/ui/components'
 import PlayerSessionComment from '@pages/Player/PlayerCommentCanvas/PlayerSessionComment/PlayerSessionComment'
 import { PlayerSearchParameters } from '@pages/Player/PlayerHook/utils'
 import usePlayerConfiguration from '@pages/Player/PlayerHook/utils/usePlayerConfiguration'
 import { useReplayerContext } from '@pages/Player/ReplayerContext'
-import { useParams } from '@util/react-router/useParams'
-import { message } from 'antd'
 import clsx from 'clsx'
 import React, { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuthContext } from '@/authentication/AuthContext'
 import { CommentIndicator } from '@/components/Comment/CommentIndicator'
+import { useSessionParams } from '@/pages/Sessions/utils'
 
 import styles from './PlayerCommentCanvas.module.css'
 
@@ -38,12 +38,10 @@ const PlayerCommentCanvas = ({
 	setCommentPosition,
 }: Props) => {
 	const { admin } = useAuthContext()
-	const { session_secure_id } = useParams<{
-		session_secure_id: string
-	}>()
+	const { sessionSecureId } = useSessionParams()
 	const { data: sessionCommentsData } = useGetSessionCommentsQuery({
 		variables: {
-			session_secure_id: session_secure_id!,
+			session_secure_id: sessionSecureId!,
 		},
 	})
 	const {
@@ -52,8 +50,7 @@ const PlayerCommentCanvas = ({
 		enableInspectElement,
 	} = usePlayerConfiguration()
 
-	const { isPlayerReady, pause, isLoadingEvents, replayer } =
-		useReplayerContext()
+	const { isPlayerReady, pause, replayer } = useReplayerContext()
 
 	const location = useLocation()
 	const navigate = useNavigate()
@@ -92,7 +89,7 @@ const PlayerCommentCanvas = ({
 					replace: true,
 				})
 
-				message.success('Muted notifications for the comment thread.')
+				toast.success('Muted notifications for the comment thread.')
 			})
 		}
 
@@ -131,7 +128,6 @@ const PlayerCommentCanvas = ({
 		<button
 			className={clsx({
 				[styles.commentButton]: isPlayerReady,
-				[styles.blurBackground]: isLoadingEvents,
 			})}
 			onClick={(e) => {
 				if (buttonRef?.current) {
@@ -173,10 +169,7 @@ const PlayerCommentCanvas = ({
 						top: `calc(${indicatorLocation.y}px - var(--comment-indicator-width))`,
 					}}
 				>
-					<CommentIndicator
-						seed={admin?.name ?? admin?.email ?? 'Anonymous'}
-						customImage={admin?.photo_url}
-					/>
+					<CommentIndicator customImage={admin?.photo_url} />
 				</Box>
 			)}
 			{sessionCommentsData?.session_comments.map(

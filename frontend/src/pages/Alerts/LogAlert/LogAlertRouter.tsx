@@ -3,8 +3,6 @@ import { useGetLogAlertsPagePayloadQuery } from '@graph/hooks'
 import { useNumericProjectId } from '@hooks/useProjectId'
 import { LogAlertsContextProvider } from '@pages/Alerts/LogAlert/context'
 import LogAlertPage from '@pages/Alerts/LogAlert/LogAlertPage'
-import analytics from '@util/analytics'
-import { useEffect } from 'react'
 import { Helmet } from 'react-helmet'
 import { Route, Routes } from 'react-router-dom'
 
@@ -18,8 +16,6 @@ const LogAlertsRouter = () => {
 
 	const slackUrl = getSlackUrl(projectId!)
 
-	useEffect(() => analytics.page(), [])
-
 	return (
 		<LogAlertsContextProvider
 			value={{
@@ -32,7 +28,6 @@ const LogAlertsRouter = () => {
 				<title>Log Alerts</title>
 			</Helmet>
 			<Routes>
-				<Route path="new" element={<LogAlertPage />} />
 				<Route path=":alert_id" element={<LogAlertPage />} />
 			</Routes>
 		</LogAlertsContextProvider>

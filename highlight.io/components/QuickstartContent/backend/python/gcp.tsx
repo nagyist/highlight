@@ -1,7 +1,7 @@
-import { siteUrl } from '../../../../utils/urls'
 import { QuickStartContent } from '../../QuickstartContent'
 import {
 	downloadSnippet,
+	init,
 	setupFrontendSnippet,
 	setupLogging,
 } from './shared-snippets'
@@ -9,7 +9,6 @@ import {
 export const PythonGCPContext: QuickStartContent = {
 	title: 'Python Google Cloud Functions',
 	subtitle: 'Learn how to set up highlight.io on Google Cloud Functions.',
-	logoUrl: siteUrl('/images/quickstart/google-cloud.svg'),
 	entries: [
 		setupFrontendSnippet,
 		downloadSnippet(),
@@ -28,7 +27,7 @@ import functions_framework
 import highlight_io
 from highlight_io.integrations.gcp import observe_handler
 
-H = highlight_io.H("<YOUR_PROJECT_ID>", instrument_logging=True)
+${init}
 
 
 @observe_handler
@@ -59,7 +58,7 @@ import functions_framework
 import highlight_io
 from highlight_io.integrations.gcp import observe_handler
 
-H = highlight_io.H("<YOUR_PROJECT_ID>", instrument_logging=True)
+${init}
 
 
 @observe_handler

@@ -1,5 +1,5 @@
-import { vars } from '@highlight-run/ui'
-import { colors } from '@highlight-run/ui/src/css/colors'
+import { colors } from '@highlight-run/ui/colors'
+import { vars } from '@highlight-run/ui/vars'
 import { style } from '@vanilla-extract/css'
 
 export const HISTOGRAM_AREA_HEIGHT = 58
@@ -66,26 +66,6 @@ export const progressBar = style({
 	top: 0,
 	width: '100%',
 	transformOrigin: 'left',
-})
-
-export const liveProgressBar = style({
-	animationDuration: '2s',
-	animationFillMode: 'forwards',
-	animationIterationCount: 'infinite',
-	animationName: 'liveShimmer',
-	animationTimingFunction: 'linear',
-	background: `linear-gradient(
-		to right,
-		var(--color-red-300) 8%,
-		var(--color-red) 38%,
-		var(--color-red-300) 68%
-	)`,
-	backgroundSize: '800px 5px',
-	display: 'flex',
-	height: PROGRESS_BAR_HEIGHT,
-	position: 'absolute',
-	transition: 'all 0.2s ease-in-out',
-	width: '100%',
 })
 
 export const inactivityPeriod = style({
@@ -187,7 +167,7 @@ export const inactivityPeriodMask = style({
 })
 
 export const moveIndicator = style({
-	transition: 'transform 0.3s linear',
+	transition: 'transform 0.27s linear',
 })
 
 export const timeIndicatorContainerWrapper = style({

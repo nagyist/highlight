@@ -1,4 +1,4 @@
-import { customEvent } from '@highlight-run/rrweb-types'
+import { customEvent } from '@rrweb/types'
 
 import {
 	HighlightEvent,
@@ -70,8 +70,7 @@ export const getBrowserExtensionScriptURLs = (events: HighlightEvent[]) => {
 		src && src.startsWith('chrome-extension://')
 
 	elementEvents.forEach((event) => {
-		// @ts-expect-error
-		const node = event.data.node as any
+		const node = (event.data as { node: any }).node
 		node.childNodes?.forEach((childNode: any) => {
 			childNode.childNodes?.forEach((grandChildNode: any) => {
 				if (

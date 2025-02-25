@@ -3,9 +3,9 @@ import {
 	PutObjectCommand,
 	S3Client,
 } from '@aws-sdk/client-s3'
+import { readFileSync, statSync } from 'fs'
 import { Readable } from 'stream'
 import * as zlib from 'zlib'
-import { readFileSync, statSync } from 'fs'
 
 const DATA_BUCKET = 'highlight-session-data'
 const RENDER_BUCKET = 'highlight-session-render'
@@ -77,7 +77,7 @@ export async function getRenderExport(
 
 export async function uploadRenderExport(
 	project: number,
-	session: number,
+	sessionSecureID: string,
 	format: string,
 	localPath: string,
 	ts?: number,
@@ -86,7 +86,7 @@ export async function uploadRenderExport(
 	const stat = statSync(localPath)
 	console.log(`uploading file ${localPath} size ${stat.size}`)
 	const ext = format.split('/').pop()
-	let key = `${project}/${session}${ts ? '-' : ''}${ts ?? ''}${
+	let key = `${project}/${sessionSecureID}${ts ? '-' : ''}${ts ?? ''}${
 		tsEnd ? '-' : ''
 	}${tsEnd ?? ''}.${ext}`
 	const command = new PutObjectCommand({

@@ -2,9 +2,9 @@ package main
 
 import (
 	"github.com/aws/aws-lambda-go/lambda"
+	lambdafunctions "github.com/highlight-run/highlight/backend/lambda-functions"
 	"github.com/highlight-run/highlight/backend/lambda-functions/deleteSessions/handlers"
 	"github.com/highlight/highlight/sdk/highlight-go"
-	hlog "github.com/highlight/highlight/sdk/highlight-go/log"
 )
 
 var h handlers.Handlers
@@ -14,9 +14,9 @@ func init() {
 }
 
 func main() {
-	highlight.SetProjectID("1jdkoe52")
-	highlight.Start()
-	defer highlight.Stop()
-	hlog.Init()
-	lambda.Start(h.DeleteSessionBatchFromS3)
+	lambdafunctions.Monitor("lambda-functions--deleteSession-batchFromS3")
+	lambda.StartWithOptions(
+		h.DeleteSessionBatchFromObjectStorage,
+		lambda.WithEnableSIGTERM(highlight.Stop),
+	)
 }

@@ -1,17 +1,16 @@
-import React from 'react'
-import { ComponentMeta } from '@storybook/react'
+import { Meta } from '@storybook/react'
 
-import { Tooltip } from './Tooltip'
-import { Box } from '../Box/Box'
-import { Text } from '../Text/Text'
 import { Badge } from '../Badge/Badge'
-import { Tag } from '../Tag/Tag'
+import { Box } from '../Box/Box'
 import { IconSolidTrendingUp } from '../icons'
+import { Tag } from '../Tag/Tag'
+import { Text } from '../Text/Text'
+import { Tooltip } from './Tooltip'
 
 export default {
 	title: 'Components/Tooltip',
 	component: Tooltip,
-} as ComponentMeta<typeof Tooltip>
+} as Meta<typeof Tooltip>
 
 export const Basic = () => (
 	<Box display="flex" justifyContent="center">

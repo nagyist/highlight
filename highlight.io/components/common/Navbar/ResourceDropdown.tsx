@@ -8,9 +8,16 @@ import { FaChevronDown } from 'react-icons/fa'
 import * as Icons from 'react-icons/hi'
 
 import classNames from 'classnames'
+import navStyles from './Navbar.module.scss'
 import styles from './ResourceDropdown.module.scss'
 
-const ResourceDropdown = ({ isOpen }: { isOpen?: boolean }) => {
+const ResourceDropdown = ({
+	isOpen,
+	light,
+}: {
+	isOpen?: boolean
+	light?: boolean
+}) => {
 	const [isShowing, setIsShowing] = useState(false)
 
 	const otherLinks = [
@@ -20,9 +27,10 @@ const ResourceDropdown = ({ isOpen }: { isOpen?: boolean }) => {
 			link: 'https://status.highlight.io/',
 		},
 		{
-			title: 'Community',
+			title: 'Customers',
 			icon: <Icons.HiUsers className={styles.copyOnLight} />,
-			link: 'https://discord.gg/yxaXEAqgwN',
+			link: '/customers',
+			sameTab: true,
 		},
 		{
 			title: 'Changelog',
@@ -59,6 +67,18 @@ const ResourceDropdown = ({ isOpen }: { isOpen?: boolean }) => {
 			link: '/docs/general/roadmap',
 			sameTab: true,
 		},
+		{
+			title: 'Ambassadors',
+			icon: <Icons.HiUserGroup className={styles.copyOnLight} />,
+			link: '/ambassador-program',
+			sameTab: true,
+		},
+		{
+			title: 'Podcast',
+			icon: <Icons.HiMicrophone className={styles.copyOnLight} />,
+			link: 'https://podcasters.spotify.com/pod/show/highlightio',
+			sameTab: false,
+		},
 	]
 
 	return (
@@ -71,8 +91,10 @@ const ResourceDropdown = ({ isOpen }: { isOpen?: boolean }) => {
 						className={styles.popoverButton}
 					>
 						<a
-							className={classNames(styles.headerButton, {
-								[styles.white]: isShowing,
+							className={classNames({
+								[styles.headerButton]: !light,
+								[navStyles.headerButtonLight]: light,
+								[styles.white]: isShowing && !light,
 							})}
 						>
 							<div className="flex gap-[6.5px] items-center">

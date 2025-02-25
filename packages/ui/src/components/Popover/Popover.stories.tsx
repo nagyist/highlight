@@ -1,14 +1,14 @@
+import { Meta } from '@storybook/react'
 import React from 'react'
-import { ComponentMeta } from '@storybook/react'
 
-import { Popover, PopoverProps } from './Popover'
 import { Box } from '../Box/Box'
 import { Stack } from '../Stack/Stack'
+import { Popover, PopoverProps } from './Popover'
 
 export default {
 	title: 'Components/Popover',
 	component: Popover,
-} as ComponentMeta<typeof Popover>
+} as Meta<typeof Popover>
 
 const Content: React.FC = () => {
 	return (

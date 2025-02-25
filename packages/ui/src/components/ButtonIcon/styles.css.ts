@@ -1,4 +1,5 @@
-import { RecipeVariants, recipe } from '@vanilla-extract/recipes'
+import { recipe, RecipeVariants } from '@vanilla-extract/recipes'
+
 import { colors } from '../../css/colors'
 import { vars } from '../../css/vars'
 import { shadows } from '../Button/styles.css'
@@ -15,6 +16,7 @@ export const variants = recipe({
 			cursor: 'pointer',
 			padding: 0,
 			outline: 'none',
+			flexShrink: 0,
 			selectors: {
 				'&[disabled], &[disabled]:hover, &[disabled]:focus': {
 					boxShadow: 'none',

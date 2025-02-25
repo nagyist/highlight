@@ -1,5 +1,4 @@
-import React from 'react'
-import { ComponentMeta } from '@storybook/react'
+import { Meta } from '@storybook/react'
 
 import { colors } from '../../css/colors'
 import { Box } from '../Box/Box'
@@ -27,4 +26,4 @@ export const Palette = () => (
 export default {
 	title: 'Foundations/Colors',
 	component: Palette,
-} as ComponentMeta<typeof Palette>
+} as Meta<typeof Palette>

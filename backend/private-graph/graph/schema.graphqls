@@ -24,6 +24,9 @@ enum SessionExcludedReason {
 	IgnoredUser
 	BillingQuotaExceeded
 	RetentionPeriodExceeded
+	Sampled
+	RateLimitMinute
+	ExclusionFilter
 }
 
 type Session {
@@ -35,11 +38,13 @@ type Session {
 	os_version: String!
 	browser_name: String!
 	browser_version: String!
+	ip: String!
 	city: String!
 	state: String!
 	country: String!
 	postal: String!
 	environment: String
+	service_name: String
 	app_version: String
 	client_version: String
 	firstload_version: String
@@ -48,7 +53,7 @@ type Session {
 	identifier: String!
 	identified: Boolean!
 	created_at: Timestamp!
-	payload_updated_at: Timestamp!
+	payload_updated_at: Timestamp
 	length: Int
 	active_length: Int
 	user_object: Any
@@ -64,6 +69,7 @@ type Session {
 	first_time: Boolean
 	field_group: String
 	enable_strict_privacy: Boolean
+	privacy_setting: String
 	enable_recording_network_contents: Boolean
 	object_storage_enabled: Boolean
 	payload_size: Int64
@@ -77,6 +83,8 @@ type Session {
 	deviceMemory: Int
 	last_user_interaction_time: Timestamp!
 	chunked: Boolean
+	session_feedback: [SessionComment!]
+	email: String
 }
 
 type SessionInterval {
@@ -85,6 +93,23 @@ type SessionInterval {
 	end_time: Timestamp!
 	duration: Int!
 	active: Boolean!
+}
+
+type SessionsReportRow {
+	key: String!
+	email: String!
+	num_sessions: UInt64!
+	first_session: Timestamp!
+	last_session: Timestamp!
+	num_days_visited: UInt64!
+	num_months_visited: UInt64!
+	avg_active_length_mins: Float!
+	max_active_length_mins: Float!
+	total_active_length_mins: Float!
+	avg_length_mins: Float!
+	max_length_mins: Float!
+	total_length_mins: Float!
+	location: String!
 }
 
 type TimelineIndicatorEvent {
@@ -126,12 +151,22 @@ type BillingDetails {
 	membersMeter: Int64!
 	errorsMeter: Int64!
 	logsMeter: Int64!
+	tracesMeter: Int64!
+	metricsMeter: Int64!
 	sessionsDailyAverage: Float!
 	errorsDailyAverage: Float!
 	logsDailyAverage: Float!
+	tracesDailyAverage: Float!
+	metricsDailyAverage: Float!
 	sessionsBillingLimit: Int64
 	errorsBillingLimit: Int64
 	logsBillingLimit: Int64
+	tracesBillingLimit: Int64
+	metricsBillingLimit: Int64
+}
+
+type UsageHistory {
+	usage: MetricsBuckets!
 }
 
 type Invoice {
@@ -143,20 +178,46 @@ type Invoice {
 	status: String
 }
 
+type SubscriptionDiscount {
+	name: String!
+	percent: Float!
+	amount: Int64!
+	until: Timestamp
+}
+
 type SubscriptionDetails {
 	baseAmount: Int64!
-	discountPercent: Float!
-	discountAmount: Int64!
+	discount: SubscriptionDiscount
 	lastInvoice: Invoice
+	billingIssue: Boolean!
+	billingIngestBlocked: Boolean!
 }
 
 type Plan {
 	type: PlanType!
 	interval: SubscriptionInterval!
-	quota: Int!
-	membersLimit: Int
-	errorsLimit: Int!
-	logsLimit: Int!
+	membersLimit: Int64
+	enableBillingLimits: Boolean!
+
+	aws_mp_subscription: AWSMarketplaceSubscription
+
+	sessionsLimit: Int64!
+	errorsLimit: Int64!
+	logsLimit: Int64!
+	tracesLimit: Int64!
+	metricsLimit: Int64!
+
+	sessionsRate: Float!
+	errorsRate: Float!
+	logsRate: Float!
+	tracesRate: Float!
+	metricsRate: Float!
+}
+
+type AWSMarketplaceSubscription {
+	customer_identifier: String!
+	customer_aws_account_id: String!
+	product_code: String!
 }
 
 enum PlanType {
@@ -166,12 +227,29 @@ enum PlanType {
 	Startup
 	Enterprise
 	UsageBased
+	Graduated
+	Business
 }
 
 enum ProductType {
 	Sessions
 	Errors
 	Logs
+	Traces
+	Metrics
+	Events
+}
+
+enum SuggestionType {
+	None
+	Value
+	Key
+}
+
+enum IngestReason {
+	Sample
+	Rate
+	Filter
 }
 
 enum SubscriptionInterval {
@@ -180,11 +258,13 @@ enum SubscriptionInterval {
 }
 
 enum RetentionPeriod {
+	SevenDays
 	ThirtyDays
 	ThreeMonths
 	SixMonths
 	TwelveMonths
 	TwoYears
+	ThreeYears
 }
 
 enum OpenSearchCalendarInterval {
@@ -210,6 +290,54 @@ type LinearTeam {
 	team_id: String!
 	name: String!
 	key: String!
+}
+
+type JiraTeam {
+	team_id: String!
+	name: String!
+	key: String!
+}
+
+type JiraProjectIdentifier {
+	id: String!
+}
+
+type JiraIssueTypeScope {
+	type: String!
+	project: JiraProjectIdentifier
+}
+
+type AccessibleJiraResources {
+	id: String!
+	url: String!
+	name: String!
+	scopes: [String!]
+	avatarUrl: String!
+}
+
+type JiraIssueType {
+	self: String!
+	id: String!
+	description: String!
+	iconUrl: String!
+	name: String!
+	untranslatedName: String!
+	subtask: Boolean!
+	scope: JiraIssueTypeScope
+}
+
+type GitlabProject {
+	id: Int!
+	name: String!
+	nameWithNameSpace: String!
+}
+
+type JiraProject {
+	name: String!
+	key: String!
+	id: String!
+	self: String!
+	issueTypes: [JiraIssueType]
 }
 
 type GitHubRepo {
@@ -274,6 +402,42 @@ type HeightTask {
 	name: String!
 }
 
+type Sampling {
+	session_sampling_rate: Float!
+	error_sampling_rate: Float!
+	log_sampling_rate: Float!
+	trace_sampling_rate: Float!
+	metric_sampling_rate: Float!
+	session_minute_rate_limit: Int64
+	error_minute_rate_limit: Int64
+	log_minute_rate_limit: Int64
+	trace_minute_rate_limit: Int64
+	metric_minute_rate_limit: Int64
+	session_exclusion_query: String
+	error_exclusion_query: String
+	log_exclusion_query: String
+	trace_exclusion_query: String
+	metric_exclusion_query: String
+}
+
+input SamplingInput {
+	session_sampling_rate: Float
+	error_sampling_rate: Float
+	log_sampling_rate: Float
+	trace_sampling_rate: Float
+	metric_sampling_rate: Float
+	session_minute_rate_limit: Int64
+	error_minute_rate_limit: Int64
+	log_minute_rate_limit: Int64
+	trace_minute_rate_limit: Int64
+	metric_minute_rate_limit: Int64
+	session_exclusion_query: String
+	error_exclusion_query: String
+	log_exclusion_query: String
+	trace_exclusion_query: String
+	metric_exclusion_query: String
+}
+
 type SocialLink {
 	type: SocialType!
 	link: String
@@ -291,12 +455,16 @@ enum IntegrationType {
 	Slack
 	Linear
 	Zapier
-	Front
 	Vercel
 	Discord
 	ClickUp
 	Height
 	GitHub
+	Jira
+	MicrosoftTeams
+	GitLab
+	Heroku
+	Cloudflare
 }
 
 enum ErrorState {
@@ -345,11 +513,19 @@ enum LogLevel {
 	warn
 	error
 	fatal
+	panic
 }
 
-enum LogDirection {
+enum SortDirection {
 	ASC
 	DESC
+}
+
+enum SavedSegmentEntityType {
+	Log
+	Trace
+	Error
+	Session
 }
 
 type Project {
@@ -359,14 +535,15 @@ type Project {
 	billing_email: String
 	secret: String
 	workspace_id: ID!
+	workspace: Workspace
 	excluded_users: StringArray
 	error_filters: StringArray
 	error_json_paths: StringArray
 	rage_click_window_seconds: Int
 	rage_click_radius_pixels: Int
 	rage_click_count: Int
-	backend_domains: StringArray
 	filter_chrome_extension: Boolean
+	platforms: StringArray
 }
 
 type AllProjectSettings {
@@ -374,7 +551,6 @@ type AllProjectSettings {
 	verbose_id: String!
 	name: String!
 	billing_email: String
-	secret: String
 	workspace_id: ID!
 	excluded_users: StringArray
 	error_filters: StringArray
@@ -382,16 +558,32 @@ type AllProjectSettings {
 	rage_click_window_seconds: Int
 	rage_click_radius_pixels: Int
 	rage_click_count: Int
-	backend_domains: StringArray
 	filter_chrome_extension: Boolean
 	filterSessionsWithoutError: Boolean!
 	autoResolveStaleErrorsDayInterval: Int!
+	sampling: Sampling!
 }
 
 type AllWorkspaceSettings {
 	workspace_id: ID!
 	ai_application: Boolean!
+	ai_query_builder: Boolean!
 	ai_insights: Boolean!
+	enable_billing_limits: Boolean!
+	enable_business_dashboards: Boolean!
+	enable_business_projects: Boolean!
+	enable_business_retention: Boolean!
+	enable_business_seats: Boolean!
+	enable_data_deletion: Boolean!
+	enable_grafana_dashboard: Boolean!
+	enable_ingest_filtering: Boolean!
+	enable_ingest_sampling: Boolean!
+	enable_network_traces: Boolean!
+	enable_project_level_access: Boolean!
+	enable_session_export: Boolean!
+	enable_unlisted_sharing: Boolean!
+	enable_jira_integration: Boolean!
+	enable_teams_integration: Boolean!
 }
 
 type Account {
@@ -440,7 +632,6 @@ type Workspace {
 	name: String!
 	slack_webhook_channel: String
 	slack_channels: String
-	secret: String
 	projects: [Project]!
 	plan_tier: String!
 	unlimited_members: Boolean!
@@ -452,24 +643,28 @@ type Workspace {
 	eligible_for_trial_extension: Boolean!
 	trial_extension_enabled: Boolean!
 	clearbit_enabled: Boolean!
-	retention_period: RetentionPeriod
-	errors_retention_period: RetentionPeriod
+	retention_period: RetentionPeriod!
+	errors_retention_period: RetentionPeriod!
+	logs_retention_period: RetentionPeriod!
+	traces_retention_period: RetentionPeriod!
+	metrics_retention_period: RetentionPeriod!
 	sessions_max_cents: Int
 	errors_max_cents: Int
 	logs_max_cents: Int
+	traces_max_cents: Int
+	metrics_max_cents: Int
+	cloudflare_proxy: String
 }
 
-type Segment {
+type SearchParams {
+	query: String
+}
+
+type SavedSegment {
 	id: ID!
 	name: String!
+	entity_type: SavedSegmentEntityType!
 	params: SearchParams!
-	project_id: ID!
-}
-
-type ErrorSegment {
-	id: ID!
-	name: String!
-	params: ErrorSearchParams!
 	project_id: ID!
 }
 
@@ -498,18 +693,14 @@ type ErrorObject {
 	browser: String
 	environment: String
 	session: Session
+	serviceVersion: String
+	serviceName: String
 }
 
 type ErrorInstance {
 	error_object: ErrorObject!
 	next_id: ID
 	previous_id: ID
-}
-
-type ErrorField {
-	project_id: Int
-	name: String!
-	value: String!
 }
 
 type ErrorGroup {
@@ -524,7 +715,6 @@ type ErrorGroup {
 	metadata_log: [ErrorMetadata]!
 	mapped_stack_trace: String
 	stack_trace: String
-	fields: [ErrorField]
 	state: ErrorState!
 	snoozed_until: Timestamp
 	environments: String
@@ -534,6 +724,8 @@ type ErrorGroup {
 	first_occurrence: Timestamp
 	last_occurrence: Timestamp
 	viewed: Boolean
+	serviceName: String
+	error_tag: ErrorTag
 }
 
 type ErrorMetadata {
@@ -552,6 +744,33 @@ type ErrorMetadata {
 	payload: String
 }
 
+type ErrorTag {
+	id: ID!
+	created_at: Timestamp!
+	title: String
+	description: String
+}
+
+type MatchedErrorTag {
+	id: ID!
+	title: String!
+	description: String!
+	score: Float!
+}
+
+type MatchedErrorObject {
+	id: ID!
+	event: [String]!
+	type: String!
+	stack_trace: String!
+	score: Float!
+}
+
+enum EnhancementSource {
+	github
+	sourcemap
+}
+
 type ErrorTrace {
 	fileName: String
 	lineNumber: Int
@@ -562,6 +781,9 @@ type ErrorTrace {
 	lineContent: String
 	linesBefore: String
 	linesAfter: String
+	externalLink: String
+	enhancementSource: EnhancementSource
+	enhancementVersion: String
 }
 
 type SourceMappingError {
@@ -600,6 +822,7 @@ interface Connection {
 }
 
 type Log {
+	projectID: Int!
 	timestamp: Timestamp!
 	level: LogLevel!
 	message: String!
@@ -609,6 +832,8 @@ type Log {
 	secureSessionID: String
 	source: String
 	serviceName: String
+	serviceVersion: String
+	environment: String
 }
 
 type LogEdge implements Edge {
@@ -621,11 +846,121 @@ type LogConnection implements Connection {
 	pageInfo: PageInfo!
 }
 
+type Trace {
+	timestamp: Timestamp!
+	traceID: String!
+	spanID: String!
+	parentSpanID: String!
+	projectID: Int!
+	secureSessionID: String!
+	traceState: String!
+	spanName: String!
+	spanKind: String!
+	duration: Int!
+	startTime: Int!
+	serviceName: String!
+	serviceVersion: String!
+	environment: String!
+	hasErrors: Boolean!
+	traceAttributes: Map!
+	statusCode: String!
+	statusMessage: String!
+	events: [TraceEvent]
+	links: [TraceLink]
+}
+
+type TracePayload {
+	trace: [Trace!]!
+	errors: [TraceError!]!
+}
+
+type TraceError {
+	created_at: Timestamp!
+	id: ID!
+	trace_id: String
+	span_id: String
+	log_cursor: String
+	event: String!
+	type: String!
+	source: String!
+	error_group_secure_id: String!
+	timestamp: Timestamp!
+}
+
+type TraceEvent {
+	timestamp: Timestamp!
+	name: String!
+	attributes: Map!
+}
+
+type TraceLink {
+	traceID: String!
+	spanID: String!
+	traceState: String!
+	attributes: Map!
+}
+
+type TraceEdge implements Edge {
+	cursor: String!
+	node: Trace!
+}
+
+type TraceConnection implements Connection {
+	edges: [TraceEdge!]!
+	pageInfo: PageInfo!
+	sampled: Boolean!
+}
+
+enum MetricRowType {
+	empty
+	gauge
+	sum
+	histogram
+	exponentialHistogram
+	summary
+}
+
+type MetricRowExemplar {
+	timestamp: Timestamp!
+	traceID: String!
+	spanID: String!
+	attributes: Map!
+	secureSessionID: String!
+	value: Float!
+}
+
+type MetricRow {
+	projectID: Int!
+	timestamp: Timestamp!
+	serviceName: String!
+	metricName: String!
+	metricDescription: String!
+	metricUnit: String!
+	attributes: Map!
+	startTimestamp: Timestamp!
+	type: MetricRowType!
+	flags: UInt64!
+	value: Float!
+	exemplars: [MetricRowExemplar!]!
+	aggregationTemporality: Int!
+	isMonotonic: Boolean!
+}
+
+type MetricEdge implements Edge {
+	cursor: String!
+	node: MetricRow!
+}
+
+type MetricConnection implements Connection {
+	edges: [MetricEdge!]!
+	pageInfo: PageInfo!
+}
+
 type ErrorObjectNodeSession {
 	secureID: String!
-	appVersion: String
 	email: String
 	fingerprint: Int
+	excluded: Boolean!
 }
 
 type ErrorObjectNode {
@@ -634,16 +969,46 @@ type ErrorObjectNode {
 	event: String!
 	timestamp: Timestamp!
 	session: ErrorObjectNodeSession
+	serviceVersion: String!
+	serviceName: String!
 	errorGroupSecureID: String!
 }
 
-type ErrorObjectEdge implements Edge {
-	cursor: String!
-	node: ErrorObjectNode!
+enum ServiceStatus {
+	healthy
+	error
+	created
 }
 
-type ErrorObjectConnection implements Connection {
-	edges: [ErrorObjectEdge!]!
+type Service {
+	id: ID!
+	projectID: ID!
+	name: String!
+	status: ServiceStatus!
+	githubRepoPath: String
+	buildPrefix: String
+	githubPrefix: String
+	errorDetails: [String!]
+}
+
+type ServiceNode {
+	id: ID!
+	projectID: ID!
+	name: String!
+	status: ServiceStatus!
+	githubRepoPath: String
+	buildPrefix: String
+	githubPrefix: String
+	errorDetails: [String!]
+}
+
+type ServiceEdge implements Edge {
+	cursor: String!
+	node: ServiceNode!
+}
+
+type ServiceConnection implements Connection {
+	edges: [ServiceEdge]!
 	pageInfo: PageInfo!
 }
 
@@ -651,6 +1016,7 @@ enum ReservedLogKey {
 	"""
 	Keep this in alpha order
 	"""
+	environment
 	level
 	message
 	secure_session_id
@@ -658,6 +1024,156 @@ enum ReservedLogKey {
 	trace_id
 	source
 	service_name
+	service_version
+	timestamp
+}
+
+enum ReservedTraceKey {
+	environment
+	has_errors
+	level
+	message
+	metric_name
+	metric_value
+	secure_session_id
+	span_id
+	trace_id
+	parent_span_id
+	trace_state
+	span_name
+	span_kind
+	duration
+	service_name
+	service_version
+	timestamp
+	highlight_type
+}
+
+enum ReservedMetricKey {
+	count
+	max
+	metric_description
+	metric_name
+	metric_unit
+	min
+	retention_days
+	secure_session_id
+	service_name
+	service_version
+	span_id
+	start_timestamp
+	sum
+	timestamp
+	trace_id
+	type
+	value
+}
+
+enum ReservedErrorObjectKey {
+	browser
+	client_id
+	environment
+	has_session
+	os_name
+	secure_session_id
+	service_name
+	service_version
+	timestamp
+	trace_id
+	visited_url
+}
+
+enum ReservedErrorGroupKey {
+	event
+	secure_id
+	status
+	tag
+	type
+}
+
+enum ReservedErrorsJoinedKey {
+	"""
+	ReservedErrorObjectKey
+	"""
+	id
+	browser
+	client_id
+	environment
+	has_session
+	os_name
+	secure_session_id
+	service_name
+	service_version
+	timestamp
+	trace_id
+	visited_url
+	"""
+	ReservedErrorGroupKey
+	"""
+	event
+	secure_id
+	status
+	tag
+	type
+}
+
+enum ReservedSessionKey {
+	active_length
+	browser_name
+	browser_version
+	city
+	completed
+	country
+	environment
+	excluded
+	first_time
+	has_comments
+	has_errors
+	has_rage_clicks
+	identified
+	identifier
+	ip
+	length
+	normalness
+	os_name
+	os_version
+	pages_visited
+	sample
+	secure_id
+	service_version
+	state
+	timestamp
+	updated_at
+	viewed_by_anyone
+	viewed_by_me
+	within_billing_quota
+
+	# deprecated but kept in for backwards compatibility of search
+	loc_state
+	processed
+	viewed
+}
+
+enum ReservedEventKey {
+	browser_name
+	browser_version
+	city
+	country
+	environment
+	event
+	first_session
+	identified
+	identifier
+	ip
+	os_name
+	os_version
+	secure_session_id
+	service_version
+	session_active_length
+	session_length
+	session_pages_visited
+	state
+	timestamp
 }
 
 enum LogSource {
@@ -665,7 +1181,10 @@ enum LogSource {
 	backend
 }
 
-enum LogKeyType {
+enum KeyType {
+	Boolean
+	Creatable
+	Numeric
 	String
 }
 
@@ -682,11 +1201,70 @@ type LogsHistogramBucket {
 type LogsHistogram {
 	buckets: [LogsHistogramBucket!]!
 	totalCount: UInt64!
+	objectCount: UInt64!
+	sampleFactor: Float!
 }
 
-type LogKey {
+enum MetricAggregator {
+	Count
+	CountDistinct
+	CountDistinctKey
+	Min
+	Avg
+	P50
+	P90
+	P95
+	P99
+	Max
+	Sum
+	None
+}
+
+type MetricExpression {
+	aggregator: MetricAggregator!
+	column: String!
+}
+
+input MetricExpressionInput {
+	aggregator: MetricAggregator!
+	column: String!
+}
+
+enum MetricBucketBy {
+	None
+	Timestamp
+	Histogram
+}
+
+type MetricBucket {
+	bucket_id: UInt64!
+	bucket_min: Float
+	bucket_max: Float
+	bucket_value: Float
+	group: [String!]!
+	column: String!
+	metric_type: MetricAggregator!
+	metric_value: Float
+	yhat_lower: Float
+	yhat_upper: Float
+}
+
+type MetricsBuckets {
+	buckets: [MetricBucket!]!
+	bucket_count: UInt64!
+	sample_factor: Float!
+}
+
+type LogLine {
+	timestamp: Timestamp!
+	body: String!
+	severity: LogLevel
+	labels: String!
+}
+
+type QueryKey {
 	name: String!
-	type: LogKeyType!
+	type: KeyType!
 }
 
 type ReferrerTablePayload {
@@ -715,48 +1293,14 @@ type UserFingerprintCount {
 	count: Int64!
 }
 
-# NOTE: for SearchParams, if you make a change and want it to be reflected in both Segments and the default search UI,
-# edit both Foo and FooInput
-input SearchParamsInput {
-	user_properties: [UserPropertyInput!]
-	excluded_properties: [UserPropertyInput!]
-	track_properties: [UserPropertyInput!]
-	excluded_track_properties: [UserPropertyInput!]
-	environments: [String]
-	app_versions: [String]
-	date_range: DateRangeInput
-	length_range: LengthRangeInput
-	os: String
-	browser: String
-	device_id: String
-	visited_url: String
-	referrer: String
-	identified: Boolean
-	hide_viewed: Boolean
-	first_time: Boolean
-	show_live_sessions: Boolean
-	query: String
-}
-
 input DashboardParamsInput {
-	date_range: DateRangeInput
+	date_range: DateRangeRequiredInput!
 	resolution_minutes: Int
 	timezone: String
 	units: String
-	aggregator: MetricAggregator
+	aggregator: MetricAggregator!
 	filters: [MetricTagFilterInput!]
 	groups: [String!]
-}
-
-input HistogramParamsInput {
-	date_range: DateRangeInput
-	buckets: Int
-	min_value: Float
-	min_percentile: Float
-	max_value: Float
-	max_percentile: Float
-	units: String
-	filters: [MetricTagFilterInput!]
 }
 
 input ErrorGroupFrequenciesParamsInput {
@@ -764,9 +1308,25 @@ input ErrorGroupFrequenciesParamsInput {
 	resolution_minutes: Int!
 }
 
-input LogsParamsInput {
+input SortInput {
+	column: String!
+	direction: SortDirection!
+}
+
+type SortOutput {
+	column: String!
+	direction: SortDirection!
+}
+
+input QueryInput {
 	query: String!
 	date_range: DateRangeRequiredInput!
+	sort: SortInput
+}
+
+type QueryOutput {
+	query: String!
+	date_range: DateRangeRequiredOutput!
 }
 
 enum MetricTagFilterOp {
@@ -797,6 +1357,13 @@ input DateHistogramOptions {
 	bounds: DateRangeInput!
 }
 
+# Deprecated: switch to using QueryInput format for searches
+input ClickhouseQuery {
+	isAnd: Boolean!
+	rules: [[String!]!]!
+	dateRange: DateRangeRequiredInput!
+}
+
 enum NetworkRequestAttribute {
 	method
 	initiator_type
@@ -805,34 +1372,16 @@ enum NetworkRequestAttribute {
 	response_size
 	status
 	latency
+	connect_latency
+	dns_latency
+	redirect_latency
 	request_id
 	graphql_operation
 }
 
 input NetworkHistogramParamsInput {
-	lookback_days: Int
+	lookback_days: Float!
 	attribute: NetworkRequestAttribute
-}
-
-type SearchParams {
-	user_properties: [UserProperty]
-	excluded_properties: [UserProperty]
-	track_properties: [UserProperty]
-	excluded_track_properties: [UserProperty]
-	environments: [String]
-	app_versions: [String]
-	date_range: DateRange
-	length_range: LengthRange
-	os: String
-	browser: String
-	visited_url: String
-	device_id: String
-	referrer: String
-	identified: Boolean
-	hide_viewed: Boolean
-	first_time: Boolean
-	show_live_sessions: Boolean
-	query: String
 }
 
 input AdminAboutYouDetails {
@@ -840,6 +1389,9 @@ input AdminAboutYouDetails {
 	last_name: String!
 	user_defined_role: String!
 	user_defined_persona: String!
+	user_defined_team_size: String!
+	heard_about: String!
+	phone_home_contact_allowed: Boolean!
 	referral: String!
 	phone: String
 }
@@ -849,23 +1401,15 @@ input AdminAndWorkspaceDetails {
 	first_name: String!
 	last_name: String!
 	user_defined_role: String!
+	user_defined_team_size: String!
+	heard_about: String!
+	phone_home_contact_allowed: Boolean!
 	referral: String!
 
 	# Workspace
 	workspace_name: String!
 	allowed_auto_join_email_origins: String
 	promo_code: String
-}
-
-input ErrorSearchParamsInput {
-	date_range: DateRangeInput
-	os: String
-	browser: String
-	visited_url: String
-	state: ErrorState
-	event: String
-	type: String
-	query: String
 }
 
 input SessionAlertInput {
@@ -875,10 +1419,12 @@ input SessionAlertInput {
 	threshold_window: Int!
 	slack_channels: [SanitizedSlackChannelInput!]!
 	discord_channels: [DiscordChannelInput!]!
+	microsoft_teams_channels: [MicrosoftTeamsChannelInput!]!
 	webhook_destinations: [WebhookDestinationInput!]!
 	emails: [String!]!
 	environments: [String!]!
 	disabled: Boolean!
+	default: Boolean
 	type: SessionAlertType!
 	user_properties: [UserPropertyInput!]!
 	exclude_rules: [String!]!
@@ -893,21 +1439,12 @@ input LogAlertInput {
 	threshold_window: Int!
 	slack_channels: [SanitizedSlackChannelInput!]!
 	discord_channels: [DiscordChannelInput!]!
+	microsoft_teams_channels: [MicrosoftTeamsChannelInput!]!
 	webhook_destinations: [WebhookDestinationInput!]!
 	emails: [String!]!
-	environments: [String!]!
 	disabled: Boolean!
+	default: Boolean
 	query: String!
-}
-
-type ErrorSearchParams {
-	date_range: DateRange
-	os: String
-	browser: String
-	visited_url: String
-	state: ErrorState
-	event: String
-	query: String
 }
 
 type DateRange {
@@ -923,6 +1460,11 @@ input DateRangeInput {
 input DateRangeRequiredInput {
 	start_date: Timestamp!
 	end_date: Timestamp!
+}
+
+type DateRangeRequiredOutput {
+	start_date: Timestamp
+	end_date: Timestamp
 }
 
 type LengthRange {
@@ -947,6 +1489,13 @@ input UserPropertyInput {
 	value: String!
 }
 
+input PredictionSettings {
+	changepointPriorScale: Float!
+	intervalWidth: Float!
+	thresholdCondition: ThresholdCondition!
+	intervalSeconds: Int!
+}
+
 type User {
 	id: ID!
 }
@@ -962,13 +1511,17 @@ type Admin {
 	email_verified: Boolean
 	referral: String
 	user_defined_role: String
+	user_defined_team_size: String
+	heard_about: String
 	about_you_details_filled: Boolean
 	user_defined_persona: String
 }
 
 type WorkspaceAdminRole {
+	workspaceId: ID!
 	admin: Admin!
 	role: String!
+	projectIds: [ID!]!
 }
 
 # A subset of Admin. This type will contain fields that are allowed to be exposed to other users.
@@ -990,6 +1543,8 @@ type SessionsHistogram {
 	sessions_without_errors: [Int64!]!
 	sessions_with_errors: [Int64!]!
 	total_sessions: [Int64!]!
+	inactive_lengths: [Int64!]!
+	active_lengths: [Int64!]!
 }
 
 type ErrorsHistogram {
@@ -1000,10 +1555,17 @@ type ErrorsHistogram {
 type SessionResults {
 	sessions: [Session!]!
 	totalCount: Int64!
+	totalLength: Int64!
+	totalActiveLength: Int64!
 }
 
 type ErrorResults {
 	error_groups: [ErrorGroup!]!
+	totalCount: Int64!
+}
+
+type ErrorObjectResults {
+	error_objects: [ErrorObjectNode!]!
 	totalCount: Int64!
 }
 
@@ -1042,6 +1604,7 @@ type SessionComment {
 
 type SessionInsight {
 	id: ID!
+	session_id: Int!
 	insight: String!
 }
 
@@ -1131,6 +1694,86 @@ type Dashboard {
 	last_admin_to_edit_id: ID!
 }
 
+enum AlertState {
+	Normal
+	Pending
+	Alerting
+	AlertingSilently
+	NoData
+	Error
+}
+
+enum ThresholdType {
+	Constant
+	Anomaly
+}
+
+enum ThresholdCondition {
+	Above
+	Below
+	Outside
+}
+
+enum AlertDestinationType {
+	Slack
+	Discord
+	MicrosoftTeams
+	Webhook
+	Email
+}
+
+type AlertDestination {
+	id: ID!
+	alert_id: ID!
+	destination_type: AlertDestinationType!
+	type_id: String!
+	type_name: String!
+}
+
+input AlertDestinationInput {
+	destination_type: AlertDestinationType!
+	type_id: String!
+	type_name: String!
+}
+
+type Alert {
+	id: ID!
+	project_id: ID!
+	updated_at: Timestamp!
+	metric_id: String!
+	name: String!
+	product_type: ProductType!
+	function_type: MetricAggregator!
+	function_column: String
+	query: String
+	group_by_key: String
+	disabled: Boolean!
+	last_admin_to_edit_id: ID
+	destinations: [AlertDestination]!
+
+	# threshold alerts
+	threshold_value: Float
+	threshold_window: Int
+	threshold_cooldown: Int
+	threshold_type: ThresholdType
+	threshold_condition: ThresholdCondition
+	sql: String
+}
+
+type AlertStateChange {
+	id: ID!
+	timestamp: Timestamp!
+	projectID: ID!
+	alertID: ID!
+	state: AlertState!
+	groupByKey: String!
+}
+
+type AlertStateChangeResults {
+	alertStateChanges: [AlertStateChange]!
+	totalCount: Int64!
+}
+
 type SanitizedSlackChannel {
 	webhook_channel: String
 	webhook_channel_id: String
@@ -1151,6 +1794,22 @@ input DiscordChannelInput {
 	id: String!
 }
 
+type MicrosoftTeamsChannel {
+	id: String!
+	name: String!
+}
+
+type IssuesSearchResult {
+	id: String!
+	title: String!
+	issue_url: String!
+}
+
+input MicrosoftTeamsChannelInput {
+	name: String!
+	id: String!
+}
+
 type WebhookDestination {
 	url: String!
 	authorization: String
@@ -1167,9 +1826,10 @@ type ErrorAlert {
 	Name: String
 	ChannelsToNotify: [SanitizedSlackChannel]!
 	DiscordChannelsToNotify: [DiscordChannel!]!
+	MicrosoftTeamsChannelsToNotify: [MicrosoftTeamsChannel!]!
 	WebhookDestinations: [WebhookDestination!]!
 	EmailsToNotify: [String]!
-	ExcludedEnvironments: [String]!
+	Query: String!
 	CountThreshold: Int!
 	ThresholdWindow: Int
 	LastAdminToEditID: ID
@@ -1178,6 +1838,7 @@ type ErrorAlert {
 	Frequency: Int!
 	DailyFrequency: [Int64]!
 	disabled: Boolean!
+	default: Boolean!
 }
 
 type TrackProperty {
@@ -1198,6 +1859,8 @@ type SessionAlert {
 	Name: String
 	ChannelsToNotify: [SanitizedSlackChannel]!
 	DiscordChannelsToNotify: [DiscordChannel!]!
+	MicrosoftTeamsChannelsToNotify: [MicrosoftTeamsChannel!]!
+	WebhookDestinations: [WebhookDestination!]!
 	EmailsToNotify: [String]!
 	ExcludedEnvironments: [String]!
 	CountThreshold: Int!
@@ -1209,6 +1872,7 @@ type SessionAlert {
 	ExcludeRules: [String]!
 	DailyFrequency: [Int64]!
 	disabled: Boolean!
+	default: Boolean!
 }
 
 type LogAlert {
@@ -1217,9 +1881,9 @@ type LogAlert {
 	Name: String!
 	ChannelsToNotify: [SanitizedSlackChannel!]!
 	DiscordChannelsToNotify: [DiscordChannel!]!
+	MicrosoftTeamsChannelsToNotify: [MicrosoftTeamsChannel!]!
 	WebhookDestinations: [WebhookDestination!]!
 	EmailsToNotify: [String!]!
-	ExcludedEnvironments: [String!]!
 	CountThreshold: Int!
 	ThresholdWindow: Int!
 	LastAdminToEditID: ID
@@ -1228,6 +1892,7 @@ type LogAlert {
 	disabled: Boolean!
 	query: String!
 	BelowThreshold: Boolean!
+	default: Boolean!
 }
 
 type WorkspaceInviteLink {
@@ -1246,6 +1911,7 @@ type WorkspaceForInviteLink {
 	workspace_id: ID!
 	workspace_name: String!
 	existing_account: Boolean!
+	project_id: ID!
 }
 
 type SessionPayload {
@@ -1256,15 +1922,10 @@ type SessionPayload {
 	last_user_interaction_time: Timestamp!
 }
 
-type Metric {
-	name: String!
-	value: Float!
-}
-
 type DashboardPayload {
 	date: String!
 	value: Float!
-	aggregator: MetricAggregator
+	aggregator: MetricAggregator!
 	group: String
 }
 
@@ -1273,12 +1934,6 @@ type HistogramBucket {
 	range_start: Float!
 	range_end: Float!
 	count: Int!
-}
-
-type HistogramPayload {
-	buckets: [HistogramBucket!]!
-	min: Float!
-	max: Float!
 }
 
 type CategoryHistogramBucket {
@@ -1300,18 +1955,6 @@ enum DashboardChartType {
 	Timeline
 	TimelineBar
 	Histogram
-}
-
-enum MetricAggregator {
-	Avg
-	P50
-	P75
-	P90
-	P95
-	P99
-	Max
-	Count
-	Sum
 }
 
 input DashboardMetricConfigInput {
@@ -1441,8 +2084,19 @@ type OAuthClient {
 }
 
 type SystemConfiguration {
-	maintenance_start: Timestamp!
-	maintenance_end: Timestamp!
+	maintenance_start: Timestamp
+	maintenance_end: Timestamp
+}
+
+type SessionExportWithSession {
+	created_at: Timestamp!
+	type: String!
+	url: String!
+	error: String!
+	# session details
+	secure_id: String!
+	identifier: String!
+	active_length: Int
 }
 
 enum EmailOptOutCategory {
@@ -1450,6 +2104,98 @@ enum EmailOptOutCategory {
 	Digests
 	Billing
 	SessionDigests
+}
+
+type FunnelStep {
+	title: String!
+	query: String!
+}
+
+type Graph {
+	id: ID!
+	type: String!
+	title: String!
+	description: String!
+	productType: ProductType!
+	query: String!
+	groupByKeys: StringArray
+	bucketByKey: String
+	bucketCount: Int
+	bucketInterval: Int
+	limit: Int
+	limitFunctionType: MetricAggregator
+	limitMetric: String
+	funnelSteps: [FunnelStep!]
+	display: String
+	nullHandling: String
+	expressions: [MetricExpression!]!
+	sql: String
+}
+
+type Variable {
+	key: String!
+	defaultValues: [String!]!
+	suggestionType: SuggestionType!
+	field: String
+}
+
+type Visualization {
+	id: ID!
+	updatedAt: Timestamp!
+	projectId: ID!
+	name: String!
+	updatedByAdmin: SanitizedAdmin
+	graphs: [Graph!]!
+	timePreset: String
+	variables: [Variable!]!
+}
+
+type VisualizationsResponse {
+	count: Int!
+	results: [Visualization!]!
+}
+
+input FunnelStepInput {
+	title: String!
+	query: String!
+}
+
+input GraphInput {
+	id: ID
+	visualizationId: ID!
+	afterGraphId: ID
+	type: String!
+	title: String!
+	productType: ProductType!
+	query: String!
+	groupByKeys: StringArray
+	bucketByKey: String
+	bucketCount: Int
+	bucketInterval: Int
+	limit: Int
+	limitFunctionType: MetricAggregator
+	limitMetric: String
+	funnelSteps: [FunnelStepInput!]
+	display: String
+	nullHandling: String
+	expressions: [MetricExpressionInput!]!
+	sql: String
+}
+
+input VariableInput {
+	key: String!
+	defaultValues: [String!]!
+	suggestionType: SuggestionType!
+	field: String
+}
+
+input VisualizationInput {
+	id: ID
+	projectId: ID!
+	name: String
+	graphIds: [ID!]
+	timePreset: String
+	variables: [VariableInput!]
 }
 
 scalar Upload
@@ -1467,36 +2213,51 @@ type Query {
 	rage_clicks(session_secure_id: String!): [RageClickEvent!]!
 	rageClicksForProject(
 		project_id: ID!
-		lookBackPeriod: Int!
+		lookback_days: Float!
 	): [RageClickEventForProject!]!
-	error_groups_opensearch(
+	# deprecated - use error_groups
+	error_groups_clickhouse(
 		project_id: ID!
 		count: Int!
-		query: String!
+		query: ClickhouseQuery!
 		page: Int
 	): ErrorResults!
-	errors_histogram(
+	error_groups(
 		project_id: ID!
-		query: String!
+		count: Int!
+		params: QueryInput!
+		page: Int
+	): ErrorResults!
+	# deprecated - use errors_histogram
+	errors_histogram_clickhouse(
+		project_id: ID!
+		query: ClickhouseQuery!
 		histogram_options: DateHistogramOptions!
 	): ErrorsHistogram!
-	error_group(secure_id: String!): ErrorGroup
+	errors_histogram(
+		project_id: ID!
+		params: QueryInput!
+		histogram_options: DateHistogramOptions!
+	): ErrorsHistogram!
+	error_group(secure_id: String!, use_clickhouse: Boolean): ErrorGroup
 	error_object(id: ID!): ErrorObject
 	error_objects(
-		error_group_secure_id: String!
-		after: String
-		before: String
-		query: String!
-	): ErrorObjectConnection!
+		project_id: String
+		error_group_secure_id: String
+		count: Int!
+		params: QueryInput!
+		page: Int
+	): ErrorObjectResults!
 	error_object_for_log(log_cursor: String!): ErrorObject
 	error_instance(
 		error_group_secure_id: String!
 		error_object_id: ID
+		params: QueryInput
 	): ErrorInstance
 	enhanced_user_details(session_secure_id: String!): EnhancedUserDetailsResult
 	errors(session_secure_id: String!): [ErrorObject]
 	resources(session_secure_id: String!): [Any]
-	web_vitals(session_secure_id: String!): [Metric!]!
+	web_vitals(session_secure_id: String!): MetricsBuckets!
 	session_comments(session_secure_id: String!): [SessionComment]!
 	session_comment_tags_for_project(project_id: ID!): [SessionCommentTag!]!
 	session_comments_for_admin: [SessionComment]!
@@ -1508,11 +2269,11 @@ type Query {
 	error_comments_for_project(project_id: ID!): [ErrorComment]!
 	workspace_admins(workspace_id: ID!): [WorkspaceAdminRole!]!
 	workspace_admins_by_project_id(project_id: ID!): [WorkspaceAdminRole!]!
-	isIntegrated(project_id: ID!): Boolean
-	isBackendIntegrated(project_id: ID!): Boolean
 	clientIntegration(project_id: ID!): IntegrationStatus!
 	serverIntegration(project_id: ID!): IntegrationStatus!
 	logsIntegration(project_id: ID!): IntegrationStatus!
+	tracesIntegration(project_id: ID!): IntegrationStatus!
+	metricsIntegration(project_id: ID!): IntegrationStatus!
 	unprocessedSessionsCount(project_id: ID!): Int64
 	liveUsersCount(project_id: ID!): Int64
 	adminHasCreatedComment(admin_id: ID!): Boolean
@@ -1530,76 +2291,78 @@ type Query {
 		error_group_secure_id: String!
 		date_offset: Int!
 	): [Int64!]!
-	errorGroupFrequencies(
-		project_id: ID!
-		error_group_secure_ids: [String!]
-		params: ErrorGroupFrequenciesParamsInput!
-		metric: String
-	): [ErrorDistributionItem]!
-	errorGroupTags(error_group_secure_id: String!): [ErrorGroupTagAggregation!]!
+	errorGroupTags(
+		error_group_secure_id: String!
+		use_clickhouse: Boolean
+	): [ErrorGroupTagAggregation!]!
 
-	referrers(project_id: ID!, lookBackPeriod: Int!): [ReferrerTablePayload]!
-	newUsersCount(project_id: ID!, lookBackPeriod: Int!): NewUsersCount
-	topUsers(project_id: ID!, lookBackPeriod: Int!): [TopUsersPayload]!
+	referrers(project_id: ID!, lookback_days: Float!): [ReferrerTablePayload]!
+	newUsersCount(project_id: ID!, lookback_days: Float!): NewUsersCount
+	topUsers(project_id: ID!, lookback_days: Float!): [TopUsersPayload]!
 	averageSessionLength(
 		project_id: ID!
-		lookBackPeriod: Int!
+		lookback_days: Float!
 	): AverageSessionLength
 	userFingerprintCount(
 		project_id: ID!
-		lookBackPeriod: Int!
+		lookback_days: Float!
 	): UserFingerprintCount
-	sessions_opensearch(
+	# deprecated - use sessions
+	sessions_clickhouse(
 		project_id: ID!
 		count: Int!
-		query: String!
+		query: ClickhouseQuery!
 		sort_field: String
 		sort_desc: Boolean!
 		page: Int
 	): SessionResults!
-	sessions_histogram(
+	sessions(
 		project_id: ID!
-		query: String!
+		count: Int!
+		params: QueryInput!
+		sort_field: String
+		sort_desc: Boolean!
+		page: Int
+	): SessionResults!
+	# deprecated - use sessions_histogram
+	sessions_histogram_clickhouse(
+		project_id: ID!
+		query: ClickhouseQuery!
 		histogram_options: DateHistogramOptions!
 	): SessionsHistogram!
-	field_types(
+	sessions_histogram(
 		project_id: ID!
-		start_date: Timestamp
-		end_date: Timestamp
-	): [Field!]!
-	fields_opensearch(
+		params: QueryInput!
+		histogram_options: DateHistogramOptions!
+	): SessionsHistogram!
+	session_users_report(
 		project_id: ID!
-		count: Int!
-		field_type: String!
-		field_name: String!
-		query: String!
-	): [String!]!
-	error_fields_opensearch(
-		project_id: ID!
-		count: Int!
-		field_type: String!
-		field_name: String!
-		query: String!
-	): [String!]!
-	quickFields_opensearch(
-		project_id: ID!
-		count: Int!
-		query: String!
-	): [Field]!
+		params: QueryInput!
+	): [SessionsReportRow!]!
 	billingDetailsForProject(project_id: ID!): BillingDetails
 	billingDetails(workspace_id: ID!): BillingDetails!
+	usageHistory(
+		workspace_id: ID!
+		product_type: ProductType!
+		date_range: DateRangeRequiredInput
+	): UsageHistory!
 	# gets all the projects of a user
 	field_suggestion(project_id: ID!, name: String!, query: String!): [Field]
 	property_suggestion(project_id: ID!, query: String!, type: String!): [Field]
-	error_field_suggestion(
-		project_id: ID!
-		name: String!
-		query: String!
-	): [ErrorField]
 	projects: [Project]
 	workspaces: [Workspace]
 	workspaces_count: Int64!
 	joinable_workspaces: [Workspace]
+	alerts(project_id: ID!): [Alert]!
+	alert(id: ID!): Alert!
+	alerting_alert_state_changes(
+		alert_id: ID!
+		start_date: Timestamp!
+		end_date: Timestamp!
+		page: Int
+		count: Int
+	): AlertStateChangeResults!
+	last_alert_state_changes(alert_id: ID!): [AlertStateChange]!
 	error_alerts(project_id: ID!): [ErrorAlert]!
 	new_user_alerts(project_id: ID!): [SessionAlert]
 	track_properties_alerts(project_id: ID!): [SessionAlert]!
@@ -1610,11 +2373,18 @@ type Query {
 	log_alert(id: ID!): LogAlert!
 	projectSuggestion(query: String!): [Project]!
 	environment_suggestion(project_id: ID!): [Field]
-	app_version_suggestion(project_id: ID!): [String]!
 	identifier_suggestion(project_id: ID!, query: String!): [String!]!
 	slack_channel_suggestion(project_id: ID!): [SanitizedSlackChannel!]!
+	microsoft_teams_channel_suggestions(
+		project_id: ID!
+	): [MicrosoftTeamsChannel!]!
 	discord_channel_suggestions(project_id: ID!): [DiscordChannel!]!
 	generate_zapier_access_token(project_id: ID!): String!
+	search_issues(
+		integration_type: IntegrationType!
+		project_id: ID!
+		query: String!
+	): [IssuesSearchResult!]!
 	is_integrated_with(
 		integration_type: IntegrationType!
 		project_id: ID!
@@ -1640,6 +2410,8 @@ type Query {
 		integration_type: IntegrationType
 	): [IntegrationProjectMapping!]!
 	linear_teams(project_id: ID!): [LinearTeam!]
+	jira_projects(workspace_id: ID!): [JiraProject!]
+	gitlab_projects(workspace_id: ID!): [GitlabProject!]
 	github_repos(workspace_id: ID!): [GitHubRepo!]
 	github_issue_labels(workspace_id: ID!, repository: String!): [String!]!
 	project(id: ID!): Project
@@ -1653,30 +2425,25 @@ type Query {
 	admin: Admin
 	admin_role(workspace_id: ID!): WorkspaceAdminRole
 	admin_role_by_project(project_id: ID!): WorkspaceAdminRole
-	segments(project_id: ID!): [Segment]
-	error_segments(project_id: ID!): [ErrorSegment]
+	saved_segments(
+		project_id: ID!
+		entity_type: SavedSegmentEntityType!
+	): [SavedSegment]
 	api_key_to_org_id(api_key: String!): ID
 	get_source_map_upload_urls(api_key: String!, paths: [String!]!): [String!]!
 	customer_portal_url(workspace_id: ID!): String!
 	subscription_details(workspace_id: ID!): SubscriptionDetails!
 	dashboard_definitions(project_id: ID!): [DashboardDefinition]!
-	suggested_metrics(project_id: ID!, prefix: String!): [String!]!
-	metric_tags(project_id: ID!, metric_name: String!): [String!]!
+	metric_tags(
+		project_id: ID!
+		metric_name: String!
+		query: String
+	): [String!]!
 	metric_tag_values(
 		project_id: ID!
 		metric_name: String!
 		tag_name: String!
 	): [String!]!
-	metrics_timeline(
-		project_id: ID!
-		metric_name: String!
-		params: DashboardParamsInput!
-	): [DashboardPayload]!
-	metrics_histogram(
-		project_id: ID!
-		metric_name: String!
-		params: HistogramParamsInput!
-	): HistogramPayload
 	network_histogram(
 		project_id: ID!
 		params: NetworkHistogramParamsInput!
@@ -1688,27 +2455,260 @@ type Query {
 	sourcemap_versions(project_id: ID!): [String!]!
 	oauth_client_metadata(client_id: String!): OAuthClient
 	email_opt_outs(token: String, admin_id: ID): [EmailOptOutCategory!]!
+	ai_query_suggestion(
+		time_zone: String!
+		project_id: ID!
+		product_type: ProductType!
+		query: String!
+	): QueryOutput!
 	logs(
 		project_id: ID!
-		params: LogsParamsInput!
+		params: QueryInput!
 		after: String
 		before: String
 		at: String
-		direction: LogDirection!
+		direction: SortDirection!
+		limit: Int
 	): LogConnection!
-	sessionLogs(project_id: ID!, params: LogsParamsInput!): [LogEdge!]!
-	logs_total_count(project_id: ID!, params: LogsParamsInput!): UInt64!
-	logs_histogram(project_id: ID!, params: LogsParamsInput!): LogsHistogram!
-	logs_keys(project_id: ID!, date_range: DateRangeRequiredInput!): [LogKey!]!
+	logs_histogram(project_id: ID!, params: QueryInput!): LogsHistogram!
+	# deprecated - use `metrics` instead
+	logs_metrics(
+		project_id: ID!
+		params: QueryInput!
+		sql: String
+		column: String # deprecated - use `expressions` instead
+		metric_types: [MetricAggregator!] # deprecated - use `expressions` instead
+		group_by: [String!]!
+		bucket_by: String!
+		bucket_count: Int
+		bucket_window: Int
+		limit: Int
+		limit_aggregator: MetricAggregator
+		limit_column: String
+		expressions: [MetricExpressionInput!]
+	): MetricsBuckets!
+	logs_keys(
+		project_id: ID!
+		date_range: DateRangeRequiredInput!
+		query: String
+		type: KeyType
+	): [QueryKey!]!
 	logs_key_values(
 		project_id: ID!
 		key_name: String!
 		date_range: DateRangeRequiredInput!
+		query: String
+		count: Int
 	): [String!]!
 	logs_error_objects(log_cursors: [String!]!): [ErrorObject!]!
+	existing_logs_traces(
+		project_id: ID!
+		trace_ids: [String!]!
+		date_range: DateRangeRequiredInput!
+	): [String!]!
 	error_resolution_suggestion(error_object_id: ID!): String!
 	session_insight(secure_id: String!): SessionInsight
+	session_exports(project_id: ID!): [SessionExportWithSession!]!
 	system_configuration: SystemConfiguration!
+
+	services(
+		project_id: ID!
+		after: String
+		before: String
+		query: String
+	): ServiceConnection
+	serviceByName(project_id: ID!, name: String!): Service
+	error_tags: [ErrorTag]
+	match_error_tag(query: String!): [MatchedErrorTag]
+	trace(
+		project_id: ID!
+		trace_id: String!
+		timestamp: Timestamp!
+		session_secure_id: String
+	): TracePayload
+	traces(
+		project_id: ID!
+		params: QueryInput!
+		after: String
+		before: String
+		at: String
+		direction: SortDirection!
+		limit: Int
+	): TraceConnection!
+	# deprecated - use `metrics` instead
+	traces_metrics(
+		project_id: ID!
+		params: QueryInput!
+		sql: String
+		column: String # deprecated - use `expressions` instead
+		metric_types: [MetricAggregator!] # deprecated - use `expressions` instead
+		group_by: [String!]!
+		bucket_by: String
+		bucket_count: Int
+		bucket_window: Int
+		limit: Int
+		limit_aggregator: MetricAggregator
+		limit_column: String
+		expressions: [MetricExpressionInput!]
+	): MetricsBuckets!
+	traces_keys(
+		project_id: ID!
+		date_range: DateRangeRequiredInput!
+		query: String
+		type: KeyType
+	): [QueryKey!]!
+	traces_key_values(
+		project_id: ID!
+		key_name: String!
+		date_range: DateRangeRequiredInput!
+		query: String
+		count: Int
+	): [String!]!
+	errors_keys(
+		project_id: ID!
+		date_range: DateRangeRequiredInput!
+		query: String
+		type: KeyType
+	): [QueryKey!]!
+	errors_key_values(
+		project_id: ID!
+		key_name: String!
+		date_range: DateRangeRequiredInput!
+		query: String
+		count: Int
+	): [String!]!
+	# deprecated - use `metrics` instead
+	errors_metrics(
+		project_id: ID!
+		params: QueryInput!
+		sql: String
+		column: String # deprecated - use `expressions` instead
+		metric_types: [MetricAggregator!] # deprecated - use `expressions` instead
+		group_by: [String!]!
+		bucket_by: String!
+		bucket_count: Int
+		bucket_window: Int
+		limit: Int
+		limit_aggregator: MetricAggregator
+		limit_column: String
+		expressions: [MetricExpressionInput!]
+	): MetricsBuckets!
+	sessions_keys(
+		project_id: ID!
+		date_range: DateRangeRequiredInput!
+		query: String
+		type: KeyType
+	): [QueryKey!]!
+	sessions_key_values(
+		project_id: ID!
+		key_name: String!
+		date_range: DateRangeRequiredInput!
+		query: String
+		count: Int
+	): [String!]!
+	# deprecated - use `metrics` instead
+	sessions_metrics(
+		project_id: ID!
+		params: QueryInput!
+		sql: String
+		column: String # deprecated - use `expressions` instead
+		metric_types: [MetricAggregator!] # deprecated - use `expressions` instead
+		group_by: [String!]!
+		bucket_by: String!
+		bucket_count: Int
+		bucket_window: Int
+		limit: Int
+		limit_aggregator: MetricAggregator
+		limit_column: String
+		expressions: [MetricExpressionInput!]
+	): MetricsBuckets!
+	events_keys(
+		project_id: ID!
+		date_range: DateRangeRequiredInput!
+		query: String
+		type: KeyType
+		event: String
+	): [QueryKey!]!
+	events_key_values(
+		project_id: ID!
+		key_name: String!
+		date_range: DateRangeRequiredInput!
+		query: String
+		count: Int
+		event: String
+	): [String!]!
+	# deprecated - use `metrics` instead
+	events_metrics(
+		project_id: ID!
+		params: QueryInput!
+		sql: String
+		column: String # deprecated - use `expressions` instead
+		metric_types: [MetricAggregator!] # deprecated - use `expressions` instead
+		group_by: [String!]!
+		bucket_by: String!
+		bucket_count: Int
+		bucket_window: Int
+		limit: Int
+		limit_aggregator: MetricAggregator
+		limit_column: String
+		expressions: [MetricExpressionInput!]
+	): MetricsBuckets!
+	event_sessions(
+		project_id: ID!
+		count: Int!
+		params: QueryInput!
+		sort_field: String
+		sort_desc: Boolean!
+		page: Int
+	): SessionResults!
+	metrics(
+		product_type: ProductType!
+		project_id: ID!
+		params: QueryInput!
+		column: String # deprecated - use `expressions` instead
+		metric_types: [MetricAggregator!] # deprecated - use `expressions` instead
+		sql: String
+		group_by: [String!]!
+		bucket_by: String!
+		bucket_count: Int
+		bucket_window: Int
+		limit: Int
+		limit_aggregator: MetricAggregator
+		limit_column: String
+		prediction_settings: PredictionSettings
+		expressions: [MetricExpressionInput!]
+	): MetricsBuckets!
+	keys(
+		product_type: ProductType
+		project_id: ID!
+		date_range: DateRangeRequiredInput!
+		query: String
+		type: KeyType
+		event: String
+	): [QueryKey!]!
+	key_values(
+		product_type: ProductType
+		project_id: ID!
+		key_name: String!
+		date_range: DateRangeRequiredInput!
+		query: String
+		count: Int
+		event: String
+	): [String!]!
+	visualization(id: ID!): Visualization!
+	visualizations(
+		project_id: ID!
+		input: String!
+		count: Int!
+		offset: Int!
+	): VisualizationsResponse!
+	graph(id: ID!): Graph!
+	graph_templates: [Graph!]!
+	log_lines(
+		product_type: ProductType!
+		project_id: ID!
+		params: QueryInput!
+	): [LogLine!]!
 }
 
 type Mutation {
@@ -1719,46 +2719,34 @@ type Mutation {
 	createAdmin: Admin!
 	createProject(name: String!, workspace_id: ID!): Project
 	createWorkspace(name: String!, promo_code: String): Workspace
-	editProject(
-		id: ID!
-		name: String
-		billing_email: String
-		excluded_users: StringArray
-		error_filters: StringArray
-		error_json_paths: StringArray
-		rage_click_window_seconds: Int
-		rage_click_radius_pixels: Int
-		rage_click_count: Int
-		backend_domains: StringArray
-		filter_chrome_extension: Boolean
-	): Project
+	editProject(id: ID!, name: String, billing_email: String): Project
 	editProjectSettings(
 		projectId: ID!
-		name: String
-		billing_email: String
 		excluded_users: StringArray
 		error_filters: StringArray
 		error_json_paths: StringArray
 		rage_click_window_seconds: Int
 		rage_click_radius_pixels: Int
 		rage_click_count: Int
-		backend_domains: StringArray
 		filter_chrome_extension: Boolean
 		filterSessionsWithoutError: Boolean
 		autoResolveStaleErrorsDayInterval: Int
+		sampling: SamplingInput
 	): AllProjectSettings
+	editProjectPlatforms(projectID: ID!, platforms: StringArray): Boolean!
 	editWorkspace(id: ID!, name: String): Workspace
 	editWorkspaceSettings(
 		workspace_id: ID!
 		ai_application: Boolean
 		ai_insights: Boolean
+		ai_query_builder: Boolean
 	): AllWorkspaceSettings
+	exportSession(session_secure_id: String!): Boolean!
 	markErrorGroupAsViewed(
 		error_secure_id: String!
 		viewed: Boolean
 	): ErrorGroup
 	markSessionAsViewed(secure_id: String!, viewed: Boolean): Session
-	markSessionAsStarred(secure_id: String!, starred: Boolean): Session
 	updateErrorGroupState(
 		secure_id: String!
 		state: ErrorState!
@@ -1768,8 +2756,8 @@ type Mutation {
 	sendAdminWorkspaceInvite(
 		workspace_id: ID!
 		email: String!
-		base_url: String!
 		role: String!
+		projectIds: [ID!]!
 	): String
 	addAdminToWorkspace(workspace_id: ID!, invite_id: String!): ID
 	deleteInviteLinkFromWorkspace(
@@ -1785,42 +2773,32 @@ type Mutation {
 		workspace_id: ID!
 		admin_id: ID!
 		new_role: String!
-	): Boolean!
-	deleteAdminFromProject(project_id: ID!, admin_id: ID!): ID
+	): WorkspaceAdminRole!
+	changeProjectMembership(
+		workspace_id: ID!
+		admin_id: ID!
+		project_ids: [ID!]!
+	): WorkspaceAdminRole!
 	deleteAdminFromWorkspace(workspace_id: ID!, admin_id: ID!): ID
-	createSegment(
-		project_id: ID!
-		name: String!
-		params: SearchParamsInput!
-	): Segment
 	emailSignup(email: String!): String!
-	editSegment(
+	createSavedSegment(
+		project_id: ID!
+		name: String!
+		entity_type: SavedSegmentEntityType!
+		query: String!
+	): SavedSegment
+	editSavedSegment(
 		id: ID!
 		project_id: ID!
-		params: SearchParamsInput!
 		name: String!
+		entity_type: SavedSegmentEntityType!
+		query: String!
 	): Boolean
-	deleteSegment(segment_id: ID!): Boolean
-	createErrorSegment(
-		project_id: ID!
-		name: String!
-		params: ErrorSearchParamsInput!
-	): ErrorSegment
-	editErrorSegment(
-		id: ID!
-		project_id: ID!
-		params: ErrorSearchParamsInput!
-		name: String!
-	): Boolean
-	deleteErrorSegment(segment_id: ID!): Boolean
+	deleteSavedSegment(segment_id: ID!): Boolean
 	# If this endpoint returns a checkout_id, we initiate a stripe checkout.
 	# Otherwise, we simply update the subscription.
-	createOrUpdateStripeSubscription(
-		workspace_id: ID!
-		plan_type: PlanType!
-		interval: SubscriptionInterval!
-		retention_period: RetentionPeriod!
-	): String
+	createOrUpdateStripeSubscription(workspace_id: ID!): String
+	handleAWSMarketplace(workspace_id: ID!, code: String!): Boolean
 	updateBillingDetails(workspace_id: ID!): Boolean
 	saveBillingPlan(
 		workspace_id: ID!
@@ -1830,6 +2808,10 @@ type Mutation {
 		errorsRetention: RetentionPeriod!
 		logsLimitCents: Int
 		logsRetention: RetentionPeriod!
+		tracesLimitCents: Int
+		tracesRetention: RetentionPeriod!
+		metricsLimitCents: Int
+		metricsRetention: RetentionPeriod!
 	): Boolean
 	createSessionComment(
 		project_id: ID!
@@ -1848,8 +2830,30 @@ type Mutation {
 		issue_title: String
 		issue_description: String
 		issue_team_id: String
+		issue_type_id: String
 		integrations: [IntegrationType]!
 		tags: [SessionCommentTagInput]!
+		additional_context: String
+	): SessionComment
+	createSessionCommentWithExistingIssue(
+		project_id: ID!
+		session_secure_id: String!
+		session_timestamp: Int!
+		text: String!
+		text_for_email: String!
+		x_coordinate: Float!
+		y_coordinate: Float!
+		tagged_admins: [SanitizedAdminInput]!
+		tagged_slack_users: [SanitizedSlackChannelInput]!
+		session_url: String!
+		time: Float!
+		author_name: String!
+		session_image: String
+		tags: [SessionCommentTagInput]!
+		integrations: [IntegrationType]!
+		issue_title: String
+		issue_url: String!
+		issue_id: String!
 		additional_context: String
 	): SessionComment
 	createIssueForSessionComment(
@@ -1862,6 +2866,19 @@ type Mutation {
 		issue_title: String
 		issue_description: String
 		issue_team_id: String
+		issue_type_id: String
+		integrations: [IntegrationType]!
+	): SessionComment
+	linkIssueForSessionComment(
+		project_id: ID!
+		session_url: String!
+		session_comment_id: Int!
+		author_name: String!
+		text_for_attachment: String!
+		time: Float!
+		issue_title: String
+		issue_url: String!
+		issue_id: String!
 		integrations: [IntegrationType]!
 	): SessionComment
 	deleteSessionComment(id: ID!): Boolean
@@ -1886,6 +2903,21 @@ type Mutation {
 		issue_title: String
 		issue_description: String
 		issue_team_id: String
+		issue_type_id: String
+		integrations: [IntegrationType]!
+	): ErrorComment
+	createErrorCommentForExistingIssue(
+		project_id: ID!
+		error_group_secure_id: String!
+		text: String!
+		text_for_email: String!
+		tagged_admins: [SanitizedAdminInput]!
+		tagged_slack_users: [SanitizedSlackChannelInput]!
+		error_url: String!
+		author_name: String!
+		issue_url: String!
+		issue_title: String!
+		issue_id: String!
 		integrations: [IntegrationType]!
 	): ErrorComment
 	removeErrorIssue(error_issue_id: ID!): Boolean
@@ -1899,6 +2931,19 @@ type Mutation {
 		issue_title: String
 		issue_description: String
 		issue_team_id: String
+		issue_type_id: String
+		integrations: [IntegrationType]!
+	): ErrorComment
+	linkIssueForErrorComment(
+		project_id: ID!
+		error_url: String!
+		error_comment_id: Int!
+		author_name: String!
+		text_for_attachment: String!
+		issue_title: String
+		issue_description: String
+		issue_url: String!
+		issue_id: String!
 		integrations: [IntegrationType]!
 	): ErrorComment
 	deleteErrorComment(id: ID!): Boolean
@@ -1959,19 +3004,46 @@ type Mutation {
 		disabled: Boolean
 		filters: [MetricTagFilterInput!]
 	): MetricMonitor
-	createErrorAlert(
+	createAlert(
 		project_id: ID!
 		name: String!
-		count_threshold: Int!
-		threshold_window: Int!
-		slack_channels: [SanitizedSlackChannelInput]!
-		discord_channels: [DiscordChannelInput!]!
-		webhook_destinations: [WebhookDestinationInput!]!
-		emails: [String]!
-		environments: [String]!
-		regex_groups: [String]!
-		frequency: Int!
-	): ErrorAlert
+		product_type: ProductType!
+		function_type: MetricAggregator!
+		function_column: String
+		query: String
+		group_by_key: String
+		default: Boolean
+		threshold_value: Float
+		threshold_window: Int
+		threshold_cooldown: Int
+		threshold_type: ThresholdType
+		threshold_condition: ThresholdCondition
+		destinations: [AlertDestinationInput!]!
+		sql: String
+	): Alert
+	updateAlert(
+		project_id: ID!
+		alert_id: ID!
+		name: String
+		product_type: ProductType
+		function_type: MetricAggregator
+		function_column: String
+		query: String
+		group_by_key: String
+		threshold_value: Float
+		threshold_window: Int
+		threshold_cooldown: Int
+		threshold_type: ThresholdType
+		threshold_condition: ThresholdCondition
+		destinations: [AlertDestinationInput!]
+		sql: String
+	): Alert
+	updateAlertDisabled(
+		project_id: ID!
+		alert_id: ID!
+		disabled: Boolean!
+	): Boolean!
+	deleteAlert(project_id: ID!, alert_id: ID!): Boolean!
 	updateErrorAlert(
 		project_id: ID!
 		name: String
@@ -1980,9 +3052,10 @@ type Mutation {
 		threshold_window: Int
 		slack_channels: [SanitizedSlackChannelInput]
 		discord_channels: [DiscordChannelInput!]!
+		microsoft_teams_channels: [MicrosoftTeamsChannelInput!]!
 		webhook_destinations: [WebhookDestinationInput!]!
 		emails: [String]
-		environments: [String]
+		query: String!
 		regex_groups: [String]
 		frequency: Int
 		disabled: Boolean
@@ -2006,10 +3079,8 @@ type Mutation {
 	): MetricMonitor
 
 	updateSessionAlert(id: ID!, input: SessionAlertInput!): SessionAlert
-	createSessionAlert(input: SessionAlertInput!): SessionAlert
 	deleteSessionAlert(project_id: ID!, session_alert_id: ID!): SessionAlert
 	updateLogAlert(id: ID!, input: LogAlertInput!): LogAlert
-	createLogAlert(input: LogAlertInput!): LogAlert
 	deleteLogAlert(project_id: ID!, id: ID!): LogAlert
 	updateLogAlertIsDisabled(
 		id: ID!
@@ -2049,9 +3120,10 @@ type Mutation {
 	deleteDashboard(id: ID!): Boolean!
 	deleteSessions(
 		project_id: ID!
-		query: String!
+		params: QueryInput!
 		sessionCount: Int!
 	): Boolean!
+	createCloudflareProxy(workspace_id: ID!, proxy_subdomain: String!): String!
 	updateVercelProjectMappings(
 		project_id: ID!
 		project_mappings: [VercelProjectMappingInput!]!
@@ -2073,6 +3145,28 @@ type Mutation {
 		is_opt_out: Boolean!
 		project_id: Int
 	): Boolean!
+	editServiceGithubSettings(
+		id: ID!
+		project_id: ID!
+		github_repo_path: String
+		build_prefix: String
+		github_prefix: String
+	): Service
+	createErrorTag(title: String!, description: String!): ErrorTag!
+	updateErrorTags: Boolean!
+	upsertSlackChannel(project_id: ID!, name: String!): SanitizedSlackChannel!
+	upsertDiscordChannel(project_id: ID!, name: String!): DiscordChannel!
+	testErrorEnhancement(
+		error_object_id: ID!
+		github_repo_path: String!
+		github_prefix: String
+		build_prefix: String
+		save_error: Boolean
+	): ErrorObject
+	upsertVisualization(visualization: VisualizationInput!): ID!
+	deleteVisualization(id: ID!): Boolean!
+	upsertGraph(graph: GraphInput!): Graph!
+	deleteGraph(id: ID!): Boolean!
 }
 
 type Subscription {
