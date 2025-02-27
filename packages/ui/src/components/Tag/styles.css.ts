@@ -1,4 +1,5 @@
-import { RecipeVariants, recipe } from '@vanilla-extract/recipes'
+import { recipe, RecipeVariants } from '@vanilla-extract/recipes'
+
 import { sprinkles } from '../../css/sprinkles.css'
 import { vars } from '../../css/vars'
 
@@ -24,7 +25,7 @@ export const iconVariants = recipe({
 	variants: {
 		size: {
 			small: { height: 12, width: 12 },
-			medium: { height: 12, width: 12 },
+			medium: { height: 13, width: 13 },
 			large: { height: 16, width: 16 },
 		},
 	},
@@ -65,9 +66,6 @@ export const variants = recipe({
 					outline: 'none',
 					border: 0,
 				},
-				'&:hover': {
-					cursor: 'pointer',
-				},
 			},
 		},
 	],
@@ -81,10 +79,23 @@ export const variants = recipe({
 		kind: {
 			primary: {},
 			secondary: {},
+			danger: {
+				background: vars.color.r9,
+				color: vars.color.white,
+				boxShadow: shadows.primary,
+			},
+			success: {
+				background: vars.theme.static.surface.sentiment.good,
+				color: vars.theme.static.content.sentiment.good,
+				boxShadow: shadows.primary,
+			},
 		},
 		shape: {
 			rounded: {},
 			basic: {},
+			leftBasic: {},
+			rightBasic: {},
+			square: {},
 		},
 		size: {
 			small: { minHeight: 16 },
@@ -185,7 +196,7 @@ export const variants = recipe({
 			style: {
 				backgroundColor: vars.theme.interactive.fill.secondary.enabled,
 				boxShadow: shadows.grey,
-				color: vars.theme.interactive.fill.secondary.content.onEnabled,
+				color: vars.theme.interactive.fill.secondary.content.text,
 				selectors: {
 					'&:hover': {
 						backgroundColor:
@@ -313,6 +324,117 @@ export const variants = recipe({
 			},
 			style: [
 				sprinkles({ gap: '2', px: '6', py: '2', borderRadius: '6' }),
+			],
+		},
+		{
+			variants: {
+				size: 'small',
+				shape: 'leftBasic',
+			},
+			style: [
+				sprinkles({
+					gap: '2',
+					px: '4',
+					py: '0',
+					borderTopLeftRadius: '3',
+					borderBottomLeftRadius: '3',
+				}),
+			],
+		},
+		{
+			variants: {
+				size: 'medium',
+				shape: 'leftBasic',
+			},
+			style: [
+				sprinkles({
+					gap: '2',
+					px: '4',
+					py: '2',
+					borderTopLeftRadius: '5',
+					borderBottomLeftRadius: '5',
+				}),
+			],
+		},
+		{
+			variants: {
+				size: 'large',
+				shape: 'leftBasic',
+			},
+			style: [
+				sprinkles({
+					gap: '2',
+					px: '6',
+					py: '2',
+					borderTopLeftRadius: '6',
+					borderBottomLeftRadius: '6',
+				}),
+			],
+		},
+		{
+			variants: {
+				size: 'small',
+				shape: 'square',
+			},
+			style: [sprinkles({ gap: '2', px: '4', py: '0' })],
+		},
+		{
+			variants: {
+				size: 'medium',
+				shape: 'square',
+			},
+			style: [sprinkles({ gap: '2', px: '4', py: '2' })],
+		},
+		{
+			variants: {
+				size: 'large',
+				shape: 'square',
+			},
+			style: [sprinkles({ gap: '2', px: '6', py: '2' })],
+		},
+		{
+			variants: {
+				size: 'small',
+				shape: 'rightBasic',
+			},
+			style: [
+				sprinkles({
+					gap: '2',
+					px: '4',
+					py: '0',
+					borderTopRightRadius: '3',
+					borderBottomRightRadius: '3',
+				}),
+			],
+		},
+		{
+			variants: {
+				size: 'medium',
+				shape: 'rightBasic',
+			},
+			style: [
+				sprinkles({
+					gap: '2',
+					px: '4',
+					py: '2',
+					borderTopRightRadius: '5',
+					borderBottomRightRadius: '5',
+				}),
+			],
+		},
+		{
+			variants: {
+				size: 'large',
+				shape: 'rightBasic',
+			},
+			style: [
+				sprinkles({
+					gap: '2',
+					px: '6',
+					py: '2',
+					borderTopRightRadius: '6',
+					borderBottomRightRadius: '6',
+				}),
 			],
 		},
 	],

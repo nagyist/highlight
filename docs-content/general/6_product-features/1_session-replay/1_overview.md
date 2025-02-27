@@ -1,6 +1,6 @@
 ---
-heading: Session Replay Features
-title: Overview
+toc: Overview
+title: Session Replay Features
 slug: overview
 createdAt: 2021-09-10T17:54:08.000Z
 updatedAt: 2022-08-18T22:36:12.000Z
@@ -36,8 +36,8 @@ Read more about the features we support in Session Replay below:
     <DocsCard title="Extracting the Session URL"  href="./session-url.md">
         {"SDK support for extracting the session URL from your sessions."}
     </DocsCard>
-    <DocsCard title="Ignoring & Excluding Sessions"  href="./ignoring-sessions.md">
-        {"Options for ignoring and excluding sessions."}
+    <DocsCard title="Filtering Sessions"  href="./filtering-sessions.md">
+        {"Options for filtering sessions."}
     </DocsCard>
     <DocsCard title="Tracking Users & Events."  href="./events-and-users.md">
         {"SDK support for tracking users and their corresponding actions throughout a session."}
@@ -51,7 +51,7 @@ Read more about the features we support in Session Replay below:
     <DocsCard title="Performance Impact."  href="./performance-impact.md">
         {"The performance impact of the highlight.io snippet."}
     </DocsCard>
-    <DocsCard title="Privacy & Redaction."  href="./privacy.md">
+    <DocsCard title="Privacy & Redaction."  href="../../../getting-started/3_browser/7_replay-configuration/privacy.md">
         {"Options to redact specific data being recorded in your frontend."}
     </DocsCard>
     <DocsCard title="Rage Clicks."  href="./rage-clicks.md">
@@ -63,7 +63,7 @@ Read more about the features we support in Session Replay below:
     <DocsCard title="Session Search Deep Linking."  href="./session-search.md">
         {"The URL Schema we use for deep linking sessions."}
     </DocsCard>
-    <DocsCard title="Disable Session Caching"  href="./session-caching">
+    <DocsCard title="Player Session Caching"  href="./player-session-caching.md">
         {"For highlight.io power users, we support disabling session caching to reduce memory usage."}
     </DocsCard>
 </DocsCardGroup>

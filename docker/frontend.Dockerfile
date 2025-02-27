@@ -1,17 +1,42 @@
-FROM --platform=$BUILDPLATFORM node:lts-alpine as frontend-build
+FROM --platform=$BUILDPLATFORM node:lts-alpine AS frontend-build
 
-RUN apk update && apk add --no-cache build-base chromium python3
+RUN wget -q -t3 'https://packages.doppler.com/public/cli/rsa.8004D9FF50437357.key' -O /etc/apk/keys/cli@doppler-8004D9FF50437357.rsa.pub && \
+    echo 'https://packages.doppler.com/public/cli/alpine/any-version/main' | tee -a /etc/apk/repositories && \
+    apk update && apk add --no-cache build-base chromium curl doppler python3
 
 WORKDIR /highlight
 COPY .npmignore .prettierrc .prettierignore graphql.config.js tsconfig.json turbo.json .yarnrc.yml package.json yarn.lock ./
-COPY ../.yarn/plugins ./.yarn/plugins
+COPY ../.yarn/patches ./.yarn/patches
 COPY ../.yarn/releases ./.yarn/releases
+COPY ../docs-content/package.json ./docs-content/package.json
+COPY ../e2e ./e2e
+COPY ../frontend/package.json ./frontend/package.json
+COPY ../highlight.io/package.json ./highlight.io/package.json
+COPY ../packages ./packages
+COPY ../render/package.json ./render/package.json
+COPY ../rrweb ./rrweb
+COPY ../scripts/package.json ./scripts/package.json
+COPY ../sdk/client/package.json ./sdk/client/package.json
+COPY ../sdk/firstload/package.json ./sdk/firstload/package.json
+COPY ../sdk/highlight-apollo/package.json ./sdk/highlight-apollo/package.json
+COPY ../sdk/highlight-cloudflare/package.json ./sdk/highlight-cloudflare/package.json
+COPY ../sdk/highlight-chrome/package.json ./sdk/highlight-chrome/package.json
+COPY ../sdk/highlightinc-highlight-datasource/package.json ./sdk/highlightinc-highlight-datasource/package.json
+COPY ../sdk/highlight-nest/package.json ./sdk/highlight-nest/package.json
+COPY ../sdk/highlight-next/package.json ./sdk/highlight-next/package.json
+COPY ../sdk/highlight-node/package.json ./sdk/highlight-node/package.json
+COPY ../sdk/highlight-hono/package.json ./sdk/highlight-hono/package.json
+COPY ../sdk/highlight-react/package.json ./sdk/highlight-react/package.json
+COPY ../sdk/highlight-remix/package.json ./sdk/highlight-remix/package.json
+COPY ../sdk/pino/package.json ./sdk/pino/package.json
+COPY ../sourcemap-uploader/package.json ./sourcemap-uploader/package.json
+RUN yarn install --immutable
+COPY ../backend/localhostssl ./backend/localhostssl
 COPY ../backend/private-graph ./backend/private-graph
 COPY ../backend/public-graph ./backend/public-graph
-COPY ../backend/localhostssl ./backend/localhostssl
 COPY ../blog-content ./blog-content
 COPY ../docs-content ./docs-content
-COPY ../forks ./forks
+COPY ../e2e ./e2e
 COPY ../frontend ./frontend
 COPY ../highlight.io ./highlight.io
 COPY ../packages ./packages
@@ -20,25 +45,16 @@ COPY ../rrweb ./rrweb
 COPY ../scripts ./scripts
 COPY ../sdk ./sdk
 COPY ../sourcemap-uploader ./sourcemap-uploader
-RUN yarn
 
 # These three 'args' need to be here because they're injected at build time
 # all other env variables are provided in environment.yml.
 ARG NODE_OPTIONS="--max-old-space-size=16384 --openssl-legacy-provider"
-ARG REACT_APP_AUTH_MODE
-ARG REACT_APP_COMMIT_SHA
-ARG REACT_APP_FIREBASE_CONFIG_OBJECT
-ARG REACT_APP_FRONTEND_ORG
-ARG REACT_APP_FRONTEND_URI
-ARG REACT_APP_IN_DOCKER
-ARG REACT_APP_PRIVATE_GRAPH_URI
-ARG REACT_APP_PUBLIC_GRAPH_URI
-ARG TURBO_TOKEN
-ARG TURBO_TEAM
-RUN yarn build:frontend
+ARG DOPPLER_TOKEN
+RUN doppler me
+RUN doppler run -- yarn build:frontend
 
 # reduce the image size by keeping just the built code
-FROM nginx:stable-alpine as frontend-prod
+FROM nginx:stable-alpine AS frontend-prod
 RUN apk update && apk add --no-cache python3
 LABEL org.opencontainers.image.source=https://github.com/highlight/highlight
 LABEL org.opencontainers.image.description="highlight.io Production Frontend Image"
@@ -51,10 +67,17 @@ COPY ../docker/frontend-entrypoint.py /frontend-entrypoint.py
 
 WORKDIR /build
 COPY --from=frontend-build /highlight/frontend/build /build/frontend/build
-COPY --from=frontend-build /highlight/sdk/client/dist /build/sdk/client/dist
 
+ARG REACT_APP_AUTH_MODE
+ARG REACT_APP_FRONTEND_URI
 ARG REACT_APP_PRIVATE_GRAPH_URI
 ARG REACT_APP_PUBLIC_GRAPH_URI
+ARG REACT_APP_OTLP_ENDPOINT
+ARG REACT_APP_DISABLE_ANALYTICS
+ENV REACT_APP_AUTH_MODE=$REACT_APP_AUTH_MODE
+ENV REACT_APP_FRONTEND_URI=$REACT_APP_FRONTEND_URI
 ENV REACT_APP_PRIVATE_GRAPH_URI=$REACT_APP_PRIVATE_GRAPH_URI
 ENV REACT_APP_PUBLIC_GRAPH_URI=$REACT_APP_PUBLIC_GRAPH_URI
+ENV REACT_APP_OTLP_ENDPOINT=$REACT_APP_OTLP_ENDPOINT
+ENV REACT_APP_DISABLE_ANALYTICS=$REACT_APP_DISABLE_ANALYTICS
 CMD ["python3", "/frontend-entrypoint.py"]

@@ -4,13 +4,13 @@ import {
 	SessionComment,
 	SessionResults,
 } from '@graph/schemas'
-import { Replayer } from '@highlight-run/rrweb'
 import {
 	playerMetaData,
 	SessionInterval,
 	viewportResizeDimension,
-} from '@highlight-run/rrweb-types'
+} from '@rrweb/types'
 import { createContext } from '@util/context/context'
+import { Replayer } from 'rrweb'
 
 import {
 	HighlightEvent,
@@ -111,8 +111,6 @@ export interface ReplayerContextInterface {
 	browserExtensionScriptURLs: string[]
 	isLoadingEvents: boolean
 	sessionMetadata: playerMetaData
-	currentEvent: string
-	setCurrentEvent: React.Dispatch<React.SetStateAction<string>>
 }
 
 export const [useReplayerContext, ReplayerContextProvider] =

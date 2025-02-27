@@ -1,7 +1,7 @@
-import { siteUrl } from '../../../../utils/urls'
 import { QuickStartContent } from '../../QuickstartContent'
 import {
 	downloadSnippet,
+	init,
 	setupFrontendSnippet,
 	setupLogging,
 } from './shared-snippets'
@@ -9,7 +9,6 @@ import {
 export const PythonAzureContext: QuickStartContent = {
 	title: 'Python Azure Functions',
 	subtitle: 'Learn how to set up highlight.io with Azure Functions.',
-	logoUrl: siteUrl('/images/quickstart/azure.svg'),
 	entries: [
 		setupFrontendSnippet,
 		downloadSnippet(),
@@ -24,7 +23,7 @@ export const PythonAzureContext: QuickStartContent = {
 import highlight_io
 from highlight_io.integrations.azure import observe_handler
 
-H = highlight_io.H("<YOUR_PROJECT_ID>", instrument_logging=True)
+${init}
 
 
 @observe_handler
@@ -53,7 +52,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 import highlight_io
 from highlight_io.integrations.azure import observe_handler
 
-H = highlight_io.H("<YOUR_PROJECT_ID>", instrument_logging=True)
+${init}
 
 
 @observe_handler

@@ -1,11 +1,11 @@
 import { Button } from '@components/Button'
 import { LinkButton } from '@components/LinkButton'
 import { useGetLogsIntegrationQuery } from '@graph/hooks'
-import { Box, Callout, Stack, Text } from '@highlight-run/ui'
+import { Box, Callout, Stack, Text } from '@highlight-run/ui/components'
 import { useProjectId } from '@hooks/useProjectId'
+import useLocalStorage from '@rehooks/local-storage'
 import moment from 'moment'
 import React from 'react'
-import { useLocalStorage } from 'react-use'
 
 export const IntegrationCta: React.FC = () => {
 	const { projectId } = useProjectId()
@@ -27,14 +27,7 @@ export const IntegrationCta: React.FC = () => {
 	}
 
 	return (
-		<Box
-			style={{
-				marginTop: 5,
-				marginLeft: -2,
-				marginRight: -2,
-				marginBottom: 8,
-			}}
-		>
+		<Box m="8">
 			<Callout kind="info">
 				<Stack direction="row" justify="space-between" align="center">
 					<Stack gap="12" direction="column" paddingBottom="6">

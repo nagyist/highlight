@@ -1,7 +1,8 @@
-import { ConsoleMessage } from '../types/shared-types'
+import type { StackFrame } from 'error-stack-parser'
 import { ConsoleMethods } from '../types/client'
+import { ConsoleMessage } from '../types/shared-types'
 import { patch, stringify } from '../utils/utils'
-import ErrorStackParser from 'error-stack-parser'
+import { parseError } from '../utils/errors'
 
 export type StringifyOptions = {
 	// limit of string length
@@ -21,6 +22,10 @@ export type StringifyOptions = {
 export type LogRecordOptions = {
 	level: ConsoleMethods[]
 	stringifyOptions: StringifyOptions
+	/**
+	 * Set to try to serialize console object arguments into the message body.
+	 */
+	serializeConsoleAttributes?: boolean
 	logger: Logger | 'console'
 }
 
@@ -67,9 +72,9 @@ export function ConsoleListener(
 		if (window) {
 			const errorHandler = (event: ErrorEvent) => {
 				const { message, error } = event
-				let trace: any[] = []
+				let trace: StackFrame[] = []
 				if (error) {
-					trace = ErrorStackParser.parse(error)
+					trace = parseError(error)
 				}
 				const payload = [
 					stringify(message, logOptions.stringifyOptions),
@@ -106,23 +111,34 @@ export function ConsoleListener(
 		}
 		// replace the logger.{level}. return a restore function
 		return patch(_logger, level, (original) => {
-			return (...args: Array<any>) => {
+			return (...data: Array<any>) => {
 				// @ts-expect-error
-				original.apply(this, args)
+				original.apply(this, data)
 				try {
-					const trace = ErrorStackParser.parse(new Error())
-					const payload = args.map((s) =>
-						stringify(s, logOptions.stringifyOptions),
-					)
-
+					const trace = parseError(new Error())
+					const message = logOptions.serializeConsoleAttributes
+						? data.map((o) =>
+								typeof o === 'object'
+									? stringify(o, logOptions.stringifyOptions)
+									: o,
+							)
+						: data
+								.filter((o) => typeof o !== 'object')
+								.map((o) => `${o}`)
 					callback({
 						type: level,
 						trace: trace.slice(1),
-						value: payload,
+						value: message,
+						attributes: stringify(
+							data
+								.filter((d) => typeof d === 'object')
+								.reduce((a, b) => ({ ...a, ...b }), {}),
+							logOptions.stringifyOptions,
+						),
 						time: Date.now(),
 					})
 				} catch (error) {
-					original('highlight logger error:', error, ...args)
+					original('highlight logger error:', error, ...data)
 				}
 			}
 		})

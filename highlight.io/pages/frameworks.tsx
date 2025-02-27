@@ -12,15 +12,13 @@ import { CompaniesReel } from '../components/Home/CompaniesReel/CompaniesReel'
 import { CustomerReviewTrack } from '../components/Home/CustomerReviewTrack'
 import styles from '../components/Home/Home.module.scss'
 import IntegrationCard from '../components/Integrations/IntegrationCard'
-import MissingCard from '../components/Integrations/MissingCard'
+import WideCard from '../components/Integrations/WideCard'
 
 const FrameworksPage = () => {
 	const [copy, setCopy] = useState(false)
 
 	function handleCopy(str: string) {
-		navigator.clipboard.writeText(
-			process.env.NEXT_PUBLIC_VERCEL_URL + '/frameworks#' + str,
-		)
+		navigator.clipboard.writeText('https://highlight.io/frameworks#' + str)
 
 		setCopy(true)
 		setTimeout(() => {
@@ -84,10 +82,15 @@ const FrameworksPage = () => {
 							</div>
 						</div>
 					))}
-					<MissingCard
-						link="/docs"
-						desc="Reach out if you want support for another framework!"
-					/>
+
+					<div className="mt-16">
+						<WideCard
+							title="Are we missing anything?"
+							desc="Reach out if you want support for another framework!"
+							primaryLink="https://discord.gg/yxaXEAqgwN"
+							primaryLinkText="Get in Touch"
+						/>
+					</div>
 				</div>
 				<Section>
 					<CompaniesReel />

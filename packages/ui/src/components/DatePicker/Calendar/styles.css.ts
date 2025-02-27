@@ -1,5 +1,11 @@
 import { style } from '@vanilla-extract/css'
-import { RecipeVariants, recipe } from '@vanilla-extract/recipes'
+import { recipe, RecipeVariants } from '@vanilla-extract/recipes'
+
+export const monthButton = style({
+	display: 'flex',
+	width: 20,
+	justifyContent: 'space-around',
+})
 
 export const weekDays = style({
 	alignItems: 'center',

@@ -50,7 +50,7 @@ git clone --recurse-submodules https://github.com/highlight/highlight
 cd docker && ./run-hobby.sh
 ```
 
-After a brief frontend load time, the app should be accessible at https://localhost:3000
+After a brief frontend load time, the app should be accessible at https://localhost. Use the password set in docker/.env variable `ADMIN_PASSWORD` with any valid email address.
 
 Good for <10k sessions and <50k errors ingested monthly. See our  [docs for more info and limitations](https://www.highlight.io/docs/general/company/open-source/hosting/self-host-hobby).
 
@@ -86,17 +86,30 @@ See our [enterprise self-hosted docs](https://www.highlight.io/docs/general/comp
 <img width="600" alt="error-monitoring" src="https://user-images.githubusercontent.com/20292680/214500108-c8e0e289-276a-4863-816a-7c854c97df4e.png">
 </p>
 
-### Logging
+### Logs: Dig deeper into what's happening on your server.
 
--   **Powerful Log Search**: Search across all your logs, with automatic property collection -> [docs](https://www.highlight.io/docs/general/product-features/logging/log-search)
+-   **Powerful Search**: Search across all your logs, with automatic property collection -> [docs](https://www.highlight.io/docs/general/product-features/general-features/search)
 -   **Log Alerts**: Set thresholds for your log alerts, and view them in the alerts dashboard -> [docs](https://www.highlight.io/docs/general/product-features/general-features/alerts)
--   **Embedded Session Replay and Errors**: See all of the sessions & errors associated with any given log.
+-   **Embedded Session Replay and Errors**: See all of the sessions & errors associated to a log.
 -   **SDK Support**: Support for a long (and growing!) list of [SDKs](#sdks).
 -   **Integrations with your favorite tools** -> [docs](https://highlight.io/docs/general/integrations/overview)
 
 <p align="center">
 <img width="600" alt="logging" src="https://user-images.githubusercontent.com/20292680/233539519-f8f58251-5b88-4703-8bea-2cd8d9549faf.png">
 </p>
+
+### Traces: Track the performance of operations on your server.
+
+-   **Powerful Search**: Search across all your traces, with automatic property collection -> [docs](https://www.highlight.io/docs/general/product-features/general-features/search)
+-   **Log Alerts**: Set thresholds for your log alerts, and view them in the alerts dashboard -> [docs](https://www.highlight.io/docs/general/product-features/general-features/alerts)
+-   **Embedded Session Replay, Errors and Logs**: See all of the sessions, errors, and logs associated to a trace.
+-   **SDK Support**: Support for a long (and growing!) list of [SDKs](#sdks).
+-   **Integrations with your favorite tools** -> [docs](https://highlight.io/docs/general/integrations/overview)
+
+<p align="center">
+<img width="600" alt="logging" src="https://github.com/highlight/highlight/assets/20292680/61125b61-b5b8-4de3-9dc0-0c34d11b2d1d">
+</p>
+
 
 ### More?! Metrics? Traces? Merch?
 
@@ -164,6 +177,10 @@ All of our SDKs for highlight.io can be found in the `sdk` [directory](https://g
       <td align="center" valign="top" width="14.28%"><img src="https://avatars.githubusercontent.com/u/4401263?v=4?s=100" width="100px;" alt="Pedro Saratscheff"/><br /><sub><b>Pedro Saratscheff</b></sub><br /><a href="https://github.com/highlight/highlight/commits?author=saratscheff" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="http://grantmercer.dev"><img src="https://avatars.githubusercontent.com/u/1827631?v=4?s=100" width="100px;" alt="Grant Mercer"/><br /><sub><b>Grant Mercer</b></sub></a><br /><a href="https://github.com/highlight/highlight/commits?author=Syntaf" title="Documentation">📖</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/LewisW"><img src="https://avatars.githubusercontent.com/u/17803?v=4?s=100" width="100px;" alt="Lewis"/><br /><sub><b>Lewis</b></sub></a><br /><a href="https://github.com/highlight/highlight/commits?author=LewisW" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://kalibetre.netlify.app"><img src="https://avatars.githubusercontent.com/u/105339878?v=4?s=100" width="100px;" alt="Kalkidan Betre"/><br /><sub><b>Kalkidan Betre</b></sub></a><br /><a href="https://github.com/highlight/highlight/commits?author=kalibetre" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://tooluloope.netlify.com/"><img src="https://avatars.githubusercontent.com/u/31691737?v=4?s=100" width="100px;" alt="Tolulope Adetula"/><br /><sub><b>Tolulope Adetula</b></sub></a><br /><a href="https://github.com/highlight/highlight/commits?author=Tooluloope" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/jemiluv8"><img src="https://avatars.githubusercontent.com/u/119384208?v=4?s=100" width="100px;" alt="jemiluv8"/><br /><sub><b>jemiluv8</b></sub></a><br /><a href="https://github.com/highlight/highlight/commits?author=jemiluv8" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://mogery.me"><img src="https://avatars.githubusercontent.com/u/66118807?v=4?s=100" width="100px;" alt="Gergő Móricz"/><br /><sub><b>Gergő Móricz</b></sub></a><br /><a href="https://github.com/highlight/highlight/commits?author=mogery" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>

@@ -1,4 +1,5 @@
 import { recipe, RecipeVariants } from '@vanilla-extract/recipes'
+
 import { sprinkles } from '../../css/sprinkles.css'
 import { vars } from '../../css/vars'
 import { shadows } from '../Button/styles.css'
@@ -24,6 +25,10 @@ export const variants = recipe({
 
 	variants: {
 		size: {
+			xxSmall: {
+				height: 16,
+				width: 16,
+			},
 			xSmall: {
 				height: 24,
 				width: 24,

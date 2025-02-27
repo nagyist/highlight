@@ -12,7 +12,22 @@ import (
 	modelInputs "github.com/highlight-run/highlight/backend/private-graph/graph/model"
 )
 
-func getLogsConnection(edges []*modelInputs.LogEdge, pagination Pagination) *modelInputs.LogConnection {
+type Edge[T interface{}] struct {
+	Cursor string
+	Node   *T
+}
+
+type Connection[T interface{}] struct {
+	Edges    []*Edge[T]
+	PageInfo *modelInputs.PageInfo
+}
+
+func getConnection[T interface{}](edges []*Edge[T], pagination Pagination) *Connection[T] {
+	limit := LogsLimit
+	if pagination.Limit != nil {
+		limit = *pagination.Limit
+	}
+
 	var (
 		endCursor       string
 		startCursor     string
@@ -26,31 +41,31 @@ func getLogsConnection(edges []*modelInputs.LogEdge, pagination Pagination) *mod
 		beforeCount := idx
 		afterCount := len(edges) - idx - 1
 
-		if beforeCount == LogsLimit/2+1 { // has backwards pagination
+		if beforeCount == limit/2+1 { // has backwards pagination
 			hasPreviousPage = true
 			edges = edges[1:] // remove first
 		}
 
-		if afterCount == LogsLimit/2+1 { // has forward pagination
+		if afterCount == limit/2+1 { // has forward pagination
 			hasNextPage = true
 			edges = edges[:len(edges)-1] // remove last
 		}
 	} else if pagination.After != nil && len(*pagination.After) > 1 {
 		hasPreviousPage = true // implicitly true because the passed in cursor should match
-		if len(edges) == LogsLimit+1 {
+		if len(edges) >= limit+1 {
 			hasNextPage = true
 			edges = edges[:len(edges)-1]
 		}
 	} else if pagination.Before != nil && len(*pagination.Before) > 1 {
 		hasNextPage = true // implicitly true because the passed in cursor should match
-		if len(edges) == LogsLimit+1 {
+		if len(edges) >= limit+1 {
 			hasPreviousPage = true
 			edges = edges[1 : len(edges)-1]
 		}
 	} else {
-		if len(edges) == LogsLimit+1 { // has forward page
-			hasNextPage = len(edges) == LogsLimit+1
-			edges = edges[:LogsLimit]
+		if len(edges) >= limit+1 { // has forward page
+			hasNextPage = len(edges) == limit+1
+			edges = edges[:limit]
 		}
 	}
 
@@ -59,7 +74,7 @@ func getLogsConnection(edges []*modelInputs.LogEdge, pagination Pagination) *mod
 		endCursor = edges[len(edges)-1].Cursor
 	}
 
-	return &modelInputs.LogConnection{
+	return &Connection[T]{
 		Edges: edges,
 		PageInfo: &modelInputs.PageInfo{
 			HasNextPage:     hasNextPage,
@@ -70,7 +85,7 @@ func getLogsConnection(edges []*modelInputs.LogEdge, pagination Pagination) *mod
 	}
 }
 
-func getCursorIdx(edges []*modelInputs.LogEdge, cursor string) int {
+func getCursorIdx[T interface{}](edges []*Edge[T], cursor string) int {
 	for idx, edge := range edges {
 		if edge.Cursor == cursor {
 			return idx

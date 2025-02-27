@@ -1,69 +1,54 @@
 import { useAuthContext } from '@authentication/AuthContext'
-import Select from '@components/Select/Select'
-import Switch from '@components/Switch/Switch'
+import { toast } from '@components/Toaster'
 import Tooltip from '@components/Tooltip/Tooltip'
 import {
 	useGetWorkspaceAdminsQuery,
 	useUpdateAllowedEmailOriginsMutation,
 } from '@graph/hooks'
 import { namedOperations } from '@graph/operations'
+import { Box, Select, Text } from '@highlight-run/ui/components'
 import { useParams } from '@util/react-router/useParams'
-import { message } from 'antd'
-import React, { useEffect, useState } from 'react'
+import Checkbox, { CheckboxChangeEvent } from 'antd/es/checkbox'
+import React, { useState } from 'react'
+
+import { getEmailDomain } from '@/util/email'
 
 import styles from './AutoJoinForm.module.css'
 
-const COMMON_EMAIL_PROVIDERS = ['gmail', 'yahoo', 'hotmail']
-
-function AutoJoinForm({
-	updateOrigins,
-	newWorkspace,
-	label,
-	labelFirst,
-}: {
-	updateOrigins?: (domains: string[]) => void
-	newWorkspace?: boolean
-	label?: string
-	labelFirst?: boolean
-}) {
-	const [origins, setOrigins] = useState<{
-		emailOrigins: string[]
-		allowedEmailOrigins: string[]
-	}>({ emailOrigins: [], allowedEmailOrigins: [] })
+export const AutoJoinForm: React.FC = () => {
 	const { workspace_id } = useParams<{ workspace_id: string }>()
 	const { admin } = useAuthContext()
+	const adminsEmailDomain = getEmailDomain(admin?.email)
+	const [updateAllowedEmailOrigins] = useUpdateAllowedEmailOriginsMutation()
+	const [autoJoinDomains, setAutoJoinDomains] = useState<string[]>([])
+	const [adminDomains, setAdminDomains] = useState<string[]>([])
+
 	const { loading } = useGetWorkspaceAdminsQuery({
 		variables: { workspace_id: workspace_id! },
 		skip: !workspace_id,
 		onCompleted: (d) => {
-			let emailOrigins: string[] = []
-			if (d.workspace?.allowed_auto_join_email_origins) {
-				emailOrigins = JSON.parse(
-					d.workspace.allowed_auto_join_email_origins,
-				)
-			}
-			const allowedDomains: string[] = []
-			d.admins.forEach((wa) => {
+			const emailOrigins = d.workspace?.allowed_auto_join_email_origins
+				? JSON.parse(d.workspace.allowed_auto_join_email_origins)
+				: []
+
+			const allowedDomains = d.admins.reduce((acc: string[], wa) => {
 				const adminDomain = getEmailDomain(wa.admin?.email)
-				if (
-					adminDomain.length > 0 &&
-					!allowedDomains.includes(adminDomain)
-				)
-					allowedDomains.push(adminDomain)
-			})
-			setOrigins({ emailOrigins, allowedEmailOrigins: allowedDomains })
+				if (adminDomain.length && !acc.includes(adminDomain)) {
+					acc.push(adminDomain)
+				}
+				return acc
+			}, [])
+
+			setAutoJoinDomains(emailOrigins)
+			setAdminDomains(allowedDomains)
 		},
 	})
 
-	const [updateAllowedEmailOrigins] = useUpdateAllowedEmailOriginsMutation()
 	const onChangeMsg = (domains: string[], msg: string) => {
-		setOrigins((p) => ({
-			emailOrigins: domains,
-			allowedEmailOrigins: p.allowedEmailOrigins,
-		}))
-		if (updateOrigins) {
-			updateOrigins(domains)
-		} else if (workspace_id) {
+		setAutoJoinDomains(domains)
+		setAdminDomains(adminDomains)
+
+		if (workspace_id) {
 			updateAllowedEmailOrigins({
 				variables: {
 					allowed_auto_join_email_origins: JSON.stringify(domains),
@@ -71,31 +56,25 @@ function AutoJoinForm({
 				},
 				refetchQueries: [namedOperations.Query.GetWorkspaceAdmins],
 			}).then(() => {
-				message.success(msg)
+				toast.success(msg)
 			})
 		}
 	}
-	const onChange = (domains: string[]) => {
-		onChangeMsg(domains, 'Successfully updated auto-join email domains!')
+
+	const handleCheckboxChange = (event: CheckboxChangeEvent) => {
+		const checked = event.target.checked
+		if (checked) {
+			onChangeMsg([adminsEmailDomain], 'Successfully enabled auto-join!')
+		} else {
+			onChangeMsg([], 'Successfully disabled auto-join!')
+		}
 	}
 
-	const adminsEmailDomain = getEmailDomain(admin?.email)
-
-	useEffect(() => {
-		if (newWorkspace && adminsEmailDomain.length) {
-			setOrigins((p) => ({
-				emailOrigins: [adminsEmailDomain],
-				allowedEmailOrigins: p.allowedEmailOrigins,
-			}))
-		}
-	}, [newWorkspace, adminsEmailDomain])
-
-	// don't show if this is for workspace creation but admin is not a company email
-	if (
-		newWorkspace &&
-		COMMON_EMAIL_PROVIDERS.some((p) => adminsEmailDomain.indexOf(p) !== -1)
-	) {
-		return null
+	const handleSelectChange = (domains: { name: string; value: string }[]) => {
+		onChangeMsg(
+			domains.map((d) => d.value),
+			'Successfully updated auto-join email domains!',
+		)
 	}
 
 	return (
@@ -105,57 +84,24 @@ function AutoJoinForm({
 			mouseEnterDelay={0}
 		>
 			<div className={styles.container}>
-				<Switch
-					trackingId="WorkspaceAutoJoin"
-					label={label || 'Enable Auto Join'}
-					labelFirst={labelFirst}
-					checked={origins.emailOrigins.length > 0}
-					loading={loading}
-					onChange={(checked) => {
-						if (checked) {
-							onChangeMsg(
-								[adminsEmailDomain],
-								'Successfully enabled auto-join!',
-							)
-						} else {
-							onChangeMsg([], 'Successfully disabled auto-join!')
-						}
-					}}
-					className={styles.switchClass}
-				/>
+				<Box display="flex" alignItems="center" gap="8" p="0" m="0">
+					<Checkbox
+						checked={autoJoinDomains.length > 0}
+						onChange={handleCheckboxChange}
+					/>
+					<Text>Auto-approved email domains</Text>
+				</Box>
 				<Select
-					placeholder={`${adminsEmailDomain}, acme.corp, piedpiper.com`}
-					className={styles.select}
+					creatable
+					filterable
+					displayMode="tags"
 					loading={loading}
-					value={
-						newWorkspace
-							? [adminsEmailDomain]
-							: origins.emailOrigins
-					}
-					mode="tags"
-					disabled={newWorkspace}
-					onChange={onChange}
-					options={origins.allowedEmailOrigins.map((emailOrigin) => ({
-						displayValue: emailOrigin,
-						id: emailOrigin,
-						value: emailOrigin,
-					}))}
+					placeholder={`${adminsEmailDomain}, acme.corp, piedpiper.com`}
+					value={autoJoinDomains}
+					onValueChange={handleSelectChange}
+					options={adminDomains}
 				/>
 			</div>
 		</Tooltip>
 	)
-}
-
-export default AutoJoinForm
-
-const getEmailDomain = (email?: string) => {
-	if (!email) {
-		return ''
-	}
-	if (!email.includes('@')) {
-		return ''
-	}
-
-	const [, domain] = email.split('@')
-	return domain
 }

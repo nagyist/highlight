@@ -23,21 +23,27 @@ export const findLastActiveEventIndex = (
 
 	let start = 0
 	let end = events.length - 1
+	let lastMatchIndex = -1
 
 	while (start <= end) {
 		const mid = Math.floor(start + (end - start) / 2)
 		const event = events[mid]
 		const eventTimestamp =
 			new Date(event.timestamp).getTime() - sessionStartTime
+
 		if (eventTimestamp === currentTimestamp) {
-			return mid
+			lastMatchIndex = mid
+			start = mid + 1
 		} else if (eventTimestamp < currentTimestamp) {
 			start = mid + 1
 		} else {
 			end = mid - 1
 		}
 	}
-	return Math.min(end, events.length - 1)
+
+	return lastMatchIndex !== -1
+		? lastMatchIndex
+		: Math.min(end, events.length - 1)
 }
 
 interface Request {
@@ -67,6 +73,7 @@ export type NetworkResource = NetworkResourceWithID &
 		requestResponsePairs?: RequestResponsePair
 		errors?: ErrorObject[]
 		offsetStartTime?: number
+		relativeStartTime: number
 	}
 
 /**
@@ -95,22 +102,21 @@ export enum Tab {
 	Errors = 'Errors',
 	Console = 'Console Logs',
 	Network = 'Network',
+	Traces = 'Traces',
+	Performance = 'Performance',
 	Events = 'Events',
 }
 
-export enum LogLevel {
+export enum LogLevelValue {
 	All = 'All',
-	Info = 'Info',
-	Warn = 'Warn',
-	Error = 'Error',
+	// keep up to date with LogLevel schema
+	Debug = 'debug',
+	Error = 'error',
+	Fatal = 'fatal',
+	Info = 'info',
+	Trace = 'trace',
+	Warn = 'warn',
 }
-
-export const LogLevelVariants = {
-	[LogLevel.All]: 'white',
-	[LogLevel.Info]: 'white',
-	[LogLevel.Warn]: 'yellow',
-	[LogLevel.Error]: 'red',
-} as const
 
 export enum RequestType {
 	/* [displayName]: requestName */
@@ -159,5 +165,9 @@ export const getNetworkResourcesDisplayName = (value: string): string => {
 			return displayName
 		}
 	}
+	return titilize(value)
+}
+
+export const titilize = (value: string): string => {
 	return value?.charAt(0).toUpperCase() + value?.slice(1)
 }

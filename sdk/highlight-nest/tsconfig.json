@@ -2,7 +2,6 @@
 	"compilerOptions": {
 		"experimentalDecorators": true,
 		"types": [
-			"@highlight-run/sourcemap-uploader",
 			"@highlight-run/node",
 			"jest"
 		],
@@ -20,9 +19,5 @@
 		"resolveJsonModule": true,
 		"jsx": "react"
 	},
-	"include": ["src/**/*"],
-	"references": [
-		{ "path": "../highlight-node" },
-		{ "path": "../../sourcemap-uploader" }
-	]
+	"include": ["src/**/*"]
 }

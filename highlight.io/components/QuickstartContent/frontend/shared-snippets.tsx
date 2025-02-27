@@ -27,22 +27,26 @@ npm install highlight.run`,
 }
 
 export const sessionReplayFeaturesLink = siteUrl(
-	'/docs/getting-started/client-sdk/replay-configuration/overview',
+	'/docs/getting-started/browser/replay-configuration/overview',
 )
 export const identifyingUsersLink = siteUrl(
-	'/docs/getting-started/client-sdk/replay-configuration/identifying-sessions',
+	'/docs/getting-started/browser/replay-configuration/identifying-sessions',
 )
 export const sessionSearchLink = siteUrl(
 	'/docs/general/product-features/session-replay/session-search',
 )
 export const backendInstrumentationLink = siteUrl(
-	'/docs/getting-started/overview#for-your-backend-error-monitoring',
+	'/docs/getting-started/overview#for-your-server',
 )
 export const fullstackMappingLink = siteUrl(
 	'/docs/getting-started/frontend-backend-mapping',
 )
 export const sourceMapDetailsLink = siteUrl(
-	'/docs/getting-started/client-sdk/replay-configuration/sourcemaps',
+	'/docs/getting-started/browser/replay-configuration/sourcemaps',
+)
+
+export const browserGettingStartedLink = siteUrl(
+	'/docs/getting-started/overview',
 )
 
 export const configureSourcemapsCI = (docsLink?: string): QuickStartStep => {
@@ -74,6 +78,7 @@ To get started, we recommend setting \`tracingOrigins\` and \`networkRecording\`
 import { H } from 'highlight.run';
 
 H.init('<YOUR_PROJECT_ID>', {
+	serviceName: "frontend-app",
 	tracingOrigins: true,
 	networkRecording: {
 		enabled: true,
@@ -96,25 +101,21 @@ H.init('<YOUR_PROJECT_ID>', {
 
 export const identifySnippet: QuickStartStep = {
 	title: 'Identify users.',
-	content: `Identify users after the authentication flow of your web app. We recommend doing this in a \`useEffect\` call or in any asynchronous, client-side context. \n\n\nThe first argument of \`identify\` will be searchable via the property \`identifier\`, and the second property is searchable by the key of each item in the object. \n\n\nFor more details, read about [session search](${sessionSearchLink}) or how to [identify users](${identifyingUsersLink}).`,
+	content: `Identify users after the authentication flow of your web app. We recommend doing this in any asynchronous, client-side context. \n\n\nThe first argument of \`identify\` will be searchable via the property \`identifier\`, and the second property is searchable by the key of each item in the object. \n\n\nFor more details, read about [session search](${sessionSearchLink}) or how to [identify users](${identifyingUsersLink}).`,
 	code: [
 		{
 			text: `
 import { H } from 'highlight.run';
 
-function RenderFunction() {
-
-	useEffect(() => {
-		// login logic...
-		
-		H.identify('jay@highlight.io', {
-			id: 'very-secure-id',
-			phone: '867-5309',
-			bestFriend: 'jenny'
-		});
-	}, [])
-
-	return null; // Or your app's rendering code.
+function Login(username: string, password: string) {
+	// login logic here...
+	// pass the user details from your auth provider to the H.identify call
+	
+	H.identify('jay@highlight.io', {
+		id: 'very-secure-id',
+		phone: '867-5309',
+		bestFriend: 'jenny'
+	});
 }
 `,
 			language: 'js',
@@ -125,7 +126,7 @@ function RenderFunction() {
 export const verifySnippet: QuickStartStep = {
 	title: 'Verify installation',
 	content:
-		"Check your [dashboard](https://app.highlight.io/sessions) for a new session. Don't see anything? Send us a message in [our community](https://highlight.io/community) and we can help debug.",
+		"Check your [dashboard](https://app.highlight.io/sessions) for a new session. Make sure to remove the `Status is Completed` filter to see ongoing sessions. Don't see anything? Send us a message in [our community](https://highlight.io/community) and we can help debug.",
 }
 
 export const setupBackendSnippet: QuickStartStep = {

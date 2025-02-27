@@ -1,5 +1,5 @@
 import { LoadingBar } from '@components/Loading/Loading'
-import { Box, Callout, Form, Label, Stack } from '@highlight-run/ui'
+import { Box, Callout, Form, Label, Stack } from '@highlight-run/ui/components'
 import { useEffect, useState } from 'react'
 
 import BorderBox from '@/components/BorderBox/BorderBox'
@@ -26,7 +26,7 @@ export const AutoresolveStaleErrorsForm = () => {
 							...currentProjectSettings.projectSettings,
 							autoResolveStaleErrorsDayInterval: interval,
 						},
-				  }
+					}
 				: currentProjectSettings,
 		)
 	}
@@ -56,7 +56,7 @@ export const AutoresolveStaleErrorsForm = () => {
 	]
 
 	return (
-		<>
+		<Form>
 			{categories.map((c) => (
 				<BorderBox key={c.key}>
 					<Box py="8">
@@ -69,6 +69,8 @@ export const AutoresolveStaleErrorsForm = () => {
 
 								if (!isOptIn) {
 									setAutoResolveStaleErrorsDayInterval(0)
+								} else {
+									setAutoResolveStaleErrorsDayInterval(1)
 								}
 							},
 							false,
@@ -86,38 +88,27 @@ export const AutoresolveStaleErrorsForm = () => {
 						<Box display="flex">
 							<Label
 								label="Auto-resolve errors not seen in"
-								name="Auto-resolve errors not seen in"
+								name="auto-resolve-not-seen-in"
 							/>
 						</Box>
 						<Box>
 							<Form.Select
-								name="Auto-resolve errors not seen in"
+								name="auto-resolve-not-seen-in"
 								value={
 									data?.projectSettings
 										?.autoResolveStaleErrorsDayInterval
 								}
-								onChange={(e) =>
+								onValueChange={(option) => {
 									setAutoResolveStaleErrorsDayInterval(
-										Number(e.target.value),
+										option.value,
 									)
-								}
+								}}
 								disabled={!enableAutoResolveStaleErrors}
-							>
-								{DAY_VALUES.map((day) => {
-									if (day === 1) {
-										return (
-											<option value={day} key={day}>
-												{day} day
-											</option>
-										)
-									}
-									return (
-										<option value={day} key={day}>
-											{day} days
-										</option>
-									)
-								})}
-							</Form.Select>
+								options={DAY_VALUES.map((day) => ({
+									name: `${day} day${day === 1 ? '' : 's'}`,
+									value: day,
+								}))}
+							/>
 						</Box>
 					</Stack>
 					{enableAutoResolveStaleErrors && (
@@ -128,6 +119,6 @@ export const AutoresolveStaleErrorsForm = () => {
 					)}
 				</BorderBox>
 			))}
-		</>
+		</Form>
 	)
 }

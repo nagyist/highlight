@@ -1,4 +1,3 @@
-import { siteUrl } from '../../../../utils/urls'
 import { QuickStartContent } from '../../QuickstartContent'
 import { frontendInstallSnippet } from '../shared-snippets'
 import {
@@ -12,7 +11,6 @@ import {
 export const JSFirebaseContent: QuickStartContent = {
 	title: 'Firebase',
 	subtitle: 'Learn how to set up highlight.io in Firebase Cloud Functions.',
-	logoUrl: siteUrl('/images/quickstart/firebase.svg'),
 	entries: [
 		frontendInstallSnippet,
 		jsGetSnippet(['node']),
@@ -31,7 +29,12 @@ exports.exampleCallable = functions.https.onCall(
       // ... your handler code here
       return { result: 'useful result!' }
     },
-    { projectID: '<YOUR_PROJECT_ID>' },
+    {
+			projectID: '<YOUR_PROJECT_ID>',
+			serviceName: 'my-firebase-app',
+			serviceVersion: 'git-sha',
+			environment: 'production'
+		},
   ),
 )
 
@@ -57,7 +60,12 @@ exports.exampleHttp = functions.https.onRequest(
       throw new Error('example error!')
       return { result: 'useful result!' }
     },
-    { projectID: '<YOUR_PROJECT_ID>' },
+    {
+			projectID: '<YOUR_PROJECT_ID>',
+			serviceName: 'my-firebase-app',
+			serviceVersion: 'git-sha',
+			environment: 'production'
+		},
   ),
 )`,
 		),

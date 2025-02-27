@@ -1,4 +1,3 @@
-import { siteUrl } from '../../../../utils/urls'
 import { QuickStartContent } from '../../QuickstartContent'
 import { frontendInstallSnippet } from '../shared-snippets'
 import {
@@ -12,7 +11,6 @@ import {
 export const JSAWSLambdaContent: QuickStartContent = {
 	title: 'Error Handling from Python AWS Lambda',
 	subtitle: 'Learn how to set up highlight.io on AWS Lambda.',
-	logoUrl: siteUrl('/images/quickstart/aws-lambda.svg'),
 	entries: [
 		frontendInstallSnippet,
 		jsGetSnippet(['node']),
@@ -33,7 +31,12 @@ export const handler = Handlers.serverlessFunction(
     console.log('hello, world!', {queryString: event?.queryStringParameters});
     return {statusCode: 200};
   },
-  { projectID: '<YOUR_PROJECT_ID>' },
+  {
+		projectID: '<YOUR_PROJECT_ID>',
+		serviceName: 'my-lambda-function',
+		serviceVersion: 'git-sha',
+		environment: 'production',
+	},
 )
 `,
 					language: 'js',

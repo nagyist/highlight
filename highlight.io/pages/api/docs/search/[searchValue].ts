@@ -1,13 +1,16 @@
 import { promises as fsp } from 'fs'
-import path from 'path'
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { getDocsPaths, readMarkdown } from '../../../docs/[[...doc]]'
-import RangeTuple from 'fuse.js'
+import path from 'path'
 import removeMd from 'remove-markdown'
+import { withPageRouterHighlight } from '../../../../highlight.config'
+import logger from '../../../../highlight.logger'
+import { readMarkdown } from '../../../../shared/doc'
+import { getDocsPaths } from '../../../docs/[[...doc]]'
 
 export const SEARCH_RESULT_BLURB_LENGTH = 100
 
 const removeHtmlTags = (content: string) => content.replace(/(<([^>]+)>)/gi, '')
+
 export interface SearchResult {
 	title: string
 	titleMatch?: Array<[number, number]> | undefined
@@ -17,11 +20,12 @@ export interface SearchResult {
 	contentMatch?: Array<[number, number]> | undefined
 }
 
-export default async function handler(
+const handler = withPageRouterHighlight(async function handler(
 	req: NextApiRequest,
 	res: NextApiResponse,
 ) {
 	const searchValue = [req.query.searchValue].flat().join('').toLowerCase()
+	logger.info('running api docs search query', { searchValue })
 	const docPaths = await getDocsPaths(fsp, undefined)
 	const paths: SearchResult[] = await Promise.all(
 		docPaths.map(async (doc) => {
@@ -63,4 +67,5 @@ export default async function handler(
 	})
 
 	return res.json(searchResults)
-}
+})
+export default handler

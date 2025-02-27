@@ -1,6 +1,6 @@
 ---
-title: Overview
-heading: General Features
+toc: Overview
+title: General Features
 slug: overview
 createdAt: 2021-09-10T17:54:08.000Z
 updatedAt: 2022-08-18T22:36:12.000Z
@@ -23,5 +23,8 @@ Below are several highlight.io features that might be worth taking a look at.
     </DocsCard>
     <DocsCard title="Segments."  href="./segments.md">
         {"Create search filters so searching for sessions & errors is easy!"}
+    </DocsCard>
+    <DocsCard title="Services."  href="./services.md">
+        {"Create services to better group your errors, logs, and traces."}
     </DocsCard>
 </DocsCardGroup>

@@ -42,6 +42,11 @@ export function formatTimeAsHMS(millis: number) {
 		: `${parts.h}:${minutesStr}:${secondsStr}`
 }
 
+export function msToHours(ms: number) {
+	const h = ms / 1000 / 60 / 60
+	return h < 10 / 60 ? Math.round(h * 1_000) / 1_000 : Math.round(h * 10) / 10
+}
+
 interface TimeAsAplhanumOptions {
 	showDetails?: boolean
 	zeroUnit?: string
@@ -69,15 +74,6 @@ export function formatTimeAsAlphanum(
 	]
 		.join(' ')
 		.trim()
-}
-
-export const serializeAbsoluteTimeRange = (
-	start: Date | undefined,
-	end: Date | undefined,
-) => {
-	const startIso = moment(start).toISOString()
-	const endIso = moment(end).toISOString()
-	return `${startIso}_${endIso}`
 }
 
 export const roundFeedDate = function (date: string | null) {

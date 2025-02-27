@@ -1,3 +1,4 @@
+import EnterpriseFeatureButton from '@components/Billing/EnterpriseFeatureButton'
 import { KeyboardShortcut } from '@components/KeyboardShortcut/KeyboardShortcut'
 import {
 	cmdKey,
@@ -5,36 +6,42 @@ import {
 	ShortcutTextGuide,
 	TimelineShortcut,
 } from '@components/KeyboardShortcutsEducation/KeyboardShortcutsEducation'
+import { LinkButton } from '@components/LinkButton'
 import Popover from '@components/Popover/Popover'
 import { Skeleton } from '@components/Skeleton/Skeleton'
 import Switch from '@components/Switch/Switch'
+import { toast } from '@components/Toaster'
+import { useExportSessionMutation } from '@graph/hooks'
+import { namedOperations } from '@graph/operations'
 import {
 	Badge,
 	Box,
 	ButtonIcon,
+	IconSolidAnnotation,
 	IconSolidArrowsExpand,
 	IconSolidChartBar,
+	IconSolidCheveronLeft,
+	IconSolidCheveronRight,
 	IconSolidClock,
 	IconSolidCog,
+	IconSolidCursorClick,
+	IconSolidDownload,
+	IconSolidFastForward,
 	IconSolidPause,
 	IconSolidPlay,
+	IconSolidPlayCircle,
 	IconSolidRefresh,
 	IconSolidSkip,
 	IconSolidSkipLeft,
 	IconSolidTerminal,
+	IconSolidX,
 	Stack,
 	SwitchButton,
 	Tag,
 	Text,
 	Tooltip,
-} from '@highlight-run/ui'
-import { ReactComponent as AnnotationIcon } from '@icons/Solid/annotation.svg'
-import { ReactComponent as ChevronLeftIcon } from '@icons/Solid/cheveron-left.svg'
-import { ReactComponent as ChevronRightIcon } from '@icons/Solid/cheveron-right.svg'
-import { ReactComponent as CrossIcon } from '@icons/Solid/cross.svg'
-import { ReactComponent as CursorClickIcon } from '@icons/Solid/cursor-click.svg'
-import { ReactComponent as FastForwardIcon } from '@icons/Solid/fast-forward.svg'
-import { ReactComponent as PlayCircleIcon } from '@icons/Solid/play-circle.svg'
+} from '@highlight-run/ui/components'
+import { useProjectId } from '@hooks/useProjectId'
 import {
 	getFullScreenPopoverGetPopupContainer,
 	usePlayerUIContext,
@@ -50,18 +57,18 @@ import {
 } from '@pages/Player/ReplayerContext'
 import { getAnnotationColor } from '@pages/Player/Toolbar/Toolbar'
 import { getTimelineEventDisplayName } from '@pages/Player/utils/utils'
+import { useApplicationContext } from '@routers/AppRouter/context/ApplicationContext'
 import analytics from '@util/analytics'
 import { clamp } from '@util/numbers'
 import { playerTimeToSessionAbsoluteTime } from '@util/session/utils'
 import { MillisToMinutesAndSeconds } from '@util/time'
 import clsx from 'clsx'
-import React from 'react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 
 import timelinePopoverStyle from '../TimelineIndicators/TimelinePopover/TimelinePopover.module.css'
 import style from './ToolbarControlBar.module.css'
 
-const EventTypeToExclude: readonly string[] = ['Web Vitals']
+const EventTypeToExclude: readonly string[] = []
 
 export const ToolbarControlBar = () => {
 	const {
@@ -172,8 +179,8 @@ export const ToolbarControlBar = () => {
 							isPlaybackComplete
 								? 'Restart'
 								: isPaused && !isLiveMode
-								? 'Play'
-								: 'Pause'
+									? 'Play'
+									: 'Pause'
 						}
 						shortcut="Space"
 					/>
@@ -396,7 +403,9 @@ interface ControlSettingsProps {
 	setShowSettingsPopover: (shouldShow: boolean) => void
 }
 const ControlSettings = ({ setShowSettingsPopover }: ControlSettingsProps) => {
+	const { projectId } = useProjectId()
 	const [showSessionSettings, setShowSessionSettings] = useState(true)
+	const { currentWorkspace } = useApplicationContext()
 	const {
 		showHistogram,
 		setShowHistogram,
@@ -413,6 +422,50 @@ const ControlSettings = ({ setShowSettingsPopover }: ControlSettingsProps) => {
 		selectedTimelineAnnotationTypes,
 		setSelectedTimelineAnnotationTypes,
 	} = usePlayerConfiguration()
+	const { session } = useReplayerContext()
+	const [exportSessionMutation] = useExportSessionMutation()
+
+	const exportSession = useCallback(async () => {
+		if (session?.secure_id) {
+			analytics.track('Session Export Requested', {
+				sessionSecureId: session.secure_id,
+				workspaceId: currentWorkspace?.id,
+			})
+			try {
+				await exportSessionMutation({
+					variables: {
+						session_secure_id: session.secure_id,
+					},
+					refetchQueries: [namedOperations.Query.GetSessionExports],
+				})
+				await toast.info(
+					'You will receive an email once the session is ready.',
+					{
+						duration: 10000,
+						content: (
+							<LinkButton
+								to={`/${projectId}/settings/sessions#exports`}
+								kind="secondary"
+								emphasis="high"
+								trackingId="session-export-check-progress"
+							>
+								Check progress
+							</LinkButton>
+						),
+					},
+				)
+			} catch (e) {
+				await toast.error(
+					`An error occurred exporting the session: ${e}`,
+				)
+			}
+		}
+	}, [
+		currentWorkspace?.id,
+		exportSessionMutation,
+		projectId,
+		session?.secure_id,
+	])
 
 	const { isLiveMode } = useReplayerContext()
 	const options = (
@@ -422,7 +475,7 @@ const ControlSettings = ({ setShowSettingsPopover }: ControlSettingsProps) => {
 				onClick={() => setShowHistogram(!showHistogram)}
 			>
 				<IconSolidChartBar />
-				<p>Timeline</p>
+				<Text color="secondaryContentText">Timeline</Text>
 				<ShortcutTextGuide
 					shortcut={TimelineShortcut}
 					className={style.moveRight}
@@ -442,7 +495,7 @@ const ControlSettings = ({ setShowSettingsPopover }: ControlSettingsProps) => {
 				onClick={() => setShowDevTools(!showDevTools)}
 			>
 				<IconSolidTerminal />
-				<p>Dev tools</p>
+				<Text color="secondaryContentText">Dev tools</Text>
 				<ShortcutTextGuide
 					shortcut={DevToolsShortcut}
 					className={style.moveRight}
@@ -460,8 +513,8 @@ const ControlSettings = ({ setShowSettingsPopover }: ControlSettingsProps) => {
 				className={style.settingsButton}
 				onClick={() => setShowPlayerMouseTail(!showPlayerMouseTail)}
 			>
-				<CursorClickIcon />
-				<p>Mouse trail</p>
+				<IconSolidCursorClick />
+				<Text color="secondaryContentText">Mouse trail</Text>
 				<Switch
 					trackingId="MouseTrailMenuToggle"
 					checked={showPlayerMouseTail}
@@ -476,8 +529,8 @@ const ControlSettings = ({ setShowSettingsPopover }: ControlSettingsProps) => {
 				className={style.settingsButton}
 				onClick={() => setSkipInactive(!skipInactive)}
 			>
-				<FastForwardIcon />
-				<p>Skip inactive</p>
+				<IconSolidFastForward />
+				<Text color="secondaryContentText">Skip inactive</Text>
 				<Switch
 					trackingId="SkipInactiveMenuToggle"
 					checked={!isLiveMode && skipInactive}
@@ -493,8 +546,8 @@ const ControlSettings = ({ setShowSettingsPopover }: ControlSettingsProps) => {
 				className={style.settingsButton}
 				onClick={() => setAutoPlayVideo(!autoPlayVideo)}
 			>
-				<PlayCircleIcon />
-				<p>Autoplay</p>
+				<IconSolidPlayCircle />
+				<Text color="secondaryContentText">Autoplay</Text>
 				<Switch
 					trackingId="AutoplayVideoMenuToggle"
 					checked={autoPlayVideo}
@@ -512,7 +565,7 @@ const ControlSettings = ({ setShowSettingsPopover }: ControlSettingsProps) => {
 				}
 			>
 				<IconSolidClock />
-				<p>Absolute time</p>
+				<Text color="secondaryContentText">Absolute time</Text>
 				<Switch
 					trackingId="PlayerAbsoluteTimeMenuToggle"
 					checked={showPlayerAbsoluteTime}
@@ -527,10 +580,35 @@ const ControlSettings = ({ setShowSettingsPopover }: ControlSettingsProps) => {
 				className={style.settingsButton}
 				onClick={() => setShowSessionSettings(false)}
 			>
-				<AnnotationIcon />
-				<p>Annotations</p>
-				<ChevronRightIcon className={style.moveRight} />
+				<IconSolidAnnotation />
+				<Text color="secondaryContentText">Annotations</Text>
+				<IconSolidCheveronRight className={style.moveRight} />
 			</button>
+
+			<EnterpriseFeatureButton
+				setting="enable_session_export"
+				name="Session Download"
+				fn={exportSession}
+				className={clsx(style.settingsButton, style.downloadButton)}
+			>
+				<IconSolidDownload size={16} />
+				<Box
+					color="secondaryContentText"
+					display="inline-flex"
+					alignItems="center"
+					gap="6"
+					flexGrow={1}
+				>
+					<Text lines="1">Download video</Text>
+				</Box>
+				<Box
+					display="flex"
+					alignItems="center"
+					justifyContent="flex-end"
+				>
+					<Badge size="small" label="Business" />
+				</Box>
+			</EnterpriseFeatureButton>
 		</>
 	)
 
@@ -629,12 +707,12 @@ const ControlSettings = ({ setShowSettingsPopover }: ControlSettingsProps) => {
 				<button className={style.settingsButton}>
 					{showSessionSettings ? (
 						<>
-							<CrossIcon />
+							<IconSolidX />
 							<span>Close</span>{' '}
 						</>
 					) : (
 						<>
-							<ChevronLeftIcon />
+							<IconSolidCheveronLeft />
 							<span>Back to session settings</span>
 						</>
 					)}

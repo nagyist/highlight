@@ -3,10 +3,15 @@ package clickhouse
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
-	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/highlight-run/highlight/backend/env"
+	"github.com/samber/lo"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -14,32 +19,61 @@ import (
 	clickhouseMigrate "github.com/golang-migrate/migrate/v4/database/clickhouse"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/highlight-run/highlight/backend/projectpath"
-	e "github.com/pkg/errors"
+	hmetric "github.com/highlight/highlight/sdk/highlight-go/metric"
 	log "github.com/sirupsen/logrus"
 )
 
 type Client struct {
-	conn driver.Conn
+	conn         driver.Conn
+	connReadonly driver.Conn
 }
 
 var (
-	ServerAddr      = os.Getenv("CLICKHOUSE_ADDRESS")
-	PrimaryDatabase = os.Getenv("CLICKHOUSE_DATABASE") // typically 'default', clickhouse needs an existing database to handle connections
-	TestDatabase    = os.Getenv("CLICKHOUSE_TEST_DATABASE")
-	Username        = os.Getenv("CLICKHOUSE_USERNAME")
-	Password        = os.Getenv("CLICKHOUSE_PASSWORD")
+	ServerAddr      = env.Config.ClickhouseAddress
+	PrimaryDatabase = env.Config.ClickhouseDatabase // typically 'default', clickhouse needs an existing database to handle connections
+	TestDatabase    = env.Config.ClickhouseTestDatabase
+	DefaultUser     = env.Config.ClickhouseUsername
+	ReadonlyUser    = env.Config.ClickhouseUsernameReadOnly
+	Password        = env.Config.ClickhousePassword
 )
 
+func GetPostgresConnectionString() string {
+	return fmt.Sprintf("postgresql('%s:%s', '%s', 'sessions', '%s', '%s')", env.Config.SQLDockerHost, env.Config.SQLPort, env.Config.SQLDatabase, env.Config.SQLUser, env.Config.SQLPassword)
+}
+
 func NewClient(dbName string) (*Client, error) {
-	conn, err := clickhouse.Open(getClickhouseOptions(dbName))
+	opts := getClickhouseOptions(dbName, DefaultUser)
+	opts.MaxIdleConns = 10
+	opts.MaxOpenConns = 100
+	conn, err := clickhouse.Open(opts)
+
+	optsReadonly := getClickhouseOptions(dbName, ReadonlyUser)
+	optsReadonly.MaxIdleConns = 10
+	optsReadonly.MaxOpenConns = 100
+	connReadonly, errReadonly := clickhouse.Open(optsReadonly)
+
+	go func() {
+		for {
+			for _, c := range []driver.Conn{conn, connReadonly} {
+				stats := c.Stats()
+				name := lo.Ternary(c == conn, "conn", "connReadonly")
+				log.WithContext(context.Background()).WithField("Open", stats.Open).WithField("Idle", stats.Idle).WithField("MaxOpenConns", stats.MaxOpenConns).WithField("MaxIdleConns", stats.MaxIdleConns).WithField("Name", name).Debug("Clickhouse Connection Stats")
+				tags := []attribute.KeyValue{attribute.String("name", name)}
+				hmetric.Gauge(context.Background(), "clickhouse.open", float64(stats.Open), tags, 1)
+				hmetric.Gauge(context.Background(), "clickhouse.idle", float64(stats.Idle), tags, 1)
+			}
+			time.Sleep(5 * time.Second)
+		}
+	}()
 
 	return &Client{
-		conn: conn,
-	}, err
+		conn:         conn,
+		connReadonly: connReadonly,
+	}, errors.Join(err, errReadonly)
 }
 
 func RunMigrations(ctx context.Context, dbName string) {
-	options := getClickhouseOptions(dbName)
+	options := getClickhouseOptions(dbName, DefaultUser)
 	db := clickhouse.OpenDB(options)
 	driver, err := clickhouseMigrate.WithInstance(db, &clickhouseMigrate.Config{
 		MigrationsTableEngine: "MergeTree",
@@ -52,14 +86,18 @@ func RunMigrations(ctx context.Context, dbName string) {
 		log.WithContext(ctx).Fatalf("Error creating clickhouse db instance for migrations: %v", err)
 	}
 
+	migrationsPath := filepath.Join(projectpath.GetRoot(), "clickhouse", "migrations")
 	m, err := migrate.NewWithDatabaseInstance(
-		fmt.Sprintf("file:///%s/clickhouse/migrations", projectpath.GetRoot()),
+		"file://"+migrationsPath,
 		dbName,
 		driver,
 	)
 
 	if err != nil {
-		log.WithContext(ctx).Fatalf("Error creating clickhouse db instance for migrations: %v", err)
+		log.WithContext(ctx).
+			WithField("dbName", dbName).
+			WithField("migrationsPath", migrationsPath).
+			Fatalf("Error creating clickhouse db instance for migrations: %v", err)
 	}
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
@@ -78,7 +116,7 @@ func (client *Client) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	} else if v != 1 {
-		return e.New("invalid value returned from clickhouse")
+		return errors.New("invalid value returned from clickhouse")
 	}
 	return nil
 }
@@ -87,15 +125,18 @@ func useTLS() bool {
 	return strings.HasSuffix(ServerAddr, "9440")
 }
 
-func getClickhouseOptions(dbName string) *clickhouse.Options {
+func getClickhouseOptions(dbName string, username string) *clickhouse.Options {
 	options := &clickhouse.Options{
 		Addr: []string{ServerAddr},
 		Auth: clickhouse.Auth{
 			Database: dbName,
-			Username: Username,
+			Username: username,
 			Password: Password,
 		},
 		DialTimeout: time.Duration(25) * time.Second,
+		Compression: &clickhouse.Compression{
+			Method: clickhouse.CompressionZSTD,
+		},
 	}
 
 	if useTLS() {

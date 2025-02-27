@@ -4,22 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/highlight-run/highlight/backend/env"
 	"net/http"
-	"os"
 	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/dchest/uniuri"
 	"github.com/go-chi/chi"
 	"github.com/golang-jwt/jwt"
-	resthooks "github.com/highlight-run/go-resthooks"
-	model "github.com/highlight-run/highlight/backend/model"
+	"github.com/highlight-run/go-resthooks"
 	e "github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"gorm.io/gorm"
-)
 
-var (
-	signingToken = os.Getenv("ZAPIER_INTEGRATION_SIGNING_KEY")
+	"github.com/highlight-run/highlight/backend/model"
 )
 
 func getProjectForToken(parsedToken *ParsedZapierToken, db *gorm.DB) (*model.Project, error) {
@@ -195,7 +193,7 @@ func GenerateZapierAccessToken(projectId int) (string, error) {
 		"magic":      uniuri.New(), // this will be stored in the server to validate token and allow us to invalidate later
 	})
 
-	return token.SignedString([]byte(signingToken))
+	return token.SignedString([]byte(env.Config.ZapierIntegrationSigningKey))
 }
 
 type ParsedZapierToken struct {
@@ -208,7 +206,7 @@ func ParseZapierAccessToken(token string) (*ParsedZapierToken, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
 		}
-		return []byte(signingToken), nil
+		return []byte(env.Config.ZapierIntegrationSigningKey), nil
 	})
 
 	if err != nil {

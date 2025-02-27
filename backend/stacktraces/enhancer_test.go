@@ -2,6 +2,9 @@ package stacktraces
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"github.com/highlight-run/highlight/backend/redis"
 	"github.com/openlyinc/pointy"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -19,7 +22,9 @@ type Testcase struct {
 	expectedStackTrace []modelInput.ErrorTrace
 	fetcher            fetcher
 	version            string
+	projectID          int
 	err                error
+	fsOnly             bool
 }
 
 var proper = Testcase{
@@ -67,6 +72,12 @@ var proper = Testcase{
 	err:     e.New(""),
 }
 
+type mockInvalidNetworkFetcher struct{}
+
+func (n mockInvalidNetworkFetcher) fetchFile(ctx context.Context, href string) ([]byte, error) {
+	return []byte("<not valid>"), nil
+}
+
 func TestEnhanceStackTrace(t *testing.T) {
 	ctx := context.TODO()
 	stackTraceErrorCode := modelInput.SourceMappingErrorCodeMinifiedFileMissingInS3AndURL
@@ -96,15 +107,21 @@ func TestEnhanceStackTrace(t *testing.T) {
 					LineNumber:   ptr.Int(634),
 					ColumnNumber: ptr.Int(4),
 					FunctionName: ptr.String(""),
+					LinesBefore:  ptr.String("   * @param {*} target The value to search for.\n   * @param {Function} comparator The comparator invoked per element.\n   * @returns {boolean} Returns `true` if `target` is found, else `false`.\n   */\n  function arrayIncludesWith(array, value, comparator) {\n"),
+					LineContent:  ptr.String("    var index = -1,\n"),
+					LinesAfter:   ptr.String("        length = array == null ? 0 : array.length;\n\n    while (++index < length) {\n      if (comparator(value, array[index])) {\n        return true;\n"),
 				},
 				{
 					FileName:     ptr.String("https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.4/lodash.js"),
 					LineNumber:   ptr.Int(633),
 					ColumnNumber: ptr.Int(11),
 					FunctionName: ptr.String("arrayIncludesWith"),
+					LinesBefore:  ptr.String("   * @param {Array} [array] The array to inspect.\n   * @param {*} target The value to search for.\n   * @param {Function} comparator The comparator invoked per element.\n   * @returns {boolean} Returns `true` if `target` is found, else `false`.\n   */\n"),
+					LineContent:  ptr.String("  function arrayIncludesWith(array, value, comparator) {\n"),
+					LinesAfter:   ptr.String("    var index = -1,\n        length = array == null ? 0 : array.length;\n\n    while (++index < length) {\n      if (comparator(value, array[index])) {\n"),
 				},
 			},
-			fetcher: NetworkFetcher{},
+			fetcher: NetworkFetcher{redis: redis.NewClient()},
 			err:     e.New(""),
 		},
 		"test source mapping invalid trace:no related source map": {
@@ -154,7 +171,7 @@ func TestEnhanceStackTrace(t *testing.T) {
 					},
 				},
 			},
-			fetcher: NetworkFetcher{},
+			fetcher: NetworkFetcher{redis: redis.NewClient()},
 			err:     e.New(""),
 		},
 		"test source mapping invalid trace:filename is not a url": {
@@ -179,7 +196,7 @@ func TestEnhanceStackTrace(t *testing.T) {
 					},
 				},
 			},
-			fetcher: NetworkFetcher{},
+			fetcher: NetworkFetcher{redis: redis.NewClient()},
 			err:     e.New(""),
 		},
 		"test source mapping invalid trace:trace is nil": {
@@ -216,6 +233,72 @@ func TestEnhanceStackTrace(t *testing.T) {
 			fetcher: DiskFetcher{},
 			err:     e.New(""),
 		},
+		"test map file resolution mapping": {
+			stackFrameInput: []*publicModelInput.StackFrameInput{
+				{
+					FileName:     ptr.String("/_next/server/app/(route-group-test)/[slug]/page-router-edge-test.js"),
+					LineNumber:   ptr.Int(1),
+					ColumnNumber: ptr.Int(422367),
+				},
+			},
+			expectedStackTrace: []modelInput.ErrorTrace{
+				{
+					FileName:     ptr.String("webpack://_N_E/./node_modules/next/dist/compiled/cookie/index.js"),
+					LineNumber:   ptr.Int(2),
+					ColumnNumber: ptr.Int(0),
+					FunctionName: ptr.String(""),
+					LineContent:  ptr.String("/*!\n"),
+					LinesBefore:  ptr.String("(()=>{\"use strict\";if(typeof __nccwpck_require__!==\"undefined\")__nccwpck_require__.ab=__dirname+\"/\";var e={};(()=>{var r=e;\n"),
+					LinesAfter:   ptr.String(" * cookie\n * Copyright(c) 2012-2014 Roman Shtylman\n * Copyright(c) 2015 Douglas Christopher Wilson\n * MIT Licensed\n */r.parse=parse;r.serialize=serialize;var i=decodeURIComponent;var t=encodeURIComponent;var a=/; */;var n=/^[\\u0009\\u0020-\\u007e\\u0080-\\u00ff]+$/;function parse(e,r){if(typeof e!==\"string\"){throw new TypeError(\"argument str must be a string\")}var t={};var n=r||{};var o=e.split(a);var s=n.decode||i;for(var p=0;p<o.length;p++){var f=o[p];var u=f.indexOf(\"=\");if(u<0){continue}var v=f.substr(0,u).trim();var c=f.substr(++u,f.length).trim();if('\"'==c[0]){c=c.slice(1,-1)}if(undefined==t[v]){t[v]=tryDecode(c,s)}}return t}function serialize(e,r,i){var a=i||{};var o=a.encode||t;if(typeof o!==\"function\"){throw new TypeError(\"option encode is invalid\")}if(!n.test(e)){throw new TypeError(\"argument name is invalid\")}var s=o(r);if(s&&!n.test(s)){throw new TypeError(\"argument val is invalid\")}var p=e+\"=\"+s;if(null!=a.maxAge){var f=a.maxAge-0;if(isNaN(f)||!isFinite(f)){throw new TypeError"),
+				},
+			},
+			version:   "version-a1b2c3",
+			projectID: 29954,
+			fetcher:   DiskFetcher{},
+		},
+		"test version matching first": {
+			stackFrameInput: []*publicModelInput.StackFrameInput{
+				{
+					FileName:     ptr.String("https://app.highlight.io/main.8344d167.chunk.js"),
+					LineNumber:   ptr.Int(1),
+					ColumnNumber: ptr.Int(422367),
+				},
+			},
+			expectedStackTrace: []modelInput.ErrorTrace{
+				{
+					FileName:     ptr.String("https://app.highlight.io/pages/Buttons/Buttons.tsx"),
+					LineNumber:   ptr.Int(13),
+					ColumnNumber: ptr.Int(30),
+					FunctionName: ptr.String(""),
+					LineContent:  ptr.String("                        throw new Error('errors page');\n"),
+					LinesBefore:  ptr.String("        <div className={styles.buttonBody}>\n            <div>\n                <button\n                    className={commonStyles.submitButton}\n                    onClick={() => {\n"),
+					LinesAfter:   ptr.String("                    }}\n                >\n                    Throw an Error\n                </button>\n                <button\n"),
+				},
+			},
+			version:   "version-a1b2c3",
+			projectID: 1,
+			fetcher:   mockInvalidNetworkFetcher{},
+			fsOnly:    true,
+		},
+		"test reflame": {
+			stackFrameInput: []*publicModelInput.StackFrameInput{
+				{
+					FileName:     ptr.String("https://preview.highlight.io/~r/chunks/X3XZGGFJ.js?~r_rid=G5Qjykm00SuMZ-DTpV_ckUGZvRg"),
+					LineNumber:   ptr.Int(1),
+					ColumnNumber: ptr.Int(1656),
+				},
+			},
+			expectedStackTrace: []modelInput.ErrorTrace{
+				{
+					FileName:     ptr.String("/~r/app/~r_top/pages/Buttons/ButtonsHelper.tsx?~r_rid=WK5-8VqUX1-GQ_6VkgQg71ktp4Y"),
+					LineNumber:   ptr.Int(25),
+					ColumnNumber: ptr.Int(11),
+					FunctionName: ptr.String("Error"),
+				},
+			},
+			fetcher: NetworkFetcher{redis: redis.NewClient()},
+			err:     e.New(""),
+		},
 	}
 
 	s3Client, err := storage.NewS3Client(ctx)
@@ -223,21 +306,31 @@ func TestEnhanceStackTrace(t *testing.T) {
 		t.Fatalf("error creating storage client: %v", err)
 	}
 
-	fsClient, err := storage.NewFSClient(ctx, "https://localhost:8082/public", "")
+	fsClient, err := storage.NewFSClient(ctx, "http://localhost:8082/public", "./test-files")
 	if err != nil {
 		t.Fatalf("error creating storage client: %v", err)
 	}
 
 	// run tests
+	redisClient := redis.NewClient()
 	for _, client := range []storage.Client{s3Client, fsClient} {
 		for name, tc := range tests {
-			t.Run(name, func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s/%v", name, client), func(t *testing.T) {
+				if _, ok := client.(*storage.S3Client); ok && tc.fsOnly {
+					t.Skip("test case only for file system client, skipping for s3 client")
+				}
+				_ = redisClient.FlushDB(ctx)
+				if tc.projectID == 0 {
+					tc.projectID = 1
+				} else if client == s3Client {
+					t.Skip("skipping project-specific test for s3 client")
+				}
 				var v *string
 				if tc.version != "" {
 					v = &tc.version
 				}
 				fetch = tc.fetcher
-				mappedStackTrace, err := EnhanceStackTrace(ctx, tc.stackFrameInput, 1, v, client)
+				mappedStackTrace, err := EnhanceStackTrace(ctx, tc.stackFrameInput, tc.projectID, v, client)
 				if err != nil {
 					if err.Error() == tc.err.Error() {
 						return
@@ -255,9 +348,42 @@ func TestEnhanceStackTrace(t *testing.T) {
 	}
 }
 
+func TestEnhanceBackendNextServerlessTrace(t *testing.T) {
+	ctx := context.TODO()
+
+	client, err := storage.NewFSClient(ctx, "http://localhost:8082/public", "./test-files")
+	if err != nil {
+		t.Fatalf("error creating storage client: %v", err)
+	}
+
+	fetch = NetworkFetcher{redis: redis.NewClient()}
+
+	var stackFrameInput []*publicModelInput.StackFrameInput
+	err = json.Unmarshal([]byte(`[{"fileName":"/var/task/apps/magicsky/.next/server/app/(route-group-test)/[slug]/page-router-edge-test.js","lineNumber":1,"functionName":"s","columnNumber":3344,"error":"Error: 🎉 SSR Error with use-server: src/app-router/ssr/page.tsx"}]`), &stackFrameInput)
+	assert.NoError(t, err)
+
+	mappedStackTrace, err := EnhanceStackTrace(ctx, stackFrameInput, 29954, nil, client)
+	if err != nil {
+		t.Fatal(e.Wrap(err, "error enhancing source map"))
+	}
+	assert.Equal(t, 1, len(mappedStackTrace))
+	assert.Equal(t, "                    console.log(`got fetch cache entry for ${key}, duration: ${Date.now() - start}ms, size: ${Object.keys(cached).length}, cache-state: ${cacheState} tags: ${tags == null ? void 0 : tags.join(\",\")} softTags: ${softTags == null ? void 0 : softTags.join(\",\")}`);\n", *mappedStackTrace[0].LineContent)
+
+	err = json.Unmarshal([]byte(`[{"fileName":"/var/task/node_modules/@commerce-apps/core/dist/base/staticClient.js","lineNumber":162,"functionName":"","columnNumber":49,"error":"Error: 504 Request Timeout"}]`), &stackFrameInput)
+	assert.NoError(t, err)
+
+	mappedStackTrace, err = EnhanceStackTrace(ctx, stackFrameInput, 1, nil, client)
+	if err != nil {
+		t.Fatal(e.Wrap(err, "error enhancing source map"))
+	}
+	assert.Equal(t, 1, len(mappedStackTrace))
+	assert.Equal(t, "  return options.rawResponse ? response : getObjectFromResponse(response);\n", *mappedStackTrace[0].LineContent)
+
+}
+
 func TestGetURLSourcemap(t *testing.T) {
 	ctx := context.Background()
-	fsClient, err := storage.NewFSClient(ctx, "https://localhost:8082/public", "")
+	fsClient, err := storage.NewFSClient(ctx, "http://localhost:8082/public", "")
 	if err != nil {
 		t.Fatalf("error creating storage client: %v", err)
 	}
@@ -270,6 +396,7 @@ func TestGetURLSourcemap(t *testing.T) {
 
 func TestEnhanceStackTraceProd(t *testing.T) {
 	// local only for troubleshooting stacktrace enhancement
+	// only works if AWS credentials are set up
 	t.Skip()
 	storage.S3SourceMapBucketNameNew = "highlight-source-maps"
 	ctx := context.TODO()
@@ -279,20 +406,20 @@ func TestEnhanceStackTraceProd(t *testing.T) {
 		t.Fatalf("error creating storage client: %v", err)
 	}
 
-	fetch = NetworkFetcher{}
+	fetch = NetworkFetcher{redis: redis.NewClient()}
 	mappedStackTrace, err := EnhanceStackTrace(ctx, []*publicModelInput.StackFrameInput{
 		{
 			FunctionName: nil,
-			FileName:     pointy.String("https://lifeat.io/bundle.js"),
-			LineNumber:   pointy.Int(3540),
-			ColumnNumber: pointy.Int(5784),
-			Source:       pointy.String("    at https://lifeat.io/bundle.js:3540:5784"),
+			FileName:     pointy.String("https://app.serial.io/assets/index-CvE3e0ij.js"),
+			LineNumber:   pointy.Int(2777),
+			ColumnNumber: pointy.Int(129781),
+			Source:       pointy.String("    at https://app.serial.io/assets/index-CvE3e0ij.js:2777:129781"),
 		},
-	}, 1703, pointy.String("dev"), s3Client)
+	}, 6849, pointy.String("v1.1.232"), s3Client)
 	if err != nil {
 		t.Fatal(e.Wrap(err, "error enhancing source map"))
 	}
 	assert.Equal(t, 1, len(mappedStackTrace))
-	assert.Equal(t, "normal", *mappedStackTrace[0].FunctionName)
-	assert.Equal(t, "    font-size: ${FontSize.normal};\n", *mappedStackTrace[0].LineContent)
+	assert.Equal(t, "", *mappedStackTrace[0].FunctionName)
+	assert.Equal(t, "      console.error(`Supplementary data not found for identifier ${identifier}`);\n", *mappedStackTrace[0].LineContent)
 }

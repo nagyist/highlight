@@ -3,16 +3,11 @@
 	"extends": [
 		"plugin:react/recommended",
 		"plugin:@typescript-eslint/recommended",
-		"prettier/@typescript-eslint",
+		"plugin:prettier/recommended",
 		"plugin:react-hooks/recommended",
 		"plugin:tailwindcss/recommended"
 	],
-	"plugins": [
-		"simple-import-sort",
-		"unused-imports",
-		"import",
-		"tailwindcss"
-	],
+	"plugins": ["unused-imports", "import", "tailwindcss"],
 	"env": {
 		"commonjs": true,
 		"es6": true,
@@ -30,7 +25,11 @@
 			"jsx": true
 		}
 	},
-	"ignorePatterns": ["src/graph/generated/*", "src/__generated/*"],
+	"ignorePatterns": [
+		"src/graph/generated/*",
+		"src/__generated/*",
+		"src/components/Search/Parser/antlr/*"
+	],
 	"rules": {
 		"@typescript-eslint/explicit-module-boundary-types": "off",
 		"react/no-unescaped-entities": "off",
@@ -86,7 +85,7 @@
 					{
 						"name": "antd",
 						"importNames": ["Tabs"],
-						"message": "Please use Tabs from /src/components/Tab instead."
+						"message": "Please use Tabs from @highlight-run/ui/components instead."
 					},
 					{
 						"name": "antd",
@@ -111,7 +110,7 @@
 					{
 						"name": "antd",
 						"importNames": ["InputNumber"],
-						"message": "Please use InputNumber from /src/components/InputNumber instead."
+						"message": "Please use Form.Input with type='number' from @highlight-run/ui/components instead."
 					},
 					{
 						"name": "react-router",
@@ -131,6 +130,16 @@
 						"name": "@highlight-run/ui",
 						"importNames": ["Button"],
 						"message": "Please use Button from @components/Button instead."
+					},
+					{
+						"name": "react-use",
+						"importNames": ["useLocalStorage"],
+						"message": "Please use @rehooks/local-storage instead."
+					},
+					{
+						"name": "antd",
+						"importNames": ["message"],
+						"message": "Please use the toast function from @components/Toaster instead."
 					}
 				],
 				"patterns": [
@@ -144,8 +153,6 @@
 					}
 				]
 			}
-		],
-		"simple-import-sort/imports": "error",
-		"simple-import-sort/exports": "error"
+		]
 	}
 }

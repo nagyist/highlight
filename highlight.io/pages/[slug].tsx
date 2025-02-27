@@ -17,9 +17,13 @@ import {
 	iFeature,
 	loggingHeroKey,
 	loggingscreenshotKey,
+	dashboardsHeroKey,
+	dashboardsMobileKey,
 	monitoringscreenshotKey,
 	sessionReplayHeroKey,
 	sessionscreenshotKey,
+	tracesHeroKey,
+	tracesscreenshotKey,
 } from '../components/Features/features'
 import { CompaniesReel } from '../components/Home/CompaniesReel/CompaniesReel'
 import { CustomerReviewTrack } from '../components/Home/CustomerReviewTrack'
@@ -30,27 +34,37 @@ import errorMonitoringHero from '../public/images/features/errorMonitoringHero.p
 import loggingHero from '../public/images/features/loggingHero.png'
 import sessionReplayHero from '../public/images/features/sessionReplayHero.png'
 import loggingscreenshot from '../public/images/loggingscreenshot.png'
+import dashboardsHero from '../public/images/dashboardshero.webp'
+import dashboardsScreenshot from '../public/images/dashboardsmobile.png'
 import monitoringscreenshot from '../public/images/monitoringscreenshot.png'
 import sessionscreenshot from '../public/images/sessionscreenshot.png'
+import tracingHero from '../public/images/traces.png'
+import tracingscreenshot from '../public/images/tracesmobile.svg'
 
+import { FaPlay } from 'react-icons/fa'
 import {
 	AnimateFeatureHeroRight,
 	AnimateFeatureHeroXL,
 } from '../components/Animate'
-import { CalendlyPopover } from '../components/Home/CalendlyPopover'
+import { CalendlyModal } from '../components/common/CalendlyModal/CalendlyModal'
 
 const IMAGE_MAP = {
 	[errorMonitoringHeroKey]: errorMonitoringHero,
 	[loggingHeroKey]: loggingHero,
+	[tracesHeroKey]: tracingHero,
+	[tracesscreenshotKey]: tracingscreenshot,
 	[sessionReplayHeroKey]: sessionReplayHero,
 	[loggingscreenshotKey]: loggingscreenshot,
 	[monitoringscreenshotKey]: monitoringscreenshot,
 	[sessionscreenshotKey]: sessionscreenshot,
+	[dashboardsHeroKey]: dashboardsHero,
+	[dashboardsMobileKey]: dashboardsScreenshot,
 } as Record<string, StaticImageData>
 
 const ShowcasePage = ({ feature }: { feature: iFeature }) => {
 	const [imageLoaded, setImageLoaded] = useState(false)
 
+	//Created to handle the span in each subheader
 	const subHeader2List = [
 		<>
 			Debug from a{' '}
@@ -64,6 +78,16 @@ const ShowcasePage = ({ feature }: { feature: iFeature }) => {
 		<>
 			Search & set alerts{' '}
 			<span className="text-color-selected-light">across your logs.</span>
+		</>,
+		<>
+			Measure performance{' '}
+			<span className="text-color-selected-light">
+				across your application.
+			</span>
+		</>,
+		<>
+			Analyze metrics across your{' '}
+			<span className="text-color-selected-light">entire stack.</span>
 		</>,
 	]
 
@@ -115,18 +139,24 @@ const ShowcasePage = ({ feature }: { feature: iFeature }) => {
 									</Typography>
 								</PrimaryButton>
 								<PrimaryButton
-									href={feature.docsLink}
+									href={'https://app.highlight.io/demo'}
 									className={classNames(
 										homeStyles.hollowButton,
 									)}
 								>
-									<Typography type="copy2" emphasis={true}>
-										Read our docs
-									</Typography>
+									<div className="flex items-center gap-2">
+										<FaPlay />
+										<Typography
+											type="copy2"
+											emphasis={true}
+										>
+											Live demo
+										</Typography>
+									</div>
 								</PrimaryButton>
 							</div>
 							<div className="-ml-3 justify-self-start">
-								<CalendlyPopover />
+								<CalendlyModal className="px-3 hover:bg-white/10" />
 							</div>
 						</div>
 					</div>
@@ -136,7 +166,7 @@ const ShowcasePage = ({ feature }: { feature: iFeature }) => {
 								className={`hidden lg:flex ultra:hidden right-0 object-contain top-0 lg:w-[550px] xl:w-[650px]`}
 								src={IMAGE_MAP[feature.slantedImage]}
 								alt="Feature Spotlight"
-								onLoadingComplete={() => setImageLoaded(true)}
+								onLoad={() => setImageLoaded(true)}
 							/>
 						</AnimateFeatureHeroRight>
 						<AnimateFeatureHeroXL loaded={imageLoaded}>
@@ -144,14 +174,14 @@ const ShowcasePage = ({ feature }: { feature: iFeature }) => {
 								className={`hidden ultra:flex w-[500px]`}
 								src={IMAGE_MAP[feature.regularImage]}
 								alt="Feature Spotlight"
-								onLoadingComplete={() => setImageLoaded(true)}
+								onLoad={() => setImageLoaded(true)}
 							/>
 						</AnimateFeatureHeroXL>
 						<Image
 							className={`lg:hidden right-0 object-contain bottom-0 md:w-[500px]`}
 							src={IMAGE_MAP[feature.regularImage]}
 							alt="Feature Spotlight"
-							onLoadingComplete={() => setImageLoaded(true)}
+							onLoad={() => setImageLoaded(true)}
 						/>
 					</div>
 				</div>

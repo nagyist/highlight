@@ -5,25 +5,30 @@ import {
 	IconSolidCheveronLeft,
 	IconSolidCheveronRight,
 	IconSolidDotsHorizontal,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
 import { clamp, range } from '@util/numbers'
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo } from 'react'
 
 import * as style from './style.css'
+import { NumberParam, withDefault } from 'use-query-params'
 
 export const PAGE_SIZE = 10
 export const DEFAULT_SIBLING_COUNT = 2
 export const START_PAGE = 1
+export const PAGE_PARAM = withDefault(NumberParam, START_PAGE)
 
 const OPENSEARCH_MAX_RESULTS = 10000
 const MAX_PAGES = Math.floor(OPENSEARCH_MAX_RESULTS / PAGE_SIZE) - 1
 
+type SetPageType = (newPage: number) => void
+
 interface Props {
 	page?: number
-	setPage: React.Dispatch<React.SetStateAction<number>>
+	setPage: SetPageType | React.Dispatch<React.SetStateAction<number>>
 	totalCount: number
 	pageSize?: number
 	siblingCount?: number
+	loading?: boolean
 }
 
 enum ExpandAction {
@@ -37,17 +42,29 @@ const SearchPagination = ({
 	totalCount,
 	pageSize,
 	siblingCount,
+	loading,
 }: Props) => {
 	const currentPage = page ?? START_PAGE
 	const $pageSize = pageSize ?? PAGE_SIZE
 	const $siblingCount = siblingCount ?? DEFAULT_SIBLING_COUNT
 
-	const pageCount = Math.min(MAX_PAGES, Math.ceil(totalCount / $pageSize))
+	const [resultCount, setResultCount] = React.useState(totalCount)
+
+	useEffect(() => {
+		if (!loading) {
+			setResultCount(totalCount)
+		}
+	}, [totalCount, loading])
+
+	const pageCount = Math.min(MAX_PAGES, Math.ceil(resultCount / $pageSize))
 
 	const skip = (offset: number) => {
-		return setPage((p) =>
-			clamp((p || START_PAGE) + offset, START_PAGE, pageCount),
+		const newPage = clamp(
+			(page || START_PAGE) + offset,
+			START_PAGE,
+			pageCount,
 		)
+		return setPage(newPage)
 	}
 
 	// startIdx | dots | siblings | currentIdx | siblings | dots | endIdx
@@ -107,6 +124,7 @@ const SearchPagination = ({
 			px="16"
 			pt="8"
 			pb="12"
+			width="full"
 		>
 			<ButtonIcon
 				kind="secondary"

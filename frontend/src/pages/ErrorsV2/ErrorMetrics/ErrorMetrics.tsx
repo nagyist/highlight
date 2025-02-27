@@ -1,13 +1,20 @@
-import CategoricalBarChart from '@components/CategoricalBarChart/CategoricalBarChar'
-import TimeRangePicker from '@components/TimeRangePicker/TimeRangePicker'
-import { useGetErrorGroupFrequenciesQuery } from '@graph/hooks'
 import { GetErrorGroupQuery } from '@graph/operations'
-import { ErrorGroupFrequenciesParamsInput } from '@graph/schemas'
-import { Box, Heading, IconSolidTrendingUp, Text } from '@highlight-run/ui'
-import useDataTimeRange from '@hooks/useDataTimeRange'
+import { MetricAggregator, ProductType } from '@graph/schemas'
+import {
+	Box,
+	DateRangePicker,
+	EXTENDED_TIME_PRESETS,
+	Heading,
+	IconSolidTrendingUp,
+	presetStartDate,
+	Text,
+} from '@highlight-run/ui/components'
 import { ErrorDistributions } from '@pages/ErrorsV2/ErrorMetrics/ErrorDistributions'
-import moment from 'moment'
-import React, { useEffect, useState } from 'react'
+import React, { useMemo } from 'react'
+import Graph from '@/pages/Graphing/components/Graph'
+import { useGraphData } from '@pages/Graphing/hooks/useGraphData'
+import { GraphContextProvider } from '@/pages/Graphing/context/GraphContext'
+import { useGraphTime } from '@/pages/Graphing/hooks/useGraphTime'
 
 import styles from './ErrorMetrics.module.css'
 
@@ -15,155 +22,49 @@ type Props = {
 	errorGroup: GetErrorGroupQuery['error_group']
 }
 
-type FrequencyDataPoint = {
-	date: string | undefined
-	// TODO(spenny): dynamically set "Occurrences" key when multiple counts supported
-	Occurrences: number | undefined
-}
-
-type TimelineTickInfo = {
-	ticks: string[]
-	format: string
-}
-
-const TICK_EVERY_BUCKETS = 10
 const NUM_BUCKETS_TIMELINE = 30
 
-// TODO(spenny): dynamically set colors when multiple counts supported
-const LINE_COLORS = {
-	Occurrences: '#6b48c7',
-}
+const GRAPH_ID = 'errorFrequencyChart'
 
 const ErrorMetrics: React.FC<Props> = ({ errorGroup }) => {
-	const [errorFrequencyData, setErrorFrequencyData] = useState<
-		FrequencyDataPoint[]
-	>([])
-	const [errorFrequencyTotal, setErrorFrequencyTotal] = useState(0)
-	const [timelineTicks, setTimelineTicks] = useState<TimelineTickInfo>({
-		ticks: [],
-		format: '',
-	})
-	const { timeRange, setTimeRange, resetTimeRange } = useDataTimeRange()
-	const [referenceArea, setReferenceArea] = useState<{
-		start: string
-		end: string
-	}>({ start: '', end: '' })
+	const graphContext = useGraphData()
+	const { startDate, endDate, selectedPreset, updateSearchTime } =
+		useGraphTime(EXTENDED_TIME_PRESETS)
 
-	const { data: frequencies } = useGetErrorGroupFrequenciesQuery({
-		variables: {
-			project_id: `${errorGroup?.project_id}`,
-			error_group_secure_ids: [errorGroup?.secure_id || ''],
-			params: {
-				date_range: {
-					start_date: timeRange.start_date,
-					end_date: timeRange.end_date,
-				},
-				resolution_minutes: Math.ceil(
-					timeRange.lookback / NUM_BUCKETS_TIMELINE,
-				),
-			} as ErrorGroupFrequenciesParamsInput,
-			metric: 'count',
-		},
-		skip: !errorGroup?.secure_id,
-	})
+	const totalCount = useMemo(() => {
+		const data = graphContext.graphData.current?.[GRAPH_ID] || []
 
-	const buildTimelineTicks = () => {
-		const ticks: string[] = []
-		const seenDays: Set<string> = new Set<string>()
-		let lastDate: moment.Moment | undefined = undefined
-		const tickFormat = timeRange.lookback > 24 * 60 ? 'D MMM' : 'HH:mm'
+		return data.reduce((acc, curr) => {
+			const seriesValue = Object.values(curr).find(
+				(value) => typeof value === 'object',
+			) as any
 
-		for (const dataPoint of frequencies?.errorGroupFrequencies || []) {
-			const pointDate = dataPoint?.date
-			if (pointDate) {
-				const newDate = moment(pointDate)
-				if (
-					lastDate &&
-					newDate.diff(lastDate, 'minutes') <
-						(timeRange.lookback / NUM_BUCKETS_TIMELINE) *
-							TICK_EVERY_BUCKETS
-				) {
-					continue
-				}
-				lastDate = moment(newDate)
-				const formattedDate = newDate.format(tickFormat)
-				if (!seenDays.has(formattedDate)) {
-					ticks.push(pointDate)
-					seenDays.add(formattedDate)
-				}
+			if (!seriesValue || !seriesValue.value) {
+				return acc
 			}
-		}
-		setTimelineTicks({ ticks, format: tickFormat })
-	}
 
-	const onMouseUp = () => {
-		if (Object.values(referenceArea).includes('')) {
-			return
-		}
-
-		const { start, end } = referenceArea
-
-		if (end > start) {
-			setTimeRange(start, end, true)
-		} else {
-			setTimeRange(end, start, true)
-		}
-
-		setReferenceArea({ start: '', end: '' })
-	}
-	const onMouseMove = (e?: any) => {
-		e?.activeLabel &&
-			referenceArea.start &&
-			setReferenceArea({
-				start: referenceArea.start,
-				end: e.activeLabel,
-			})
-	}
-
-	const onMouseDown = (e?: any) => {
-		e?.activeLabel &&
-			setReferenceArea({
-				start: e.activeLabel,
-				end: referenceArea.end,
-			})
-	}
-
-	const buildFormatedData = () => {
-		const dataSet = frequencies?.errorGroupFrequencies || []
-		let runningTotal = 0
-		const newErrorFrequencyData: FrequencyDataPoint[] = []
-
-		dataSet.forEach((dataPoint) => {
-			runningTotal += dataPoint?.value || 0
-			// TODO(spenny): dynamically set "Occurrences" key when multiple counts supported
-			newErrorFrequencyData.push({
-				date: dataPoint?.date,
-				Occurrences: dataPoint?.value,
-			} as FrequencyDataPoint)
-		})
-
-		setErrorFrequencyTotal(runningTotal)
-		setErrorFrequencyData(newErrorFrequencyData)
-	}
-
-	useEffect(() => {
-		buildTimelineTicks()
-		buildFormatedData()
-		// Only invoke on new data.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [frequencies?.errorGroupFrequencies])
-
-	useEffect(() => {
-		resetTimeRange()
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [])
+			return acc + seriesValue.value
+		}, 0)
+	}, [graphContext])
 
 	return (
 		<Box>
 			<Box mt="20" mb="32" display="flex" justifyContent="space-between">
 				<Heading level="h3">Metrics</Heading>
 				<div className={styles.timePickerContainer}>
-					<TimeRangePicker />
+					<DateRangePicker
+						selectedValue={{
+							startDate: startDate,
+							endDate: endDate,
+							selectedPreset: selectedPreset,
+						}}
+						onDatesChange={updateSearchTime}
+						presets={EXTENDED_TIME_PRESETS}
+						minDate={presetStartDate(EXTENDED_TIME_PRESETS[6])}
+						kind="secondary"
+						size="medium"
+						emphasis="low"
+					/>
 				</div>
 			</Box>
 
@@ -172,30 +73,15 @@ const ErrorMetrics: React.FC<Props> = ({ errorGroup }) => {
 					cssClass={styles.metricsDistributionContainer}
 					style={{ width: '50%' }}
 				>
-					<CategoricalBarChart
-						syncId="errorFrequencyChart"
-						data={errorFrequencyData}
-						xAxisDataKeyName="date"
-						xAxisTickFormatter={(tickItem) =>
-							moment(tickItem).format(timelineTicks.format)
-						}
-						xAxisProps={{
-							ticks: timelineTicks.ticks,
-							tickCount: timelineTicks.ticks.length,
-						}}
-						yAxisLabel=""
-						hideYAxis
-						barColorMapping={LINE_COLORS}
-						referenceAreaProps={{
-							x1: referenceArea.start,
-							x2: referenceArea.end,
-						}}
-						onMouseDown={onMouseDown}
-						onMouseMove={onMouseMove}
-						onMouseUp={onMouseUp}
-						stacked
-						hideLegend
-					/>
+					<GraphContextProvider value={graphContext}>
+						<ErrorMetricsGraph
+							projectId={String(errorGroup!.project_id)}
+							secureId={errorGroup!.secure_id}
+							startDate={startDate}
+							endDate={endDate}
+							updateSearchTime={updateSearchTime}
+						/>
+					</GraphContextProvider>
 				</Box>
 
 				<Box
@@ -210,7 +96,7 @@ const ErrorMetrics: React.FC<Props> = ({ errorGroup }) => {
 						</span>
 						<Text weight="bold">Total occurrences</Text>
 					</span>
-					<Text>{errorFrequencyTotal}</Text>
+					<Text>{totalCount}</Text>
 				</Box>
 			</Box>
 
@@ -221,5 +107,42 @@ const ErrorMetrics: React.FC<Props> = ({ errorGroup }) => {
 		</Box>
 	)
 }
+
+type ErrorMetricsGraphProps = {
+	projectId: string
+	secureId: string
+	startDate: Date
+	endDate: Date
+	updateSearchTime: (startDate: Date, endDate: Date) => void
+}
+
+const ErrorMetricsGraph = React.memo(
+	({
+		projectId,
+		secureId,
+		startDate,
+		endDate,
+		updateSearchTime,
+	}: ErrorMetricsGraphProps) => (
+		<Graph
+			id={GRAPH_ID}
+			viewConfig={{
+				type: 'Bar chart',
+				showLegend: false,
+			}}
+			productType={ProductType.Errors}
+			projectId={projectId}
+			startDate={startDate}
+			endDate={endDate}
+			query={`secure_id=${secureId}`}
+			setTimeRange={updateSearchTime}
+			bucketByKey="Timestamp"
+			bucketCount={NUM_BUCKETS_TIMELINE}
+			expressions={[{ aggregator: MetricAggregator.Count, column: '' }]}
+			height={200}
+			hideTitle
+		/>
+	),
+)
 
 export default ErrorMetrics

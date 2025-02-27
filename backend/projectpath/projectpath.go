@@ -1,7 +1,7 @@
 package projectpath
 
 import (
-	"github.com/highlight-run/highlight/backend/util"
+	"github.com/highlight-run/highlight/backend/env"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,10 +16,17 @@ var (
 )
 
 func GetRoot() string {
-	if util.IsOnPrem() {
-		if _, err := os.Stat("/build"); err == nil {
-			return "/build"
-		}
+	if _, err := os.Stat("/build"); err == nil {
+		return "/build"
 	}
 	return Root
+}
+
+func GetPersistentRoot() string {
+	if env.IsOnPrem() {
+		if _, err := os.Stat("/highlight-data"); err == nil {
+			return "/highlight-data"
+		}
+	}
+	return GetRoot()
 }

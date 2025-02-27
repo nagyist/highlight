@@ -1,7 +1,16 @@
 import { useAuthContext } from '@authentication/AuthContext'
 import {
+	AdminSuggestion,
+	filterMentionedAdmins,
+	filterMentionedSlackUsers,
+	parseAdminSuggestions,
+} from '@components/Comment/utils/utils'
+import { toast } from '@components/Toaster'
+import {
+	useCreateErrorCommentForExistingIssueMutation,
 	useCreateErrorCommentMutation,
 	useCreateSessionCommentMutation,
+	useCreateSessionCommentWithExistingIssueMutation,
 	useGetCommentMentionSuggestionsQuery,
 	useGetWorkspaceAdminsByProjectIdQuery,
 } from '@graph/hooks'
@@ -17,9 +26,13 @@ import {
 	Box,
 	ButtonIcon,
 	Form,
+	IconSolidCheveronDown,
+	IconSolidCheveronUp,
 	IconSolidClickUp,
 	IconSolidGithub,
+	IconSolidGitlab,
 	IconSolidHeight,
+	IconSolidJira,
 	IconSolidLinear,
 	IconSolidPaperAirplane,
 	IconSolidPlus,
@@ -27,39 +40,42 @@ import {
 	IconSolidX,
 	Menu,
 	Stack,
+	Tag,
+	TagSwitchGroup,
 	Text,
-	useFormState,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
 import { useIsProjectIntegratedWith } from '@pages/IntegrationsPage/components/common/useIsProjectIntegratedWith'
 import { useGitHubIntegration } from '@pages/IntegrationsPage/components/GitHubIntegration/utils'
 import { useLinearIntegration } from '@pages/IntegrationsPage/components/LinearIntegration/utils'
 import ISSUE_TRACKER_INTEGRATIONS, {
 	IssueTrackerIntegration,
 } from '@pages/IntegrationsPage/IssueTrackerIntegrations'
-import CommentTextBody from '@pages/Player/Toolbar/NewCommentForm/CommentTextBody/CommentTextBody'
+import { CommentTextBody } from '@pages/Player/Toolbar/NewCommentForm/CommentTextBody/CommentTextBody'
 import analytics from '@util/analytics'
 import { getCommentMentionSuggestions } from '@util/comment/util'
 import { useParams } from '@util/react-router/useParams'
-import { message } from 'antd'
 import React, { useEffect, useMemo, useState } from 'react'
 import { OnChangeHandlerFunc } from 'react-mentions'
 import { useNavigate } from 'react-router-dom'
 
 import { Button } from '@/components/Button'
 import { CommentMentionButton } from '@/components/Comment/CommentMentionButton'
+import { SearchIssues } from '@/components/SearchIssues/SearchIssues'
+import { useGitlabIntegration } from '@/pages/IntegrationsPage/components/GitlabIntegration/utils'
+import { useJiraIntegration } from '@/pages/IntegrationsPage/components/JiraIntegration/utils'
 import {
-	AdminSuggestion,
-	parseAdminSuggestions,
-} from '@/components/Comment/utils/utils'
+	NewIntegrationIssueMode,
+	NewIntegrationIssueType,
+} from '@/pages/IntegrationsPage/Integrations'
 
 import { Coordinates2D } from '../../PlayerCommentCanvas/PlayerCommentCanvas'
 import usePlayerConfiguration from '../../PlayerHook/utils/usePlayerConfiguration'
+import * as style from './NewCommentForm.css'
 
 interface Props {
 	commentTime: number
 	onCloseHandler: () => void
 	commentPosition: Coordinates2D | undefined
-	parentRef?: React.RefObject<HTMLDivElement>
 	session?: Session
 	session_secure_id?: string
 	error_secure_id?: string
@@ -77,7 +93,6 @@ export const NewCommentForm = ({
 	commentTime,
 	onCloseHandler,
 	commentPosition,
-	parentRef,
 	session,
 	session_secure_id,
 	error_secure_id,
@@ -88,10 +103,21 @@ export const NewCommentForm = ({
 	const [createComment] = useCreateSessionCommentMutation({
 		refetchQueries: [
 			namedOperations.Query.GetSessionComments,
-			namedOperations.Query.GetSessionsOpenSearch,
+			namedOperations.Query.GetSessions,
 		],
 	})
+	const [createCommentWithExistingIssue] =
+		useCreateSessionCommentWithExistingIssueMutation({
+			refetchQueries: [
+				namedOperations.Query.GetSessionComments,
+				namedOperations.Query.GetSessions,
+			],
+		})
 	const [createErrorComment] = useCreateErrorCommentMutation()
+	const [createErrorCommentForExistingIssue] =
+		useCreateErrorCommentForExistingIssueMutation({
+			refetchQueries: [namedOperations.Query.GetErrorIssues],
+		})
 	const { admin, isLoggedIn } = useAuthContext()
 	const { project_id } = useParams<{ project_id: string }>()
 	const [commentText, setCommentText] = useState('')
@@ -109,13 +135,27 @@ export const NewCommentForm = ({
 	const [selectedIssueService, setSelectedIssueService] =
 		useState<IntegrationType>()
 	const [containerId, setContainerId] = useState('')
-	const formState = useFormState({
+	const [issueTypeId, setIssueTypeId] = useState('')
+	const formStore = Form.useStore({
 		defaultValues: {
 			commentText: '',
 			issueTitle: '',
 			issueDescription: '',
 		},
 	})
+	const formValues = formStore.useState('values')
+
+	// issue linking support
+	const [mode, setMode] = React.useState<NewIntegrationIssueMode>(
+		NewIntegrationIssueType.CreateIssue,
+	)
+	const [linkedIssue, setLinkedIssue] = useState({
+		id: '',
+		url: '',
+		title: '',
+	})
+
+	const [moreOptions, setMoreOptions] = useState(false)
 
 	const integrationMap = useMemo(() => {
 		const ret: { [key: string]: IssueTrackerIntegration } = {}
@@ -170,31 +210,55 @@ export const NewCommentForm = ({
 		})
 		setIsCreatingComment(true)
 
-		const { issueTitle, issueDescription } = formState.values
+		const { issueTitle, issueDescription } = formValues
 
 		try {
-			await createErrorComment({
-				variables: {
-					project_id: project_id!,
-					error_group_secure_id: error_secure_id || '',
-					text: commentText.trim(),
-					text_for_email: commentTextForEmail.trim(),
-					error_url: `${window.location.origin}${window.location.pathname}`,
-					tagged_admins: mentionedAdmins,
-					tagged_slack_users: mentionedSlackUsers,
-					author_name: admin?.name || admin?.email || 'Someone',
-					integrations: selectedIssueService
-						? [selectedIssueService]
-						: [],
-					issue_title: selectedIssueService ? issueTitle : null,
-					issue_team_id: containerId || undefined,
-					issue_description: selectedIssueService
-						? issueDescription
-						: null,
-				},
-				refetchQueries: [namedOperations.Query.GetErrorComments],
-			})
-			formState.reset()
+			if (mode === NewIntegrationIssueType.CreateIssue) {
+				await createErrorComment({
+					variables: {
+						project_id: project_id!,
+						error_group_secure_id: error_secure_id || '',
+						text: commentText.trim(),
+						text_for_email: commentTextForEmail.trim(),
+						error_url: `${window.location.origin}${window.location.pathname}`,
+						tagged_admins: mentionedAdmins,
+						tagged_slack_users: mentionedSlackUsers,
+						author_name: admin?.name || admin?.email || 'Someone',
+						integrations: selectedIssueService
+							? [selectedIssueService]
+							: [],
+						issue_title: selectedIssueService ? issueTitle : null,
+						issue_team_id: containerId || undefined,
+						issue_description: selectedIssueService
+							? issueDescription
+							: null,
+						issue_type_id: issueTypeId || undefined,
+					},
+					refetchQueries: [namedOperations.Query.GetErrorComments],
+				})
+			} else {
+				await createErrorCommentForExistingIssue({
+					variables: {
+						project_id: project_id!,
+						error_group_secure_id: error_secure_id || '',
+						text: commentText.trim(),
+						text_for_email: commentTextForEmail.trim(),
+						error_url: `${window.location.origin}${window.location.pathname}`,
+						tagged_admins: mentionedAdmins,
+						tagged_slack_users: mentionedSlackUsers,
+						author_name: admin?.name || admin?.email || 'Someone',
+						integrations: selectedIssueService
+							? [selectedIssueService]
+							: [],
+						issue_title: selectedIssueService ? issueTitle : '',
+						issue_url: linkedIssue.url,
+						issue_id: linkedIssue.id,
+					},
+					refetchQueries: [namedOperations.Query.GetErrorIssues],
+					awaitRefetchQueries: true,
+				})
+			}
+			formStore.reset()
 			setCommentText('')
 			onCloseHandler()
 		} catch (_e) {
@@ -202,54 +266,84 @@ export const NewCommentForm = ({
 			analytics.track('Create Error Comment Failed', {
 				error: e.toString(),
 			})
-			message.error('Failed to post a comment, please try again.')
+			toast.error('Failed to post a comment, please try again.')
 		}
 		setIsCreatingComment(false)
 	}
 
 	const onCreateSessionComment = async () => {
+		console.log('onCreateSessionComment')
 		analytics.track('Create Comment', {
 			numHighlightAdminMentions: mentionedAdmins.length,
 			numSlackMentions: mentionedSlackUsers.length,
 		})
 		setIsCreatingComment(true)
 
-		const { issueTitle, issueDescription } = formState.values
+		const { issueTitle, issueDescription } = formValues
 
 		try {
-			await createComment({
-				variables: {
-					project_id: project_id!,
-					session_secure_id: session_secure_id || '',
-					session_timestamp: Math.floor(commentTime),
-					text: commentText.trim(),
-					text_for_email: commentTextForEmail.trim(),
-					x_coordinate: commentPosition?.x || 0,
-					y_coordinate: commentPosition?.y || 0,
-					session_url: `${window.location.origin}${window.location.pathname}`,
-					tagged_admins: mentionedAdmins,
-					tagged_slack_users: mentionedSlackUsers,
-					tags: [],
-					time: commentTime / 1000,
-					author_name: admin?.name || admin?.email || 'Someone',
-					issue_team_id: containerId || undefined,
-					integrations: selectedIssueService
-						? [selectedIssueService]
-						: [],
-					issue_title: selectedIssueService ? issueTitle : null,
-					issue_description: selectedIssueService
-						? issueDescription
-						: null,
-					additional_context: currentUrl
-						? `• From ${
-								error_secure_id ? 'error' : 'session'
-						  } URL: <${currentUrl}|${currentUrl}>`
-						: null,
-				},
-				refetchQueries: [namedOperations.Query.GetSessionComments],
-			})
+			if (mode === NewIntegrationIssueType.CreateIssue) {
+				await createComment({
+					variables: {
+						project_id: project_id!,
+						session_secure_id: session_secure_id || '',
+						session_timestamp: Math.floor(commentTime),
+						text: commentText.trim(),
+						text_for_email: commentTextForEmail.trim(),
+						x_coordinate: commentPosition?.x || 0,
+						y_coordinate: commentPosition?.y || 0,
+						session_url: `${window.location.origin}${window.location.pathname}`,
+						tagged_admins: mentionedAdmins,
+						tagged_slack_users: mentionedSlackUsers,
+						tags: [],
+						time: commentTime / 1000,
+						author_name: admin?.name || admin?.email || 'Someone',
+						issue_team_id: containerId || undefined,
+						integrations: selectedIssueService
+							? [selectedIssueService]
+							: [],
+						issue_title: selectedIssueService ? issueTitle : null,
+						issue_description: selectedIssueService
+							? issueDescription
+							: null,
+						additional_context: currentUrl
+							? `*User\'s URL* <${currentUrl}|${currentUrl}>`
+							: null,
+						issue_type_id: issueTypeId || undefined,
+					},
+					refetchQueries: [namedOperations.Query.GetSessionComments],
+				})
+			} else {
+				createCommentWithExistingIssue({
+					variables: {
+						project_id: project_id!,
+						session_secure_id: session_secure_id || '',
+						session_timestamp: Math.floor(commentTime),
+						text: commentText.trim(),
+						text_for_email: commentTextForEmail.trim(),
+						x_coordinate: commentPosition?.x || 0,
+						y_coordinate: commentPosition?.y || 0,
+						session_url: `${window.location.origin}${window.location.pathname}`,
+						tagged_admins: mentionedAdmins,
+						tagged_slack_users: mentionedSlackUsers,
+						tags: [],
+						time: commentTime / 1000,
+						author_name: admin?.name || admin?.email || 'Someone',
+						integrations: selectedIssueService
+							? [selectedIssueService]
+							: [],
+						issue_title: selectedIssueService ? issueTitle : null,
+						additional_context: currentUrl
+							? `*User\'s URL* <${currentUrl}|${currentUrl}>`
+							: null,
+						issue_url: linkedIssue.url,
+						issue_id: linkedIssue.id,
+					},
+					refetchQueries: [namedOperations.Query.GetSessionComments],
+				})
+			}
 			onCloseHandler()
-			formState.reset()
+			formStore.reset()
 			if (!selectedTimelineAnnotationTypes.includes('Comments')) {
 				setSelectedTimelineAnnotationTypes([
 					...selectedTimelineAnnotationTypes,
@@ -260,7 +354,7 @@ export const NewCommentForm = ({
 			const e = _e as Error
 
 			analytics.track('Create Comment Failed', { error: e.toString() })
-			message.error(
+			toast.error(
 				'Failed to post a comment, please try again. If this keeps failing please reach out to us!',
 			)
 		}
@@ -285,7 +379,7 @@ export const NewCommentForm = ({
 						getCommentMentionSuggestions(mentionSuggestionsData),
 						admin,
 						mentionedAdmins,
-				  )
+					)
 				: [],
 		[admin, isLoggedIn, mentionSuggestionsData, mentionedAdmins],
 	)
@@ -302,47 +396,21 @@ export const NewCommentForm = ({
 	) => {
 		setCommentTextForEmail(newPlainTextValue)
 
-		setMentionedAdmins(
-			mentions
-				.filter(
-					(mention) =>
-						!mention.display.includes('@') &&
-						!mention.display.includes('#'),
-				)
-				.map((mention) => {
-					const wa = adminsInWorkspace?.admins?.find((wa) => {
-						return wa.admin?.id === mention.id
-					})
-					return { id: mention.id, email: wa?.admin?.email || '' }
-				}),
-		)
+		if (adminsInWorkspace?.admins) {
+			setMentionedAdmins(
+				filterMentionedAdmins(
+					adminsInWorkspace.admins.map((wa) => wa.admin),
+					mentions,
+				),
+			)
+		}
 
 		if (mentionSuggestionsData?.slack_channel_suggestion) {
 			setMentionedSlackUsers(
-				mentions
-					.filter(
-						(mention) =>
-							mention.display.includes('@') ||
-							mention.display.includes('#'),
-					)
-					.map<SanitizedSlackChannelInput>((mention) => {
-						const matchingSlackUser =
-							mentionSuggestionsData.slack_channel_suggestion.find(
-								(suggestion) => {
-									return (
-										suggestion.webhook_channel_id ===
-										mention.id
-									)
-								},
-							)
-
-						return {
-							webhook_channel_id:
-								matchingSlackUser?.webhook_channel_id,
-							webhook_channel_name:
-								matchingSlackUser?.webhook_channel,
-						}
-					}),
+				filterMentionedSlackUsers(
+					mentionSuggestionsData.slack_channel_suggestion,
+					mentions,
+				),
 			)
 		}
 		setCommentText(e.target.value)
@@ -362,6 +430,8 @@ export const NewCommentForm = ({
 	)
 
 	const { isLinearIntegratedWithProject } = useLinearIntegration()
+	const { settings: jiraSettings } = useJiraIntegration()
+	const { settings: gitlabSettings } = useGitlabIntegration()
 
 	const { isIntegrated: isClickupIntegrated } = useIsProjectIntegratedWith(
 		IntegrationType.ClickUp,
@@ -385,6 +455,30 @@ export const NewCommentForm = ({
 				),
 				id: 'linear',
 				value: IntegrationType.Linear,
+			})
+		}
+		if (jiraSettings.isIntegrated) {
+			integrations.push({
+				displayValue: (
+					<Stack direction="row" gap="4" align="center">
+						<IconSolidJira />
+						Create a Jira issue
+					</Stack>
+				),
+				id: 'jira',
+				value: IntegrationType.Jira,
+			})
+		}
+		if (gitlabSettings.isIntegrated) {
+			integrations.push({
+				displayValue: (
+					<Stack direction="row" gap="4" align="center">
+						<IconSolidGitlab />
+						Create a GitLab issue
+					</Stack>
+				),
+				id: 'gitlab',
+				value: IntegrationType.GitLab,
 			})
 		}
 		if (isClickupIntegrated) {
@@ -426,9 +520,11 @@ export const NewCommentForm = ({
 		return integrations
 	}, [
 		isLinearIntegratedWithProject,
+		jiraSettings.isIntegrated,
 		isClickupIntegrated,
 		isHeightIntegrated,
 		githubSettings.isIntegrated,
+		gitlabSettings.isIntegrated,
 	])
 
 	useEffect(() => {
@@ -453,7 +549,7 @@ export const NewCommentForm = ({
 			<Form
 				name="newComment"
 				onSubmit={handleSubmit}
-				state={formState}
+				store={formStore}
 				onKeyDown={onFormChangeHandler}
 			>
 				{section === CommentFormSection.NewIssueForm && (
@@ -485,24 +581,87 @@ export const NewCommentForm = ({
 									kind="secondary"
 									emphasis="low"
 									icon={<IconSolidX size={14} />}
+									disabled={isCreatingComment}
 								/>
 							</Stack>
 						</Box>
 						<Stack direction="column" gap="12" p="12">
-							{issueServiceDetail?.containerSelection({
-								setSelectionId: setContainerId,
-							})}
-							<Form.Input
-								name="issueTitle"
-								label="Title"
-								placeholder="Title"
-							/>
-							<Form.Input
-								name="issueDescription"
-								label="Description"
-								// @ts-expect-error
-								as="textarea"
-							/>
+							{/* ClickUp doesn't support searching issues, so we don't need to show this section. */}
+							{integrationName !== 'ClickUp' && (
+								<TagSwitchGroup
+									cssClass={style.switchGroup}
+									options={['Create Issue', 'Link Issue']}
+									defaultValue={
+										mode ===
+										NewIntegrationIssueType.CreateIssue
+											? 'Create Issue'
+											: 'Link Issue'
+									}
+									onChange={(label: string | number) => {
+										setMode(
+											label === 'Create Issue'
+												? NewIntegrationIssueType.CreateIssue
+												: NewIntegrationIssueType.LinkIssue,
+										)
+									}}
+								/>
+							)}
+							{mode === NewIntegrationIssueType.LinkIssue && (
+								<SearchIssues
+									onSelect={(value: any) => {
+										if (value) {
+											setLinkedIssue(value)
+										}
+									}}
+									integration={issueServiceDetail!}
+									project_id={project_id!}
+								/>
+							)}
+							{mode === NewIntegrationIssueType.CreateIssue && (
+								<>
+									{issueServiceDetail?.containerSelection({
+										disabled: isCreatingComment,
+										setSelectionId: setContainerId,
+										setIssueTypeId,
+									})}
+
+									<Form.Input
+										name="issueTitle"
+										label="Title"
+										placeholder="Title"
+										disabled={isCreatingComment}
+									/>
+
+									<Tag
+										onClick={() =>
+											setMoreOptions(!moreOptions)
+										}
+										kind="primary"
+										emphasis="low"
+										shape="basic"
+										iconRight={
+											moreOptions ? (
+												<IconSolidCheveronUp />
+											) : (
+												<IconSolidCheveronDown />
+											)
+										}
+										className={style.moreOptionsTag}
+									>
+										Additional options
+									</Tag>
+
+									{moreOptions && (
+										<Form.Input
+											name="issueDescription"
+											label="Description"
+											// @ts-expect-error
+											as="textarea"
+											disabled={isCreatingComment}
+										/>
+									)}
+								</>
+							)}
 						</Stack>
 						<Stack
 							align="center"
@@ -521,14 +680,15 @@ export const NewCommentForm = ({
 								size="small"
 								trackingId="new-comment-attach-issue_cancel"
 								onClick={() => {
-									formState.setValues({
-										...formState.values,
+									formStore.setValues({
+										...formValues,
 										issueTitle: '',
 										issueDescription: '',
 									})
 									setSelectedIssueService(undefined)
 									setSection(CommentFormSection.CommentForm)
 								}}
+								disabled={isCreatingComment}
 							>
 								Cancel
 							</Button>
@@ -540,6 +700,7 @@ export const NewCommentForm = ({
 								onClick={() => {
 									setSection(CommentFormSection.CommentForm)
 								}}
+								disabled={isCreatingComment}
 							>
 								Save
 							</Button>
@@ -558,9 +719,6 @@ export const NewCommentForm = ({
 								placeholder={placeholder}
 								suggestions={adminSuggestions}
 								onDisplayTransformHandler={onDisplayTransform}
-								suggestionsPortalHost={
-									parentRef?.current as Element
-								}
 							/>
 						</Box>
 						<Stack
@@ -583,17 +741,17 @@ export const NewCommentForm = ({
 												<Menu.Item
 													key={id}
 													onClick={() => {
-														formState.setValue(
+														formStore.setValue(
 															'issueTitle',
 															defaultIssueTitle,
 														)
 
 														if (
-															!formState.getValue(
+															!formStore.getValue(
 																'issueDescription',
 															)
 														) {
-															formState.setValue(
+															formStore.setValue(
 																'issueDescription',
 																commentTextForEmail,
 															)

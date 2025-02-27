@@ -6,20 +6,27 @@ import JsonViewer from '@components/JsonViewer/JsonViewer'
 import LoadingBox from '@components/LoadingBox'
 import {
 	GetErrorInstanceDocument,
-	useGetErrorInstanceQuery,
+	useGetErrorInstanceLazyQuery,
 } from '@graph/hooks'
-import { ErrorObjectFragment, GetErrorGroupQuery } from '@graph/operations'
+import {
+	ErrorObjectFragment,
+	GetErrorGroupQuery,
+	GetErrorInstanceQuery,
+} from '@graph/operations'
 import {
 	Badge,
 	Box,
 	Callout,
 	IconSolidCode,
+	IconSolidCog,
 	IconSolidExternalLink,
 	Stack,
+	Tag,
 	Text,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
 import { useProjectId } from '@hooks/useProjectId'
 import ErrorStackTrace from '@pages/ErrorsV2/ErrorStackTrace/ErrorStackTrace'
+import { GitHubEnhancementSettings } from '@pages/ErrorsV2/GitHubEnhancementSettings/GitHubEnhancementSettings'
 import {
 	getDisplayNameAndField,
 	getIdentifiedUserProfileImage,
@@ -29,18 +36,20 @@ import analytics from '@util/analytics'
 import { loadSession } from '@util/preload'
 import { useParams } from '@util/react-router/useParams'
 import { copyToClipboard } from '@util/string'
-import { buildQueryURLString } from '@util/url/params'
 import moment from 'moment'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { useSearchContext } from '@/components/Search/SearchContext'
 import { useGetWorkspaceSettingsQuery } from '@/graph/generated/hooks'
 import ErrorBodyText from '@/pages/ErrorsV2/ErrorBody/components/ErrorBodyText'
 import { AiErrorSuggestion } from '@/pages/ErrorsV2/ErrorInstance/AiErrorSuggestion'
+import { ErrorBoundaryFeedback } from '@/pages/ErrorsV2/ErrorInstance/ErrorBoundaryFeedback'
 import { ErrorSessionMissingOrExcluded } from '@/pages/ErrorsV2/ErrorInstance/ErrorSessionMissingOrExcluded'
 import { PreviousNextInstance } from '@/pages/ErrorsV2/ErrorInstance/PreviousNextInstance'
 import { RelatedLogs } from '@/pages/ErrorsV2/ErrorInstance/RelatedLogs'
 import { RelatedSession } from '@/pages/ErrorsV2/ErrorInstance/RelatedSession'
+import { RelatedTrace } from '@/pages/ErrorsV2/ErrorInstance/RelatedTrace'
 import { SeeAllInstances } from '@/pages/ErrorsV2/ErrorInstance/SeeAllInstances'
 import { isSessionAvailable } from '@/pages/ErrorsV2/ErrorInstance/utils'
 import { useApplicationContext } from '@/routers/AppRouter/context/ApplicationContext'
@@ -60,54 +69,81 @@ export const ErrorInstance: React.FC<Props> = ({ errorGroup }) => {
 	const { error_object_id } = useParams<{ error_object_id: string }>()
 	const client = useApolloClient()
 	const { currentWorkspace } = useApplicationContext()
+	const [displayGitHubSettings, setDisplayGitHubSettings] = useState(false)
+	const { query, startDate, endDate } = useSearchContext()
 
 	const { data: workspaceSettingsData } = useGetWorkspaceSettingsQuery({
 		variables: { workspace_id: String(currentWorkspace?.id) },
 		skip: !currentWorkspace?.id,
 	})
 
-	const { loading, error, data } = useGetErrorInstanceQuery({
-		variables: {
-			error_group_secure_id: String(errorGroup?.secure_id),
-			error_object_id,
-		},
-		onCompleted: (data) => {
-			const previousErrorObjectId = data?.error_instance?.previous_id
-			const nextErrorObjectId = data?.error_instance?.next_id
+	const [getErrorInstance, { error, data, loading, called }] =
+		useGetErrorInstanceLazyQuery()
 
-			// Prefetch the next/previous error objects so they are in the cache.
-			// Using client directly because the lazy query had issues with canceling
-			// multiple requests: https://github.com/apollographql/apollo-client/issues/9755
-			if (previousErrorObjectId) {
-				client.query({
-					query: GetErrorInstanceDocument,
-					variables: {
-						error_group_secure_id: String(errorGroup?.secure_id),
-						error_object_id: previousErrorObjectId,
+	useEffect(() => {
+		getErrorInstance({
+			variables: {
+				error_group_secure_id: String(errorGroup?.secure_id),
+				error_object_id,
+				params: {
+					query,
+					date_range: {
+						start_date: startDate!.toISOString(),
+						end_date: endDate!.toISOString(),
 					},
-				})
-			}
+				},
+			},
+			onCompleted: (data) => {
+				const previousErrorObjectId = data?.error_instance?.previous_id
+				const nextErrorObjectId = data?.error_instance?.next_id
 
-			if (nextErrorObjectId) {
-				client.query({
-					query: GetErrorInstanceDocument,
-					variables: {
-						error_group_secure_id: String(errorGroup?.secure_id),
-						error_object_id: nextErrorObjectId,
-					},
-				})
-			}
+				// Prefetch the next/previous error objects so they are in the cache.
+				// Using client directly because the lazy query had issues with canceling
+				// multiple requests: https://github.com/apollographql/apollo-client/issues/9755
+				if (previousErrorObjectId) {
+					client.query({
+						query: GetErrorInstanceDocument,
+						variables: {
+							error_group_secure_id: String(
+								errorGroup?.secure_id,
+							),
+							error_object_id: previousErrorObjectId,
+						},
+					})
+				}
 
-			// Prefetch session data.
-			if (data?.error_instance?.error_object?.session) {
-				loadSession(data.error_instance.error_object.session.secure_id)
-			}
-		},
-	})
+				if (nextErrorObjectId) {
+					client.query({
+						query: GetErrorInstanceDocument,
+						variables: {
+							error_group_secure_id: String(
+								errorGroup?.secure_id,
+							),
+							error_object_id: nextErrorObjectId,
+						},
+					})
+				}
 
-	useEffect(() => analytics.page(), [])
+				// Prefetch session data.
+				if (data?.error_instance?.error_object?.session) {
+					loadSession(
+						data.error_instance.error_object.session.secure_id,
+					)
+				}
+			},
+		})
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [error_object_id, errorGroup?.secure_id])
 
-	if (loading) {
+	useEffect(
+		() =>
+			analytics.track('error_instance_view', {
+				error_instance_id: error_object_id,
+			}),
+		[error_object_id],
+	)
+
+	if (!called || loading) {
 		return (
 			<Box mt="10">
 				<LoadingBox />
@@ -132,47 +168,82 @@ export const ErrorInstance: React.FC<Props> = ({ errorGroup }) => {
 
 	return (
 		<Box id="error-instance-container">
-			<Stack direction="row" my="12">
-				<Stack direction="row" flexGrow={1}>
+			<Stack direction="row" my="12" alignItems="center">
+				<Stack direction="row" flexGrow={1} alignItems="center">
 					<SeeAllInstances data={data} />
 					<PreviousNextInstance data={data} />
 				</Stack>
-				<Stack direction="row" gap="4">
+				<Stack direction="row" gap="4" alignItems="center">
 					<RelatedSession data={data} />
 					<RelatedLogs data={data} />
+					<RelatedTrace data={data} />
 				</Stack>
 			</Stack>
 
-			<Box py="16" px="16" mb="40" border="secondary" borderRadius="8">
-				<Box
-					mb="20"
-					display="flex"
-					gap="6"
-					alignItems="center"
-					color="weak"
-				>
-					<IconSolidCode />
-					<Text color="moderate">Instance Error Body</Text>
-				</Box>
-				<ErrorBodyText errorBody={errorInstance.error_object.event} />
-			</Box>
+			<ErrorInstanceBody errorInstance={errorInstance} />
 
 			{workspaceSettingsData?.workspaceSettings?.ai_application && (
 				<Box display="flex" flexDirection="column" mb="40">
-					<Stack direction="row" align="center" pb="20" gap="8">
-						<Text size="large" weight="bold">
+					<Stack direction="row" align="center" pb="8" gap="8">
+						<Text size="large" weight="bold" color="strong">
 							Harold AI
 						</Text>
 						<Badge label="Beta" size="medium" variant="purple" />
 					</Stack>
-
 					<AiErrorSuggestion
 						errorObjectId={errorInstance.error_object.id}
 					/>
 				</Box>
 			)}
 
-			<Box display="flex" flexDirection="column" mb="40" gap="40">
+			<ErrorInstanceInfo
+				errorGroup={errorGroup}
+				errorInstance={errorInstance}
+			/>
+
+			<ErrorInstanceStackTrace
+				displayGitHubSettings={displayGitHubSettings}
+				errorInstance={errorInstance}
+				setDisplayGitHubSettings={setDisplayGitHubSettings}
+			/>
+		</Box>
+	)
+}
+
+export const ErrorInstanceBody: React.FC<{
+	errorInstance: GetErrorInstanceQuery['error_instance']
+}> = ({ errorInstance }) => {
+	if (!errorInstance) {
+		return null
+	}
+
+	return (
+		<Box py="12" px="16" mb="40" border="secondary" borderRadius="8">
+			<Box mb="8" display="flex" gap="6" alignItems="center" color="weak">
+				<IconSolidCode />
+				<Text color="moderate">Instance Error Body</Text>
+			</Box>
+			<ErrorBodyText errorBody={errorInstance.error_object.event} />
+		</Box>
+	)
+}
+
+export const ErrorInstanceInfo: React.FC<{
+	errorGroup: Props['errorGroup']
+	errorInstance: GetErrorInstanceQuery['error_instance']
+}> = ({ errorGroup, errorInstance }) => {
+	if (!errorGroup || !errorInstance) {
+		return null
+	}
+
+	return (
+		<>
+			<Box
+				display="flex"
+				flexDirection={{ mobile: 'column', desktop: 'row' }}
+				mb="40"
+				gap="40"
+			>
 				<div style={{ flexBasis: 0, flexGrow: 1 }}>
 					<Metadata errorObject={errorInstance.error_object} />
 				</div>
@@ -194,22 +265,7 @@ export const ErrorInstance: React.FC<Props> = ({ errorGroup }) => {
 						</Box>
 					</>
 				)}
-
-			{(errorInstance.error_object.stack_trace !== '' &&
-				errorInstance.error_object.stack_trace !== 'null') ||
-			errorInstance.error_object.structured_stack_trace?.length ? (
-				<>
-					<Text size="large" weight="bold">
-						Stack trace
-					</Text>
-					<Box bt="secondary" mt="12" pt="16">
-						<ErrorStackTrace
-							errorObject={errorInstance.error_object}
-						/>
-					</Box>
-				</>
-			) : null}
-		</Box>
+		</>
 	)
 }
 
@@ -231,6 +287,8 @@ const Metadata: React.FC<{
 		{ key: 'environment', label: errorObject?.environment },
 		{ key: 'browser', label: errorObject?.browser },
 		{ key: 'os', label: errorObject?.os },
+		{ key: 'service', label: errorObject?.serviceName },
+		{ key: 'version', label: errorObject?.serviceVersion },
 		{ key: 'url', label: errorObject?.url },
 		{ key: 'timestamp', label: errorObject?.timestamp },
 		{
@@ -247,60 +305,60 @@ const Metadata: React.FC<{
 
 	return (
 		<Box>
-			<Box bb="secondary" pb="20" my="12">
-				<Text weight="bold" size="large">
+			<Box bb="secondary" pb="12">
+				<Text weight="bold" size="large" color="strong">
 					Instance metadata
 				</Text>
 			</Box>
 
-			<Box>
+			<Box mt="12">
 				{metadata.map((meta) => {
 					const value =
 						meta.key === 'timestamp'
 							? moment(meta.label as string).format(
 									'M/D/YY h:mm:ss.SSS A',
-							  )
+								)
 							: meta.label
 					return (
 						<Box display="flex" gap="6" key={meta.key}>
 							<Box
-								py="10"
+								py="6"
 								cursor="pointer"
 								onClick={() => copyToClipboard(meta.key)}
 								style={{ width: '33%' }}
 							>
 								<Text
-									color="n11"
+									color="weak"
 									transform="capitalize"
 									align="left"
 									lines="1"
+									size="xSmall"
 								>
 									{METADATA_LABELS[meta.key] ??
 										meta.key.replace('_', ' ')}
 								</Text>
 							</Box>
-							<Box
-								cursor="pointer"
-								py="10"
-								onClick={() => {
-									if (typeof value === 'string') {
-										value && copyToClipboard(value)
-									}
-								}}
-								style={{ width: '67%' }}
-							>
-								<Text
-									align="left"
-									break="word"
+							<Box style={{ width: '67%' }}>
+								<Tag
+									kind="secondary"
+									emphasis="low"
+									shape="basic"
+									onClick={() => {
+										if (typeof value === 'string') {
+											value && copyToClipboard(value)
+										}
+									}}
 									lines={
 										typeof value === 'string'
 											? '4'
 											: undefined
 									}
 									title={String(value)}
+									style={{ width: '100%' }}
+									wordBreak="word"
 								>
 									{value}
-								</Text>
+								</Tag>
 							</Box>
 						</Box>
 					)
@@ -317,10 +375,26 @@ const User: React.FC<{
 	const { projectId } = useProjectId()
 	const { isLoggedIn } = useAuthContext()
 	const [truncated, setTruncated] = useState(true)
+	const [displayName, field] = getDisplayNameAndField(errorObject?.session)
+
+	const searchQuery = useMemo(() => {
+		if (errorObject?.session?.identifier && field !== null) {
+			return `${field}=${displayName}`
+		} else if (errorObject?.session?.fingerprint) {
+			return `device_id=${errorObject?.session.fingerprint}`
+		}
+
+		return ''
+	}, [
+		displayName,
+		errorObject?.session?.fingerprint,
+		errorObject?.session?.identifier,
+		field,
+	])
 
 	const userDetailsBox = (
-		<Box pb="20" mt="12">
-			<Text weight="bold" size="large">
+		<Box pb="12">
+			<Text weight="bold" size="large" color="strong">
 				User details
 			</Text>
 		</Box>
@@ -338,7 +412,6 @@ const User: React.FC<{
 	const userProperties = getUserProperties(
 		errorObject?.session?.user_properties,
 	)
-	const [displayName, field] = getDisplayNameAndField(errorObject?.session)
 	const avatarImage = getIdentifiedUserProfileImage(errorObject?.session)
 	const userDisplayPropertyKeys = Object.keys(userProperties)
 		.filter((k) => k !== 'avatar')
@@ -373,11 +446,7 @@ const User: React.FC<{
 					gap="4"
 				>
 					<Box alignItems="center" display="flex" gap="8">
-						<Avatar
-							seed={displayName}
-							style={{ height: 28, width: 28 }}
-							customImage={avatarImage}
-						/>
+						<Avatar size={28} customImage={avatarImage} />
 						<Text lines="1">{displayName}</Text>
 					</Box>
 
@@ -392,24 +461,12 @@ const User: React.FC<{
 									return
 								}
 
-								const searchParams: any = {}
-								if (
-									errorObject?.session?.identifier &&
-									field !== null
-								) {
-									searchParams[`user_${field}`] = displayName
-								} else if (errorObject?.session?.fingerprint) {
-									searchParams.device_id = String(
-										errorObject?.session.fingerprint,
-									)
-								}
-
 								navigate({
 									pathname: `/${projectId}/sessions`,
-									search: buildQueryURLString(searchParams),
+									search: `query=${searchQuery}`,
 								})
 							}}
-							trackingId="errorInstanceAllSessionsForuser"
+							trackingId="error_all-sessions-for-user_click"
 						>
 							All sessions for this user
 						</Button>
@@ -422,67 +479,152 @@ const User: React.FC<{
 							{userDisplayPropertyKeys.map((key) => (
 								<Box display="flex" gap="6" key={key}>
 									<Box
-										py="10"
+										py="8"
 										overflow="hidden"
 										onClick={() => copyToClipboard(key)}
 										style={{ width: '33%' }}
 									>
 										<Text
-											color="n11"
+											color="weak"
 											align="left"
 											transform="capitalize"
 											lines="1"
 											title={key}
+											size="xSmall"
 										>
 											{METADATA_LABELS[key] ?? key}
 										</Text>
 									</Box>
 
 									<Box
-										py="10"
+										py="2"
 										display="flex"
 										overflow="hidden"
-										onClick={() =>
-											copyToClipboard(userProperties[key])
-										}
-										title={userProperties[key]}
 										style={{ width: '67%' }}
 									>
-										<Text lines="1" as="span">
+										<Tag
+											onClick={() =>
+												copyToClipboard(
+													userProperties[key],
+												)
+											}
+											title={userProperties[key]}
+											kind="secondary"
+											emphasis="low"
+											shape="basic"
+											style={{ width: '100%' }}
+										>
 											{userProperties[key]}
-										</Text>
+										</Tag>
 									</Box>
 								</Box>
 							))}
 
 							<Box display="flex" alignItems="center" gap="6">
-								<Box py="10" style={{ width: '33%' }}>
-									<Text color="n11" align="left">
+								<Box py="8" style={{ width: '33%' }}>
+									<Text
+										color="weak"
+										align="left"
+										transform="capitalize"
+										lines="1"
+										size="xSmall"
+									>
 										Location
 									</Text>
 								</Box>
 
-								<Box py="10" style={{ width: '67%' }}>
-									<Text>{location}</Text>
+								<Box
+									py="2"
+									style={{ width: '67%' }}
+									display="flex"
+									overflow="hidden"
+								>
+									<Tag
+										onClick={() =>
+											copyToClipboard(location)
+										}
+										title={location}
+										kind="secondary"
+										emphasis="low"
+										shape="basic"
+										style={{ width: '100%' }}
+									>
+										{location}
+									</Tag>
 								</Box>
 							</Box>
 						</Box>
 						{truncateable && (
-							<Box>
-								<Button
+							<Box mt="4" display="flex">
+								<Tag
 									onClick={() => setTruncated(!truncated)}
 									kind="secondary"
 									emphasis="medium"
-									size="xSmall"
-									trackingId="errorInstanceToggleProperties"
+									shape="basic"
 								>
 									Show {truncated ? 'more' : 'less'}
-								</Button>
+								</Tag>
 							</Box>
 						)}
 					</Box>
 				</Box>
+				{errorObject && <ErrorBoundaryFeedback data={errorObject} />}
 			</Box>
 		</Box>
+	)
+}
+
+export const ErrorInstanceStackTrace: React.FC<{
+	displayGitHubSettings: boolean
+	errorInstance: GetErrorInstanceQuery['error_instance']
+	setDisplayGitHubSettings: (value: boolean) => void
+}> = ({ displayGitHubSettings, errorInstance, setDisplayGitHubSettings }) => {
+	if (!errorInstance) {
+		return null
+	}
+
+	return (
+		<>
+			{(errorInstance.error_object.stack_trace !== '' &&
+				errorInstance.error_object.stack_trace !== 'null') ||
+			errorInstance.error_object.structured_stack_trace?.length ? (
+				displayGitHubSettings ? (
+					<GitHubEnhancementSettings
+						onClose={() => setDisplayGitHubSettings(false)}
+						errorObject={errorInstance.error_object}
+					/>
+				) : (
+					<>
+						<Stack
+							direction="row"
+							justifyContent="space-between"
+							alignItems="center"
+						>
+							<Text size="large" weight="bold" color="strong">
+								Stacktrace
+							</Text>
+							{errorInstance.error_object?.type === 'Backend' && (
+								<Button
+									kind="secondary"
+									emphasis="medium"
+									trackingId="errorInstanceGithubEnhancementSetup"
+									iconLeft={<IconSolidCog size={12} />}
+									onClick={() =>
+										setDisplayGitHubSettings(true)
+									}
+								>
+									Setup GitHub-enhanced stacktraces
+								</Button>
+							)}
+						</Stack>
+						<Box mt="12">
+							<ErrorStackTrace
+								errorObject={errorInstance.error_object}
+							/>
+						</Box>
+					</>
+				)
+			) : null}
+		</>
 	)
 }

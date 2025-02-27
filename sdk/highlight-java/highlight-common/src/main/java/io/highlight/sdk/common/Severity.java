@@ -1,18 +1,19 @@
 package io.highlight.sdk.common;
 
+import java.util.Objects;
+
 /**
- * 
  * <p>
  * Represents the severity of a log message, along with its text and priority.
  * <br>
  * The severity can be one of TRACE, DEBUG, INFO, WARN, ERROR, or FATAL, and
  * each severity level can have an associated identifier and priority level.
  * </p>
- * 
+ * <p>
  * See: <a href=
  * "https://opentelemetry.io/docs/reference/specification/logs/data-model/#severity-fields">severity-fields</a>
  */
-public record Severity(String text, int id, Priority priority) {
+public final class Severity {
 
 	// ID values for the different severity levels.
 	private static final int TRACE_ID = 1;
@@ -29,11 +30,23 @@ public record Severity(String text, int id, Priority priority) {
 	public static final Severity WARN = Severity.warn(Priority.LOW);
 	public static final Severity ERROR = Severity.error(Priority.LOW);
 	public static final Severity FATAL = Severity.fatal(Priority.LOW);
+	private final String text;
+	private final int id;
+	private final Priority priority;
+
+	/**
+	 *
+	 */
+	public Severity(String text, int id, Priority priority) {
+		this.text = text;
+		this.id = id;
+		this.priority = priority;
+	}
 
 	/**
 	 * Creates a new log message with severity level TRACE and the given text and a
 	 * default low priority level.
-	 * 
+	 *
 	 * @param text the text of the log message
 	 * @return a new instance of the Severity class with the given parameters
 	 */
@@ -43,7 +56,7 @@ public record Severity(String text, int id, Priority priority) {
 
 	/**
 	 * Creates a new log message with severity level TRACE and the given priority.
-	 * 
+	 *
 	 * @param priority the priority level of the log message
 	 * @return a new instance of the Severity class with the given parameters
 	 */
@@ -54,7 +67,7 @@ public record Severity(String text, int id, Priority priority) {
 	/**
 	 * Creates a new log message with severity level TRACE and the given text and
 	 * priority.
-	 * 
+	 *
 	 * @param text     the text of the log message, or null if not provided
 	 * @param priority the priority level of the log message
 	 * @return a new instance of the Severity class with the given parameters
@@ -66,7 +79,7 @@ public record Severity(String text, int id, Priority priority) {
 	/**
 	 * Creates a new log message with severity level DEBUG and the given text and a
 	 * default low priority level.
-	 * 
+	 *
 	 * @param text the text of the log message
 	 * @return a new instance of the Severity class with the given parameters
 	 */
@@ -76,7 +89,7 @@ public record Severity(String text, int id, Priority priority) {
 
 	/**
 	 * Creates a new log message with severity level DEBUG and the given priority.
-	 * 
+	 *
 	 * @param priority the priority level of the log message
 	 * @return a new instance of the Severity class with the given parameters
 	 */
@@ -87,7 +100,7 @@ public record Severity(String text, int id, Priority priority) {
 	/**
 	 * Creates a new log message with severity level DEBUG and the given text and
 	 * priority.
-	 * 
+	 *
 	 * @param text     the text of the log message, or null if not provided
 	 * @param priority the priority level of the log message
 	 * @return a new instance of the Severity class with the given parameters
@@ -99,7 +112,7 @@ public record Severity(String text, int id, Priority priority) {
 	/**
 	 * Creates a new log message with severity level INFO and the given text and a
 	 * default low priority level.
-	 * 
+	 *
 	 * @param text the text of the log message
 	 * @return a new instance of the Severity class with the given parameters
 	 */
@@ -109,7 +122,7 @@ public record Severity(String text, int id, Priority priority) {
 
 	/**
 	 * Creates a new log message with severity level INFO and the given priority.
-	 * 
+	 *
 	 * @param priority the priority level of the log message
 	 * @return a new instance of the Severity class with the given parameters
 	 */
@@ -120,7 +133,7 @@ public record Severity(String text, int id, Priority priority) {
 	/**
 	 * Creates a new log message with severity level INFO and the given text and
 	 * priority.
-	 * 
+	 *
 	 * @param text     the text of the log message, or null if not provided
 	 * @param priority the priority level of the log message
 	 * @return a new instance of the Severity class with the given parameters
@@ -132,7 +145,7 @@ public record Severity(String text, int id, Priority priority) {
 	/**
 	 * Creates a new log message with severity level WARN and the given text and a
 	 * default low priority level.
-	 * 
+	 *
 	 * @param text the text of the log message
 	 * @return a new instance of the Severity class with the given parameters
 	 */
@@ -142,7 +155,7 @@ public record Severity(String text, int id, Priority priority) {
 
 	/**
 	 * Creates a new log message with severity level WARN and the given priority.
-	 * 
+	 *
 	 * @param priority the priority level of the log message
 	 * @return a new instance of the Severity class with the given parameters
 	 */
@@ -153,7 +166,7 @@ public record Severity(String text, int id, Priority priority) {
 	/**
 	 * Creates a new log message with severity level WARN and the given text and
 	 * priority.
-	 * 
+	 *
 	 * @param text     the text of the log message, or null if not provided
 	 * @param priority the priority level of the log message
 	 * @return a new instance of the Severity class with the given parameters
@@ -165,7 +178,7 @@ public record Severity(String text, int id, Priority priority) {
 	/**
 	 * Creates a new log message with severity level ERROR and the given text and a
 	 * default low priority level.
-	 * 
+	 *
 	 * @param text the text of the log message
 	 * @return a new instance of the Severity class with the given parameters
 	 */
@@ -175,7 +188,7 @@ public record Severity(String text, int id, Priority priority) {
 
 	/**
 	 * Creates a new log message with severity level ERROR and the given priority.
-	 * 
+	 *
 	 * @param priority the priority level of the log message
 	 * @return a new instance of the Severity class with the given parameters
 	 */
@@ -186,7 +199,7 @@ public record Severity(String text, int id, Priority priority) {
 	/**
 	 * Creates a new log message with severity level ERROR and the given text and
 	 * priority.
-	 * 
+	 *
 	 * @param text     the text of the log message, or null if not provided
 	 * @param priority the priority level of the log message
 	 * @return a new instance of the Severity class with the given parameters
@@ -198,7 +211,7 @@ public record Severity(String text, int id, Priority priority) {
 	/**
 	 * Creates a new log message with severity level FATAL and the given text and a
 	 * default low priority level.
-	 * 
+	 *
 	 * @param text the text of the log message
 	 * @return a new instance of the Severity class with the given parameters
 	 */
@@ -208,7 +221,7 @@ public record Severity(String text, int id, Priority priority) {
 
 	/**
 	 * Creates a new log message with severity level FATAL and the given priority.
-	 * 
+	 *
 	 * @param priority the priority level of the log message
 	 * @return a new instance of the Severity class with the given parameters
 	 */
@@ -219,7 +232,7 @@ public record Severity(String text, int id, Priority priority) {
 	/**
 	 * Creates a new log message with severity level FATAL and the given text and
 	 * priority.
-	 * 
+	 *
 	 * @param text     the text of the log message, or null if not provided
 	 * @param priority the priority level of the log message
 	 * @return a new instance of the Severity class with the given parameters
@@ -230,7 +243,7 @@ public record Severity(String text, int id, Priority priority) {
 
 	/**
 	 * Return the severity level combined with the priority
-	 * 
+	 *
 	 * @return severity level with priority
 	 */
 	public int id() {
@@ -239,40 +252,38 @@ public record Severity(String text, int id, Priority priority) {
 
 	/**
 	 * Return a readable severity level name without the priority level
-	 * 
+	 *
 	 * @return severity level name
 	 */
 	public String name() {
-		return switch (this.id) {
-		case TRACE_ID -> "TRACE";
-		case DEBUG_ID -> "DEBUG";
-		case INFO_ID -> "INFO";
-		case WARN_ID -> "WARN";
-		case ERROR_ID -> "ERROR";
-		case FATAL_ID -> "FATAL";
-		default -> throw new IllegalArgumentException("Unexpected value: " + this.id);
-		};
+		if (this.id == TRACE_ID) {
+			return "TRACE";
+		} else if (this.id == DEBUG_ID) {
+			return "DEBUG";
+		} else if (this.id == INFO_ID) {
+			return "INFO";
+		} else if (this.id == WARN_ID) {
+			return "WARN";
+		} else if (this.id == ERROR_ID) {
+			return "ERROR";
+		} else if (this.id == FATAL_ID) {
+			return "FATAL";
+		} else {
+			throw new IllegalArgumentException("Unexpected value: " + this.id);
+		}
 	}
 
 	/**
 	 * Return a readable severity level name with the priority level
-	 * 
+	 * <p>
 	 * See: <a href=
 	 * "https://opentelemetry.io/docs/reference/specification/logs/data-model/#displaying-severity">displaying-severity</a>
-	 * 
+	 *
 	 * @return severity level name
 	 */
 	public String shortName() {
 		StringBuilder stringBuilder = new StringBuilder();
-		stringBuilder.append(switch (this.id) {
-		case TRACE_ID -> "TRACE";
-		case DEBUG_ID -> "DEBUG";
-		case INFO_ID -> "INFO";
-		case WARN_ID -> "WARN";
-		case ERROR_ID -> "ERROR";
-		case FATAL_ID -> "FATAL";
-		default -> throw new IllegalArgumentException("Unexpected value: " + this.id);
-		});
+		stringBuilder.append(this.name());
 
 		if (this.priority != Priority.LOW) {
 			stringBuilder.append(this.priority.difference);
@@ -282,12 +293,43 @@ public record Severity(String text, int id, Priority priority) {
 	}
 
 	/**
-	 * Transform the currently severity into the opentelemetry {@code io.opentelemetry.api.logs.Severity} class
-	 * 
+	 * Transform the currently severity into the opentelemetry
+	 * {@code io.opentelemetry.api.logs.Severity} class
+	 *
 	 * @return severity transformed into {@code io.opentelemetry.api.logs.Severity}
 	 */
 	public io.opentelemetry.api.logs.Severity toOpenTelemetry() {
 		return io.opentelemetry.api.logs.Severity.values()[this.id];
+	}
+
+	public String text() {
+		return text;
+	}
+
+	public Priority priority() {
+		return priority;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) {
+			return true;
+		}
+		if (!(obj instanceof Severity)) {
+			return false;
+		}
+		Severity other = (Severity) obj;
+		return id == other.id && priority == other.priority && Objects.equals(text, other.text);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(id, priority, text);
+	}
+
+	@Override
+	public String toString() {
+		return "Severity [text=" + text + ", id=" + id + ", priority=" + priority + "]";
 	}
 
 	/**
@@ -322,7 +364,7 @@ public record Severity(String text, int id, Priority priority) {
 		/**
 		 * Constructs a new instance of Priority with the specified numeric difference
 		 * value.
-		 * 
+		 *
 		 * @param difference the numeric difference value for this priority level
 		 */
 		private Priority(int difference) {

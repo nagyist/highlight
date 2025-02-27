@@ -1,7 +1,7 @@
-import { siteUrl } from '../../../../utils/urls'
 import { QuickStartContent } from '../../QuickstartContent'
 import {
 	downloadSnippet,
+	init,
 	setupFrontendSnippet,
 	setupLogging,
 } from './shared-snippets'
@@ -10,10 +10,9 @@ export const PythonFastAPIContext: QuickStartContent = {
 	title: 'Python FastAPI',
 	subtitle:
 		'Learn how to set up highlight.io on your Python FastAPI backend API.',
-	logoUrl: siteUrl('/images/quickstart/fastapi.svg'),
 	entries: [
 		setupFrontendSnippet,
-		downloadSnippet('FastAPI'),
+		downloadSnippet(),
 		{
 			title: 'Initialize the Highlight SDK.',
 			content: 'Setup the SDK to with the FastAPI integration.',
@@ -24,7 +23,7 @@ export const PythonFastAPIContext: QuickStartContent = {
 import highlight_io
 from highlight_io.integrations.fastapi import FastAPIMiddleware
 
-H = highlight_io.H("<YOUR_PROJECT_ID>", instrument_logging=True)
+${init}
 
 app = FastAPI()
 app.add_middleware(FastAPIMiddleware)`,
@@ -47,7 +46,7 @@ app.add_middleware(FastAPIMiddleware)`,
 import highlight_io
 from highlight_io.integrations.fastapi import FastAPIMiddleware
 
-H = highlight_io.H("<YOUR_PROJECT_ID>", instrument_logging=True)
+${init}
 
 app = FastAPI()
 app.add_middleware(FastAPIMiddleware)

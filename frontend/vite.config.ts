@@ -1,11 +1,9 @@
-/// <reference types="vite/client" />
-/// <reference types="vitest/globals" />
+/// <reference types="vitest" />
 import { vanillaExtractPlugin } from '@vanilla-extract/vite-plugin'
 import react from '@vitejs/plugin-react-swc'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
-import { defineConfig, loadEnv, UserConfig } from 'vite'
-import vitePluginImp from 'vite-plugin-imp'
+import { defineConfig, loadEnv } from 'vite'
 import svgr from 'vite-plugin-svgr'
 import tsconfigPaths from 'vite-tsconfig-paths'
 
@@ -17,14 +15,22 @@ const __dirname = dirname(__filename)
 // Frontend env vars live in `turbo.json` to ensure the build is not cached.
 // Adding something here? Please update `.env.d.ts` to update our Typescript definitions.
 // *DO NOT* put something in here unless you're positive it's safe to expose this to the world.
-const ENVVAR_ALLOWLIST = js.pipeline.build.env
+const ENVVAR_ALLOWLIST = js.tasks.build.env
+// required for turbo - ensure consistency with ENVVAR_ALLOWLIST
+const DEV_ENVVAR_ALLOWLIST = js.tasks.dev.env
 
 // In order to prevent accidentally env var leakage, Vite only allows the configuration of defining
 // the environment variable prefix (see: https://vitejs.dev/guide/env-and-mode.html#env-variables-and-modes)
 // This piece of code allows us to define an allowlist (see above) into the prefix system but ensures only
 // the env vars on the allowlist are actually exposed.
 const validateSafeAllowList = (env: Record<string, string>) => {
+	const devEnv = new Set<string>(DEV_ENVVAR_ALLOWLIST)
 	ENVVAR_ALLOWLIST.forEach((allowListEnvVar) => {
+		if (!devEnv.has(allowListEnvVar)) {
+			throw new Error(
+				`ENVVAR_ALLOWLIST should ensure ${allowListEnvVar} is also in the DEV_ENVVAR_ALLOWLIST`,
+			)
+		}
 		Object.keys(env).forEach((key) => {
 			if (key === allowListEnvVar) {
 				return
@@ -42,47 +48,36 @@ Rename ${key} to something such that "${key}".startsWith("${allowListEnvVar}") r
 	})
 }
 
-export default defineConfig(({ mode }): UserConfig => {
+export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), '')
 	validateSafeAllowList(env)
-
+	let port = 80
+	try {
+		port = Number(new URL(env.REACT_APP_FRONTEND_URI).port || '80')
+	} catch (e) {}
 	return {
-		plugins: [
-			react(),
-			vanillaExtractPlugin(),
-			tsconfigPaths(),
-			svgr(),
-			vitePluginImp({
-				// Seems to result in this error:
-				// > Rollup failed to resolve import "lodash/default" from "src/pages/Player/PlayerHook/PlayerHook.tsx"
-				// Likely due to some custom resolution algorithm that doesn't support hoisted monorepos?
-				exclude: ['lodash'],
-				libList: [
-					{
-						libName: 'antd',
-						style: (name) => `antd/es/${name}/style/index.js`,
-					},
-					// TODO: enable this later to reduce bundle size
-					// {
-					// 	libName: 'lodash',
-					// 	libDirectory: '',
-					// 	camel2DashComponentName: false,
-					// },
-				],
-			}),
-		],
+		plugins: [react(), vanillaExtractPlugin(), tsconfigPaths(), svgr()],
 		envPrefix: ['VITE_', ...ENVVAR_ALLOWLIST],
 		server: {
 			host: '0.0.0.0',
-			port: 3000,
-			https: {
-				key: join(__dirname, '../backend/localhostssl/server.key'),
-				cert: join(__dirname, '../backend/localhostssl/server.crt'),
-			},
+			port,
+			https:
+				env.SSL === 'false'
+					? undefined
+					: {
+							key: join(
+								__dirname,
+								'../backend/localhostssl/server.key',
+							),
+							cert: join(
+								__dirname,
+								'../backend/localhostssl/server.crt',
+							),
+						},
 			// ensure hmr works when proxying frontend
 			strictPort: true,
 			hmr: {
-				clientPort: 3000,
+				clientPort: port,
 			},
 			watch: {
 				ignored: ['**/node_modules/**', '**/src/__generated/**'],
@@ -90,10 +85,9 @@ export default defineConfig(({ mode }): UserConfig => {
 		},
 		build: {
 			minify: 'esbuild',
+			cssMinify: 'esbuild',
 			outDir: 'build',
-			// Vite sourcemaps are broken in development
-			// https://github.com/highlight-run/highlight/pull/3171
-			sourcemap: env.RENDER_PREVIEW !== 'true' && mode !== 'development',
+			sourcemap: true,
 			rollupOptions: {
 				output: {
 					manualChunks: (id: string) => {
@@ -114,18 +108,8 @@ export default defineConfig(({ mode }): UserConfig => {
 			setupFiles: ['./src/setupTests.ts'],
 		},
 		css: {
+			transformer: 'postcss',
 			devSourcemap: true,
-			preprocessorOptions: {
-				less: {
-					javascriptEnabled: true,
-					modifyVars: {
-						hack: `true; @import "${join(
-							__dirname,
-							'src/style/AntDesign/antd.overrides.less',
-						)}";`,
-					},
-				},
-			},
 		},
 	}
 })

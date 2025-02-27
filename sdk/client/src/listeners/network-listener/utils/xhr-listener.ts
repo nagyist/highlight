@@ -1,3 +1,5 @@
+import stringify from 'json-stringify-safe'
+
 import { NetworkListenerCallback } from '../network-listener'
 import { Headers, Request, RequestResponsePair, Response } from './models'
 import {
@@ -8,12 +10,13 @@ import {
 	shouldNetworkRequestBeTraced,
 } from './utils'
 
-interface BrowserXHR extends XMLHttpRequest {
+export interface BrowserXHR extends XMLHttpRequest {
 	_method: string
 	_url: string
 	_requestHeaders: Headers
 	_responseSize?: number
 	_shouldRecordHeaderAndBody: boolean
+	_body?: any
 }
 
 /**
@@ -21,12 +24,11 @@ interface BrowserXHR extends XMLHttpRequest {
  */
 export const XHRListener = (
 	callback: NetworkListenerCallback,
-	backendUrl: string,
+	highlightEndpoints: string[],
 	tracingOrigins: boolean | (string | RegExp)[],
 	urlBlocklist: string[],
-	sessionSecureID: string,
-	bodyKeysToRedact?: string[],
-	bodyKeysToRecord?: string[],
+	bodyKeysToRedact: string[],
+	bodyKeysToRecord: string[] | undefined,
 ) => {
 	const XHR = XMLHttpRequest.prototype
 
@@ -37,12 +39,16 @@ export const XHRListener = (
 	/**
 	 * When a request gets initiated, store metadata for that specific request.
 	 */
-	XHR.open = function (this: BrowserXHR, method: string, url: string) {
+	XHR.open = function (this: BrowserXHR, method: string, url: string | URL) {
+		if (typeof url === 'string') {
+			this._url = url
+		} else {
+			this._url = url.toString()
+		}
 		this._method = method
-		this._url = url
 		this._requestHeaders = {}
 		this._shouldRecordHeaderAndBody = !urlBlocklist.some((blockedUrl) =>
-			url.toLowerCase().includes(blockedUrl),
+			this._url.toLowerCase().includes(blockedUrl),
 		)
 
 		// @ts-expect-error
@@ -64,7 +70,7 @@ export const XHRListener = (
 		if (
 			!shouldNetworkRequestBeRecorded(
 				this._url,
-				backendUrl,
+				highlightEndpoints,
 				tracingOrigins,
 			)
 		) {
@@ -72,8 +78,14 @@ export const XHRListener = (
 			return originalSend.apply(this, arguments)
 		}
 
-		const requestId = createNetworkRequestId()
-		if (shouldNetworkRequestBeTraced(this._url, tracingOrigins)) {
+		const [sessionSecureID, requestId] = createNetworkRequestId()
+		if (
+			shouldNetworkRequestBeTraced(
+				this._url,
+				tracingOrigins,
+				urlBlocklist,
+			)
+		) {
 			this.setRequestHeader(
 				HIGHLIGHT_REQUEST_HEADER,
 				getHighlightRequestHeader(sessionSecureID, requestId),
@@ -82,6 +94,7 @@ export const XHRListener = (
 
 		const shouldRecordHeaderAndBody = this._shouldRecordHeaderAndBody
 		const requestModel: Request = {
+			sessionSecureID,
 			id: requestId,
 			url: this._url,
 			verb: this._method,
@@ -93,6 +106,7 @@ export const XHRListener = (
 			if (postData) {
 				const bodyData = getBodyData(postData, requestModel.url)
 				if (bodyData) {
+					this._body = bodyData
 					requestModel['body'] = getBodyThatShouldBeRecorded(
 						bodyData,
 						bodyKeysToRedact,
@@ -150,15 +164,19 @@ export const XHRListener = (
 					// Each character is 8 bytes, total size is number of characters multiplied by 8.
 					responseModel['size'] = this.responseText.length * 8
 				} else if (this.responseType === 'blob') {
-					const blob = this.response as Blob
-					const response = await blob.text()
-					responseModel['body'] = getBodyThatShouldBeRecorded(
-						response,
-						bodyKeysToRedact,
-						bodyKeysToRecord,
-						responseModel.headers,
-					)
-					responseModel['size'] = blob.size
+					if (this.response instanceof Blob) {
+						try {
+							const response = await this.response.text()
+
+							responseModel['body'] = getBodyThatShouldBeRecorded(
+								response,
+								bodyKeysToRedact,
+								bodyKeysToRecord,
+								responseModel.headers,
+							)
+							responseModel['size'] = this.response.size
+						} catch {}
+					}
 				} else {
 					try {
 						responseModel['body'] = getBodyThatShouldBeRecorded(
@@ -233,7 +251,7 @@ const getBodyData = (postData: any, url: string | undefined) => {
 		typeof postData === 'number' ||
 		typeof postData === 'boolean'
 	) {
-		return postData.toString()
+		return stringify(postData)
 	}
 
 	return null
@@ -272,11 +290,27 @@ export const getBodyThatShouldBeRecorded = (
 			try {
 				const json = JSON.parse(bodyData)
 
-				Object.keys(json).forEach((key) => {
-					if (bodyKeysToRedact.includes(key.toLocaleLowerCase())) {
-						json[key] = '[REDACTED]'
-					}
-				})
+				if (Array.isArray(json)) {
+					json.forEach((element) => {
+						Object.keys(element).forEach((key) => {
+							if (
+								bodyKeysToRedact.includes(
+									key.toLocaleLowerCase(),
+								)
+							) {
+								element[key] = '[REDACTED]'
+							}
+						})
+					})
+				} else {
+					Object.keys(json).forEach((key) => {
+						if (
+							bodyKeysToRedact.includes(key.toLocaleLowerCase())
+						) {
+							json[key] = '[REDACTED]'
+						}
+					})
+				}
 
 				bodyData = JSON.stringify(json)
 			} catch {}

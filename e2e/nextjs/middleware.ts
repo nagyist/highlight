@@ -1,6 +1,8 @@
-import type { NextRequest } from 'next/server'
+import { highlightMiddleware } from '@highlight-run/next/server'
 import { NextResponse } from 'next/server'
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: Request) {
+	await highlightMiddleware(request)
+
 	return NextResponse.next()
 }

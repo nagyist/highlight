@@ -1,4 +1,5 @@
 import Button from '@components/Button/Button/Button'
+import { toast } from '@components/Toaster'
 import PlugIcon from '@icons/PlugIcon'
 import Sparkles2Icon from '@icons/Sparkles2Icon'
 import { useDiscordIntegration } from '@pages/IntegrationsPage/components/DiscordIntegration/utils'
@@ -8,26 +9,34 @@ import {
 } from '@pages/IntegrationsPage/components/Integration'
 import { useParams } from '@util/react-router/useParams'
 import { GetBaseURL } from '@util/window'
-import { message } from 'antd'
 import React, { useEffect } from 'react'
 
 import styles from './DiscordIntegrationConfig.module.css'
 
 const DISCORD_CLIENT_ID = import.meta.env.DISCORD_CLIENT_ID
 
-const getDiscordOauthUrl = (project_id: string): string => {
+export const getDiscordOauthUrl = (
+	project_id: string,
+	next?: string,
+): string => {
 	const redirectURI = `${GetBaseURL()}/callback/discord`
 
-	const state = encodeURIComponent(JSON.stringify({ project_id: project_id }))
+	const state = encodeURIComponent(
+		JSON.stringify({
+			project_id: project_id,
+			next: next ?? window.location.pathname,
+		}),
+	)
 	const scope = ['bot']
 
 	// If the bot needs more permissions,
 	// visit https://discord.com/developers/applications/1024079182013149185/oauth2/url-generator
 	// and use the generator to get a new value
 	// Current bot permissions:
+	// * Manage Channels
 	// * Read Messages/View Channels
 	// * Send Messages
-	const botPermissions = '3072'
+	const botPermissions = '3088'
 
 	return `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&permissions=${botPermissions}&redirect_uri=${redirectURI}&state=${state}&response_type=code&scope=${scope}`
 }
@@ -52,7 +61,7 @@ const DiscordIntegrationConfig: React.FC<IntegrationConfigProps> = ({
 		) {
 			setIntegrationEnabled(true)
 			setModalOpen(false)
-			message.success('Discord integration enabled')
+			toast.success('Discord integration enabled')
 		}
 	}, [
 		isDiscordIntegratedWithProject,

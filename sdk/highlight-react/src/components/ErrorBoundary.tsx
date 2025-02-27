@@ -43,7 +43,7 @@ export type ErrorBoundaryProps = {
 	onAfterReportDialogSubmitHandler?: () => void
 }
 
-interface ErrorBoundaryState {
+export interface ErrorBoundaryState {
 	componentStack: string | null
 	error: Error | null
 	showingDialog: boolean
@@ -59,17 +59,18 @@ export class ErrorBoundary extends React.Component<
 	ErrorBoundaryProps,
 	ErrorBoundaryState
 > {
+	public refs: { [key: string]: any } = {}
 	public state: ErrorBoundaryState = INITIAL_STATE
 
 	componentDidCatch(error: Error, errorInfo: ErrorInfo) {
 		const { beforeCapture, onError, showDialog } = this.props
 
 		if (beforeCapture) {
-			beforeCapture(error, errorInfo.componentStack)
+			beforeCapture(error, errorInfo.componentStack ?? null)
 		}
 		captureReactErrorBoundaryError(error, errorInfo)
 		if (onError) {
-			onError(error, errorInfo.componentStack)
+			onError(error, errorInfo.componentStack ?? '')
 		}
 		if (showDialog !== false) {
 			this.setState({ ...this.state, showingDialog: true })
@@ -77,7 +78,10 @@ export class ErrorBoundary extends React.Component<
 
 		// componentDidCatch is used over getDerivedStateFromError
 		// so that componentStack is accessible through state.
-		this.setState({ error, componentStack: errorInfo.componentStack })
+		this.setState({
+			error,
+			componentStack: errorInfo.componentStack ?? null,
+		})
 	}
 
 	public componentDidMount(): void {
@@ -125,7 +129,7 @@ export class ErrorBoundary extends React.Component<
 		const { error, componentStack, showingDialog } = this.state
 
 		if (error) {
-			let element: React.ReactElement | undefined = undefined
+			let element: React.ReactElement | undefined
 			if (typeof fallback === 'function') {
 				element = fallback({
 					error,
@@ -191,15 +195,19 @@ function captureReactErrorBoundaryError(
 	error: Error,
 	errorInfo: ErrorInfo,
 ): void {
-	const component = getComponentNameFromStack(errorInfo.componentStack)
+	const component = getComponentNameFromStack(errorInfo.componentStack ?? '')
 	if (!window.H) {
 		console.warn('You need to install highlight.run.')
 	} else {
-		window.H.consumeError(
-			error,
-			undefined,
-			component ? { component } : undefined,
+		console.error(
+			'Highlight ErrorBoundary caught an exception while rendering React component',
+			{ error },
 		)
+		window.H.consume(error, {
+			payload: { component },
+			source: component,
+			type: 'React.ErrorBoundary',
+		})
 	}
 }
 

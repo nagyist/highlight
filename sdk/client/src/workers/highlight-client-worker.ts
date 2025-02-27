@@ -1,5 +1,24 @@
+import { compressSync, strToU8 } from 'fflate'
+import { GraphQLClient } from 'graphql-request'
+import stringify from 'json-stringify-safe'
+import { UPLOAD_TIMEOUT } from '../constants/sessions'
+import {
+	getSdk,
+	PushPayloadMutationVariables,
+	Sdk,
+} from '../graph/generated/operations'
+import { ReplayEventsInput } from '../graph/generated/schemas'
+import { Logger } from '../logger'
+import { MetricCategory } from '../types/client'
+import { getGraphQLRequestWrapper } from '../utils/graph'
+import {
+	MAX_PUBLIC_GRAPH_RETRY_ATTEMPTS,
+	NON_SERIALIZABLE_PROPS,
+	PROPERTY_MAX_LENGTH,
+} from './constants'
 import {
 	AsyncEventsMessage,
+	AsyncEventsResponse,
 	FeedbackMessage,
 	HighlightClientWorkerParams,
 	HighlightClientWorkerResponse,
@@ -8,22 +27,6 @@ import {
 	MetricsMessage,
 	PropertiesMessage,
 } from './types'
-import stringify from 'json-stringify-safe'
-import {
-	getSdk,
-	PushPayloadMutationVariables,
-	Sdk,
-} from '../graph/generated/operations'
-import { ReplayEventsInput } from '../graph/generated/schemas'
-import { GraphQLClient } from 'graphql-request'
-import { getGraphQLRequestWrapper } from '../utils/graph'
-import {
-	MAX_PUBLIC_GRAPH_RETRY_ATTEMPTS,
-	NON_SERIALIZABLE_PROPS,
-	PROPERTY_MAX_LENGTH,
-} from './constants'
-import { Logger } from '../logger'
-import { MetricCategory } from '../types/client'
 
 export interface HighlightClientRequestWorker {
 	postMessage: (message: HighlightClientWorkerParams) => void
@@ -36,6 +39,17 @@ interface HighlightClientResponseWorker {
 		| ((message: MessageEvent<HighlightClientWorkerParams>) => void)
 
 	postMessage(e: HighlightClientWorkerResponse): void
+}
+
+async function bufferToBase64(buffer: Uint8Array) {
+	// use a FileReader to generate a base64 data URI:
+	const base64url = await new Promise<string>((r) => {
+		const reader = new FileReader()
+		reader.onload = () => r(reader.result as string)
+		reader.readAsDataURL(new Blob([buffer]))
+	})
+	// remove data:application/octet-stream;base64, prefix
+	return base64url.slice(base64url.indexOf(',') + 1)
 }
 
 // `as any` because: https://github.com/Microsoft/TypeScript/issues/20595
@@ -96,6 +110,7 @@ function stringifyProperties(
 	let backend: string
 	let sessionSecureID: string
 	let numberOfFailedRequests: number = 0
+	let numberOfFailedPushPayloads: number = 0
 	let debug: boolean = false
 	let recordingStartTime: number = 0
 	let logger = new Logger(false, '[worker]')
@@ -135,7 +150,6 @@ function stringifyProperties(
 			errors,
 			resourcesString,
 			webSocketEventsString,
-			isBeacon,
 			hasSessionUnloaded,
 			highlightLogs,
 		} = msg
@@ -143,38 +157,125 @@ function stringifyProperties(
 		const messagesString = stringify({ messages: messages })
 		let payload: PushPayloadMutationVariables = {
 			session_secure_id: sessionSecureID,
+			payload_id: id.toString(),
 			events: { events } as ReplayEventsInput,
 			messages: messagesString,
 			resources: resourcesString,
 			web_socket_events: webSocketEventsString,
 			errors,
-			is_beacon: isBeacon,
+			is_beacon: false,
 			has_session_unloaded: hasSessionUnloaded,
-			payload_id: id.toString(),
 		}
 		if (highlightLogs) {
 			payload.highlight_logs = highlightLogs
 		}
 
-		const eventsSize = graphqlSDK
-			.PushPayload(payload)
-			.then((res) => res.pushPayload ?? 0)
+		const buf = strToU8(JSON.stringify(payload))
+		const compressed = compressSync(buf)
+		const compressedBase64 = await bufferToBase64(compressed)
 
+		const response: AsyncEventsResponse = {
+			type: MessageType.AsyncEvents,
+			id,
+			eventsSize: buf.length,
+			compressedSize: compressedBase64.length,
+		}
+
+		logger.log(
+			`Pushing payload: ${JSON.stringify(
+				{
+					sessionSecureID,
+					id,
+					firstSID: Math.min(
+						...(payload.events.events
+							.map((e) => e?._sid)
+							.filter((sid) => !!sid) as number[]),
+					),
+					eventsLength: payload.events.events.length,
+					messagesLength: messages.length,
+					resourcesLength: resourcesString.length,
+					webSocketLength: webSocketEventsString.length,
+					errorsLength: errors.length,
+					bufLength: buf.length,
+					compressedLength: compressed.length,
+					compressedBase64Length: compressedBase64.length,
+				},
+				undefined,
+				2,
+			)}`,
+		)
+
+		const pushPayload = graphqlSDK.PushPayloadCompressed({
+			session_secure_id: sessionSecureID,
+			payload_id: id.toString(),
+			data: compressedBase64,
+		})
+
+		let pushMetrics: Promise<any> = Promise.resolve()
 		if (metricsPayload.length) {
-			const metrics = graphqlSDK.pushMetrics({
+			pushMetrics = graphqlSDK.pushMetrics({
 				metrics: metricsPayload,
 			})
 			// clear batched payload before yielding for network request
 			metricsPayload.splice(0)
-			await metrics
+		}
+
+		let requestStart: number = performance.now()
+		const int = setInterval(() => {
+			if (
+				requestStart &&
+				performance.now() - requestStart > UPLOAD_TIMEOUT
+			) {
+				console.warn(
+					`Uploading pushPayload took too long, failure number #${numberOfFailedPushPayloads}.`,
+				)
+				numberOfFailedPushPayloads += 1
+				clearInterval(int)
+
+				if (
+					numberOfFailedPushPayloads >=
+					MAX_PUBLIC_GRAPH_RETRY_ATTEMPTS
+				) {
+					console.warn(
+						`Uploading pushPayload took too long, stopping recording to avoid OOM.`,
+					)
+
+					worker.postMessage({
+						response: {
+							type: MessageType.Stop,
+							requestStart,
+							asyncEventsResponse: response,
+						},
+					})
+
+					processPropertiesMessage({
+						type: MessageType.Properties,
+						propertiesObject: {
+							stopReason: 'Push Payload Timeout',
+						},
+						propertyType: { type: 'track' },
+					})
+				}
+			}
+		}, 100)
+		try {
+			await Promise.all([pushPayload, pushMetrics])
+			if (
+				numberOfFailedPushPayloads &&
+				performance.now() - requestStart <= UPLOAD_TIMEOUT
+			) {
+				console.warn(
+					`pushPayload succeeded after #${numberOfFailedPushPayloads} failures, resetting stop switch.`,
+				)
+				numberOfFailedPushPayloads = 0
+			}
+		} finally {
+			requestStart = 0
+			clearInterval(int)
 		}
 
 		worker.postMessage({
-			response: {
-				type: MessageType.AsyncEvents,
-				id,
-				eventsSize: await eventsSize,
-			},
+			response,
 		})
 	}
 
@@ -206,18 +307,8 @@ function stringifyProperties(
 
 	const processPropertiesMessage = async (msg: PropertiesMessage) => {
 		const { propertiesObject, propertyType } = msg
-		let eventType = ''
-		if (propertiesObject?.clickTextContent !== undefined) {
-			eventType = 'ClickTextContent'
-			// click text content should be searchable on sessions but not part of the timeline indicators
-			await graphqlSDK.addSessionProperties({
-				session_secure_id: sessionSecureID,
-				properties_object: stringifyProperties(
-					propertiesObject,
-					'session',
-				),
-			})
-		} else if (propertyType?.type === 'session') {
+		let eventType: string
+		if (propertyType?.type === 'session') {
 			eventType = 'Session'
 			// Session properties are custom properties that the Highlight snippet adds (visited-url, referrer, etc.)
 			// These should be searchable but not part of `Track` timeline indicators
@@ -232,14 +323,12 @@ function stringifyProperties(
 			// Track properties are properties that users define; rn, either through segment or manually.
 			if (propertyType?.source === 'segment') {
 				eventType = 'Segment'
-				addCustomEvent<string>(
-					'Segment Track',
-					stringify(propertiesObject),
-				)
 			} else {
 				eventType = 'Track'
-				addCustomEvent<string>(eventType, stringify(propertiesObject))
 			}
+		}
+		if (eventType !== 'Session') {
+			addCustomEvent<string>(eventType, stringify(propertiesObject))
 		}
 		logger.log(
 			`Adding ${eventType} Properties to session (${sessionSecureID}) w/ obj: ${JSON.stringify(

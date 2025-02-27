@@ -1,9 +1,9 @@
 import { SessionCommentCard } from '@components/Comment/SessionComment/SessionComment'
-import { Box } from '@highlight-run/ui'
+import { toast } from '@components/Toaster'
+import { Box } from '@highlight-run/ui/components'
 import { MillisToMinutesAndSeconds } from '@util/time'
-import { message } from 'antd'
 import clsx from 'clsx'
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { CommentIndicator } from '@/components/Comment/CommentIndicator'
 import { getDeepLinkedCommentId } from '@/components/Comment/utils/utils'
@@ -174,7 +174,7 @@ const PlayerSessionComment = ({ comment }: Props) => {
 				<button
 					onClick={() => {
 						pause(comment.timestamp as number)
-						message.success(
+						toast.success(
 							`Changed player time to where comment was created at ${MillisToMinutesAndSeconds(
 								comment.timestamp as number,
 							)}.`,
@@ -185,14 +185,7 @@ const PlayerSessionComment = ({ comment }: Props) => {
 						styles.commentPinButton,
 					)}
 				>
-					<CommentIndicator
-						seed={
-							comment.author?.name ??
-							comment.author?.email ??
-							'Anonymous'
-						}
-						customImage={comment.author?.photo_url}
-					/>
+					<CommentIndicator customImage={comment.author?.photo_url} />
 				</button>
 			</TransparentPopover>
 		</div>

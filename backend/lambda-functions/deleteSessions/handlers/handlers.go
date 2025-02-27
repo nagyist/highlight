@@ -3,21 +3,22 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"os"
+	"strconv"
+	"time"
+
+	"github.com/highlight-run/highlight/backend/env"
 
 	"github.com/openlyinc/pointy"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/smithy-go/ptr"
 	"github.com/google/uuid"
+	"github.com/highlight-run/highlight/backend/clickhouse"
 	"github.com/highlight-run/highlight/backend/email"
+	"github.com/highlight-run/highlight/backend/enterprise"
 	"github.com/highlight-run/highlight/backend/lambda-functions/deleteSessions/utils"
 	"github.com/highlight-run/highlight/backend/model"
-	"github.com/highlight-run/highlight/backend/opensearch"
+	modelInputs "github.com/highlight-run/highlight/backend/private-graph/graph/model"
 	storage "github.com/highlight-run/highlight/backend/storage"
-	"github.com/highlight-run/highlight/backend/util"
 	"github.com/pkg/errors"
 	"github.com/sendgrid/sendgrid-go"
 	"github.com/sendgrid/sendgrid-go/helpers/mail"
@@ -25,90 +26,62 @@ import (
 )
 
 type Handlers interface {
-	DeleteSessionBatchFromOpenSearch(context.Context, utils.BatchIdResponse) (*utils.BatchIdResponse, error)
+	DeleteSessionBatchFromClickhouse(context.Context, utils.BatchIdResponse) (*utils.BatchIdResponse, error)
 	DeleteSessionBatchFromPostgres(context.Context, utils.BatchIdResponse) (*utils.BatchIdResponse, error)
-	DeleteSessionBatchFromS3(context.Context, utils.BatchIdResponse) (*utils.BatchIdResponse, error)
+	DeleteSessionBatchFromObjectStorage(context.Context, utils.BatchIdResponse) (*utils.BatchIdResponse, error)
 	GetSessionIdsByQuery(context.Context, utils.QuerySessionsInput) ([]utils.BatchIdResponse, error)
 	SendEmail(context.Context, utils.QuerySessionsInput) error
 }
 
 type handlers struct {
 	db               *gorm.DB
-	opensearchClient *opensearch.Client
-	s3Client         *s3.Client
-	s3ClientEast2    *s3.Client
+	clickhouseClient *clickhouse.Client
 	sendgridClient   *sendgrid.Client
+	storageClient    storage.Client
 }
 
-func InitHandlers(db *gorm.DB, opensearchClient *opensearch.Client, s3Client *s3.Client, s3ClientEast2 *s3.Client, sendgridClient *sendgrid.Client) *handlers {
+func InitHandlers(db *gorm.DB, clickhouseClient *clickhouse.Client, sendgridClient *sendgrid.Client, storageClient storage.Client) *handlers {
 	return &handlers{
 		db:               db,
-		opensearchClient: opensearchClient,
-		s3Client:         s3Client,
-		s3ClientEast2:    s3ClientEast2,
+		clickhouseClient: clickhouseClient,
 		sendgridClient:   sendgridClient,
+		storageClient:    storageClient,
 	}
 }
 
 func NewHandlers() *handlers {
 	ctx := context.TODO()
-	db, err := model.SetupDB(ctx, os.Getenv("PSQL_DB"))
+	db, err := model.SetupDB(ctx, env.Config.SQLDatabase)
 	if err != nil {
 		log.WithContext(ctx).Fatal(errors.Wrap(err, "error setting up DB"))
 	}
 
-	opensearchClient, err := opensearch.NewOpensearchClient(nil)
+	clickhouseClient, err := clickhouse.NewClient(clickhouse.PrimaryDatabase)
 	if err != nil {
-		log.WithContext(ctx).Fatal(errors.Wrap(err, "error creating opensearch client"))
+		log.WithContext(ctx).Fatal(errors.Wrap(err, "error creating clickhouse client"))
 	}
 
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
+	s3Client, err := storage.NewS3Client(ctx)
 	if err != nil {
-		log.WithContext(ctx).Fatal(errors.Wrap(err, "error loading default from config"))
+		log.WithContext(ctx).Fatal(errors.Wrap(err, "error creating s3 storage client"))
 	}
-	s3Client := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.UsePathStyle = true
-	})
 
-	cfgEast2, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-east-2"))
-	if err != nil {
-		log.WithContext(ctx).Fatal(errors.Wrap(err, "error loading default from config"))
-	}
-	s3ClientEast2 := s3.NewFromConfig(cfgEast2, func(o *s3.Options) {
-		o.UsePathStyle = true
-	})
+	sendgridClient := sendgrid.NewSendClient(env.Config.SendgridKey)
 
-	sendgridClient := sendgrid.NewSendClient(os.Getenv("SENDGRID_API_KEY"))
-
-	return InitHandlers(db, opensearchClient, s3Client, s3ClientEast2, sendgridClient)
+	return InitHandlers(db, clickhouseClient, sendgridClient, s3Client)
 }
 
-func (h *handlers) getSessionClientAndBucket(sessionId int) (*s3.Client, *string) {
-	client := h.s3Client
-	bucket := pointy.String(storage.S3SessionsPayloadBucketName)
-	if storage.UseNewSessionBucket(sessionId) {
-		client = h.s3ClientEast2
-		bucket = pointy.String(storage.S3SessionsPayloadBucketNameNew)
-	}
-
-	return client, bucket
-}
-
-func (h *handlers) DeleteSessionBatchFromOpenSearch(ctx context.Context, event utils.BatchIdResponse) (*utils.BatchIdResponse, error) {
+func (h *handlers) DeleteSessionBatchFromClickhouse(ctx context.Context, event utils.BatchIdResponse) (*utils.BatchIdResponse, error) {
 	sessionIds, err := utils.GetSessionIdsInBatch(h.db, event.TaskId, event.BatchId)
 	if err != nil {
 		return nil, errors.Wrap(err, "error getting session ids to delete")
 	}
 
-	for _, sessionId := range sessionIds {
-		if !event.DryRun {
-			if err := h.opensearchClient.Delete(opensearch.IndexSessions, sessionId); err != nil {
-				return nil, errors.Wrap(err, "error creating bulk delete request")
-			}
+	if !event.DryRun {
+		if err := h.clickhouseClient.DeleteSessions(ctx, event.ProjectId, sessionIds); err != nil {
+			return nil, errors.Wrap(err, "error creating bulk delete request")
 		}
 	}
-
-	h.opensearchClient.Close()
 
 	return &event, nil
 }
@@ -143,44 +116,16 @@ func (h *handlers) DeleteSessionBatchFromPostgres(ctx context.Context, event uti
 	return &event, nil
 }
 
-func (h *handlers) DeleteSessionBatchFromS3(ctx context.Context, event utils.BatchIdResponse) (*utils.BatchIdResponse, error) {
+func (h *handlers) DeleteSessionBatchFromObjectStorage(ctx context.Context, event utils.BatchIdResponse) (*utils.BatchIdResponse, error) {
 	sessionIds, err := utils.GetSessionIdsInBatch(h.db, event.TaskId, event.BatchId)
 	if err != nil {
 		return nil, errors.Wrap(err, "error getting session ids to delete")
 	}
 
 	for _, sessionId := range sessionIds {
-		client, bucket := h.getSessionClientAndBucket(sessionId)
-
-		versionPart := ""
-		if storage.UseNewSessionBucket(sessionId) {
-			versionPart = "v2/"
-		}
-		devStr := ""
-		if util.IsDevOrTestEnv() {
-			devStr = "dev/"
-		}
-
-		prefix := fmt.Sprintf("%s%s%d/%d/", versionPart, devStr, event.ProjectId, sessionId)
-		options := s3.ListObjectsV2Input{
-			Bucket: bucket,
-			Prefix: &prefix,
-		}
-		output, err := client.ListObjectsV2(ctx, &options)
-		if err != nil {
-			return nil, errors.Wrap(err, "error listing objects in S3")
-		}
-
-		for _, object := range output.Contents {
-			options := s3.DeleteObjectInput{
-				Bucket: bucket,
-				Key:    object.Key,
-			}
-			if !event.DryRun {
-				_, err := client.DeleteObject(ctx, &options)
-				if err != nil {
-					return nil, errors.Wrap(err, "error deleting objects from S3")
-				}
+		if !event.DryRun {
+			if err := h.storageClient.DeleteSessionData(ctx, event.ProjectId, sessionId); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -190,37 +135,24 @@ func (h *handlers) DeleteSessionBatchFromS3(ctx context.Context, event utils.Bat
 
 func (h *handlers) GetSessionIdsByQuery(ctx context.Context, event utils.QuerySessionsInput) ([]utils.BatchIdResponse, error) {
 	taskId := uuid.New().String()
-	lastId := 0
 	responses := []utils.BatchIdResponse{}
+	page := 1
 	for {
 		batchId := uuid.New().String()
 		toDelete := []model.DeleteSessionsTask{}
 
-		options := opensearch.SearchOptions{
-			MaxResults:    ptr.Int(10000),
-			SortField:     ptr.String("id"),
-			SortOrder:     ptr.String("asc"),
-			IncludeFields: []string{"id"},
-		}
-		if lastId != 0 {
-			options.SearchAfter = []interface{}{lastId}
-		}
-
-		results := []model.Session{}
-		_, _, err := h.opensearchClient.Search([]opensearch.Index{opensearch.IndexSessions},
-			event.ProjectId, event.Query, options, &results)
+		ids, _, _, _, _, err := h.clickhouseClient.QuerySessionIds(ctx, nil, event.ProjectId, 10000, event.Params, "CreatedAt DESC, ID DESC", pointy.Int(page), time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 		if err != nil {
 			return nil, err
 		}
 
-		if len(results) == 0 {
+		if len(ids) == 0 {
 			break
 		}
-		lastId = results[len(results)-1].ID
 
-		for _, r := range results {
+		for _, id := range ids {
 			toDelete = append(toDelete, model.DeleteSessionsTask{
-				SessionID: r.ID,
+				SessionID: int(id),
 				TaskID:    taskId,
 				BatchID:   batchId,
 			})
@@ -236,6 +168,8 @@ func (h *handlers) GetSessionIdsByQuery(ctx context.Context, event utils.QuerySe
 			BatchId:   batchId,
 			DryRun:    event.DryRun,
 		})
+
+		page += 1
 	}
 
 	return responses, nil
@@ -265,4 +199,86 @@ func (h *handlers) SendEmail(ctx context.Context, event utils.QuerySessionsInput
 	}
 
 	return nil
+}
+
+func (h *handlers) DeleteSessions(ctx context.Context, projectId int, startDate time.Time, endDate time.Time, query string) {
+	batches, err := h.GetSessionIdsByQuery(ctx, utils.QuerySessionsInput{
+		ProjectId: projectId,
+		Params: modelInputs.QueryInput{
+			DateRange: &modelInputs.DateRangeRequiredInput{
+				StartDate: startDate,
+				EndDate:   endDate,
+			},
+			Query: query,
+		},
+	})
+	if err != nil {
+		log.WithContext(ctx).Error(err)
+		return
+	}
+
+	if err := h.storageClient.CleanupRawEvents(ctx, projectId); err != nil {
+		log.WithContext(ctx).Error(err)
+	}
+
+	if len(batches) == 0 {
+		log.WithContext(ctx).Warnf("SessionDeleteJob - no sessions to delete for projectId %d, continuing", projectId)
+		return
+	}
+
+	log.WithContext(ctx).Infof("SessionDeleteJob - %d batches to delete for projectId %d", len(batches), projectId)
+
+	for _, batch := range batches {
+		log.WithContext(ctx).Infof("SessionDeleteJob - deleting sessions in batch %s for projectId %d", batch.BatchId, batch.ProjectId)
+
+		if _, err := h.DeleteSessionBatchFromPostgres(ctx, batch); err != nil {
+			log.WithContext(ctx).Error(err)
+			return
+		}
+		if _, err := h.DeleteSessionBatchFromObjectStorage(ctx, batch); err != nil {
+			log.WithContext(ctx).Error(err)
+			return
+		}
+		if _, err := h.DeleteSessionBatchFromClickhouse(ctx, batch); err != nil {
+			log.WithContext(ctx).Error(err)
+			return
+		}
+
+		log.WithContext(ctx).Infof("SessionDeleteJob - finished deleting sessions in batch %s for projectId %d", batch.BatchId, batch.ProjectId)
+	}
+}
+
+func (h *handlers) ProcessRetentionDeletions(ctx context.Context) {
+	retentionEnv := env.Config.SessionRetentionDays
+	if retentionEnv == "" {
+		log.WithContext(ctx).Info("SESSION_RETENTION_DAYS not set, skipping SessionDeleteJob")
+		return
+	}
+	sessionRetentionDays, err := strconv.Atoi(env.Config.SessionRetentionDays)
+	if err != nil {
+		log.WithContext(ctx).Error("Error parsing SESSION_RETENTION_DAYS, skipping SessionDeleteJob")
+		return
+	}
+	if sessionRetentionDays <= 0 {
+		log.WithContext(ctx).Error("sessionRetentionDays <= 0, skipping SessionDeleteJob")
+		return
+	}
+	enterprise.RequireEnterprise(ctx)
+
+	var projectIds []int
+	if err := h.db.Model(&model.Project{}).Select("id").Find(&projectIds).Error; err != nil {
+		log.WithContext(ctx).Error(err)
+		return
+	}
+
+	now := time.Now()
+	endDate := now.AddDate(0, 0, -1*sessionRetentionDays)
+	startDate := endDate.AddDate(-10, 0, 0)
+
+	for _, id := range projectIds {
+		projectId := id
+		// Only delete sessions which have not been viewed to avoid deleting any useful sessions
+		// Users can manually remove any others with the "delete sessions" button
+		go h.DeleteSessions(ctx, projectId, startDate, endDate, "viewed_by_anyone=false")
+	}
 }

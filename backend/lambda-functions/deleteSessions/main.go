@@ -2,33 +2,47 @@ package main
 
 import (
 	"context"
+	"github.com/highlight-run/highlight/backend/env"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/highlight-run/highlight/backend/lambda-functions/deleteSessions/handlers"
 	"github.com/highlight-run/highlight/backend/lambda-functions/deleteSessions/utils"
-	"github.com/highlight-run/highlight/backend/util"
+	"github.com/highlight-run/highlight/backend/private-graph/graph/model"
 	"github.com/highlight/highlight/sdk/highlight-go"
 	hlog "github.com/highlight/highlight/sdk/highlight-go/log"
 )
 
 // Meant for local invocation for testing the lambda handler stack
 func main() {
-	if !util.IsDevOrTestEnv() {
+	if !env.IsDevOrTestEnv() {
 		return
 	}
 
 	highlight.SetProjectID("1jdkoe52")
-	highlight.Start()
+	highlight.Start(
+		highlight.WithServiceName("lambda-functions--deleteSessions"),
+		highlight.WithServiceVersion(env.Config.Version),
+		highlight.WithEnvironment(env.EnvironmentName()),
+	)
 	defer highlight.Stop()
 	hlog.Init()
 
 	h := handlers.NewHandlers()
+	start, _ := time.Parse(time.RFC3339, "2022-07-15T23:00:25.525Z")
+	end, _ := time.Parse(time.RFC3339, "2023-09-01T23:59:59.999Z")
 	input := utils.QuerySessionsInput{
-		ProjectId:    1,
-		Email:        "zane@highlight.io",
-		FirstName:    "Zane",
-		Query:        "{\"bool\":{\"must\":[{\"bool\":{\"should\":[{\"term\":{\"processed\":\"true\"}}]}},{\"bool\":{\"should\":[{\"range\":{\"created_at\":{\"gte\":\"2022-07-15T23:00:25.525Z\",\"lte\":\"2022-08-01T23:00:25.525Z\"}}}]}}]}}",
+		ProjectId: 1,
+		Email:     "zane@highlight.io",
+		FirstName: "Zane",
+		Params: model.QueryInput{
+			Query: "completed=true",
+			DateRange: &model.DateRangeRequiredInput{
+				StartDate: start,
+				EndDate:   end,
+			},
+		},
 		SessionCount: 256,
 		DryRun:       true,
 	}
@@ -45,10 +59,10 @@ func main() {
 	if _, err := h.DeleteSessionBatchFromPostgres(ctx, out[0]); err != nil {
 		log.WithContext(ctx).Fatal(err)
 	}
-	if _, err := h.DeleteSessionBatchFromS3(ctx, out[0]); err != nil {
+	if _, err := h.DeleteSessionBatchFromObjectStorage(ctx, out[0]); err != nil {
 		log.WithContext(ctx).Fatal(err)
 	}
-	if _, err := h.DeleteSessionBatchFromOpenSearch(ctx, out[0]); err != nil {
+	if _, err := h.DeleteSessionBatchFromClickhouse(ctx, out[0]); err != nil {
 		log.WithContext(ctx).Fatal(err)
 	}
 

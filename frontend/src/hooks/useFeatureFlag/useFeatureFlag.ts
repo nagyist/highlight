@@ -1,6 +1,7 @@
 import { useAuthContext } from '@authentication/AuthContext'
 import { useGetProjectQuery } from '@graph/hooks'
 import analytics from '@util/analytics'
+import { isOnPrem } from '@util/onPrem/onPremUtils'
 import { useParams } from '@util/react-router/useParams'
 import { useEffect, useState } from 'react'
 
@@ -13,33 +14,21 @@ interface Config {
 }
 
 export enum Feature {
-	HistogramTimelineV2,
-	AiSessionInsights,
+	PlayerNoChunkRemoval,
+	SessionResultsVerbose,
 }
 
 // configures the criteria and percentage of population for which the feature is active.
 // can configure to rollout by project, workspace, or admin
 export const FeatureConfig: { [key: number]: Config } = {
-	[Feature.HistogramTimelineV2]: {
-		workspace: true,
-		percent: 100,
-		projectOverride: new Set<string>([
-			// Portal
-			'79',
-			// Impira
-			'122',
-			'153',
-			'172',
-			// Sunsama
-			'657',
-			// Synder
-			'1031',
-		]),
-	},
-	[Feature.AiSessionInsights]: {
+	[Feature.PlayerNoChunkRemoval]: {
 		workspace: true,
 		percent: 0,
-		projectOverride: new Set<string>(['1']),
+	},
+	[Feature.SessionResultsVerbose]: {
+		workspace: true,
+		percent: 0,
+		workspaceOverride: new Set<string>(['1', '5422', '27699']),
 	},
 } as const
 
@@ -84,13 +73,21 @@ export const isFeatureOn = async function (
 	if (config.percent >= 100) {
 		return true
 	}
+	const overrideKey = `highlight-feature-flag-override-${feature}`
+	const override = window.localStorage.getItem(overrideKey)
+	if (override === 'true') {
+		return true
+	} else if (override === 'false') {
+		return true
+	}
+
 	return isActive(
 		feature,
 		(config.project
 			? projectId
 			: config.workspace
-			? workspaceId
-			: adminId) ?? 'demo',
+				? workspaceId
+				: adminId) ?? 'demo',
 		config.percent,
 	)
 }
@@ -106,13 +103,13 @@ const useFeatureFlag = (feature: Feature, override?: boolean) => {
 		skip: !project_id,
 	})
 
-	const [isOn, setIsOn] = useState<boolean>(!!override)
+	const [isOn, setIsOn] = useState<boolean>(!isOnPrem && !!override)
 
 	useEffect(() => {
 		isFeatureOn(
 			feature,
 			project?.project?.id,
-			project?.workspace?.id,
+			project?.project?.workspace?.id,
 			admin?.id,
 		).then((_isOn) => {
 			const on = override ?? _isOn
@@ -126,7 +123,7 @@ const useFeatureFlag = (feature: Feature, override?: boolean) => {
 		feature,
 		override,
 		project?.project?.id,
-		project?.workspace?.id,
+		project?.project?.workspace?.id,
 	])
 
 	return isOn

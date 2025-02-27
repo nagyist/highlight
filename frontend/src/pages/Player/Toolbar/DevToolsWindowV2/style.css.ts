@@ -1,4 +1,4 @@
-import { colors } from '@highlight-run/ui/src/css/colors'
+import { colors } from '@highlight-run/ui/colors'
 import { style } from '@vanilla-extract/css'
 
 export const devToolsWindowV2 = style({
@@ -7,7 +7,6 @@ export const devToolsWindowV2 = style({
 	display: 'flex',
 	flexDirection: 'column',
 	zIndex: 5,
-	position: 'relative',
 })
 
 export const switchInverted = style({

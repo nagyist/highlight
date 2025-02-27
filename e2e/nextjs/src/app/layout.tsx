@@ -1,8 +1,8 @@
 // src/app/layout.tsx
 import './globals.css'
 
-import CONSTANTS from '@/app/constants'
-import { HighlightInit } from '@highlight-run/next/highlight-init'
+import { CONSTANTS } from '@/constants'
+import { ErrorBoundary, HighlightInit } from '@highlight-run/next/client'
 
 export const metadata = {
 	title: 'Highlight Next Demo',
@@ -15,33 +15,36 @@ export default function RootLayout({
 	children: React.ReactNode
 }) {
 	return (
-		<>
+		<ErrorBoundary>
 			<HighlightInit
 				debug={{ clientInteractions: true, domRecording: true }}
 				projectId={CONSTANTS.NEXT_PUBLIC_HIGHLIGHT_PROJECT_ID}
+				serviceName="my-nextjs-frontend"
+				environment="e2e-test"
 				tracingOrigins
 				networkRecording={{
 					enabled: true,
 					recordHeadersAndBody: true,
 				}}
+				consoleMethodsToRecord={['log', 'warn']}
 				// inlineImages={false}
 				enableCanvasRecording={true}
 				samplingStrategy={{
-					canvas: 1,
+					canvas: undefined,
+					canvasManualSnapshot: 1,
 					canvasMaxSnapshotDimension: 480,
 					canvasFactor: 0.5,
-					canvasClearWebGLBuffer: true,
-					canvasInitialSnapshotDelay: 5000,
+					canvasClearWebGLBuffer: false,
 				}}
 				backendUrl={CONSTANTS.NEXT_PUBLIC_HIGHLIGHT_BACKEND_URL}
-				scriptUrl={CONSTANTS.NEXT_PUBLIC_HIGHLIGHT_SCRIPT_URL}
+				otlpEndpoint={CONSTANTS.NEXT_PUBLIC_HIGHLIGHT_OTLP_ENDPOINT}
 			/>
 
-			<html lang="en">
+			<html lang="en" data-layout>
 				<body>
 					<div>{children}</div>
 				</body>
 			</html>
-		</>
+		</ErrorBoundary>
 	)
 }

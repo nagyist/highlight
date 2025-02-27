@@ -3,7 +3,7 @@ package util
 import (
 	"context"
 	"fmt"
-	"os"
+	"github.com/highlight-run/highlight/backend/env"
 	"testing"
 
 	e "github.com/pkg/errors"
@@ -14,22 +14,26 @@ import (
 )
 
 func RunTestWithDBWipe(t *testing.T, db *gorm.DB, f func(t *testing.T)) {
+	RunTestWithDBWipeWithName(t, db, t.Name(), f)
+}
+
+func RunTestWithDBWipeWithName(t *testing.T, db *gorm.DB, name string, f func(t *testing.T)) {
 	defer func(db *gorm.DB) {
 		err := ClearTablesInDB(db)
 		if err != nil {
 			t.Fatal(e.Wrap(err, "error clearing database"))
 		}
 	}(db)
-	t.Run(t.Name(), f)
+	t.Run(name, f)
 }
 
 func CreateAndMigrateTestDB(dbName string) (*gorm.DB, error) {
 	psqlConf := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s sslmode=disable",
-		os.Getenv("PSQL_HOST"),
-		os.Getenv("PSQL_PORT"),
-		os.Getenv("PSQL_USER"),
-		os.Getenv("PSQL_PASSWORD"))
+		env.Config.SQLHost,
+		env.Config.SQLPort,
+		env.Config.SQLUser,
+		env.Config.SQLPassword)
 	// Open the database object without an actual db_name.
 	db, err := gorm.Open(postgres.Open(psqlConf))
 	if err != nil {

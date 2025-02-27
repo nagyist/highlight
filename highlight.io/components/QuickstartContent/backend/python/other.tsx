@@ -1,7 +1,7 @@
-import { siteUrl } from '../../../../utils/urls'
 import { QuickStartContent } from '../../QuickstartContent'
 import {
 	downloadSnippet,
+	init,
 	setupFrontendSnippet,
 	setupLogging,
 } from './shared-snippets'
@@ -9,7 +9,6 @@ import {
 export const PythonOtherContext: QuickStartContent = {
 	title: 'Python',
 	subtitle: 'Learn how to set up highlight.io in your Python app.',
-	logoUrl: siteUrl('/images/quickstart/python.svg'),
 	entries: [
 		setupFrontendSnippet,
 		downloadSnippet(),
@@ -20,7 +19,7 @@ export const PythonOtherContext: QuickStartContent = {
 				{
 					text: `import highlight_io
 
-H = highlight_io.H("<YOUR_PROJECT_ID>", instrument_logging=True)`,
+${init}`,
 					language: 'python',
 				},
 			],
@@ -40,11 +39,11 @@ import time
 
 import highlight_io
 
-H = highlight_io.H("<YOUR_PROJECT_ID>", instrument_logging=True)
+${init}
 
 
 def main():
-    with H.trace():
+    with H.trace(span_name="my_span"):
         logging.info('hello, world!', {'favorite_number': 7})
         return f"<h1>bad idea { 5/0 }</h1>"
 

@@ -1,16 +1,17 @@
 import LoadingBox from '@components/LoadingBox'
-import { Box } from '@highlight-run/ui'
+import { Box } from '@highlight-run/ui/components'
 import {
 	RightPanelView,
+	RightPlayerTab,
 	usePlayerUIContext,
 } from '@pages/Player/context/PlayerUIContext'
 import { MetadataBox } from '@pages/Player/MetadataBox/MetadataBox'
 import { PlayerSearchParameters } from '@pages/Player/PlayerHook/utils'
 import usePlayerConfiguration from '@pages/Player/PlayerHook/utils/usePlayerConfiguration'
 import { useReplayerContext } from '@pages/Player/ReplayerContext'
-import ErrorDetails from '@pages/Player/RightPlayerPanel/components/ErrorDetails/ErrorDetails'
 import EventDetails from '@pages/Player/RightPlayerPanel/components/EventDetails/EventDetails'
 import RightPanelTabs from '@pages/Player/RightPlayerPanel/components/Tabs'
+import clsx from 'clsx'
 import { useEffect, useMemo } from 'react'
 
 import SessionFullCommentList from '@/pages/Player/SessionFullCommentList/SessionFullCommentList'
@@ -26,10 +27,12 @@ const RightPlayerPanel = () => {
 		activeEvent,
 		rightPanelView,
 		setRightPanelView,
-		activeError,
 	} = usePlayerUIContext()
 
-	const showRightPanel = showRightPanelPreference && canViewSession
+	const showRightPanel =
+		(showRightPanelPreference ||
+			rightPanelView === RightPanelView.Comments) &&
+		canViewSession
 
 	useEffect(() => {
 		const commentId = new URLSearchParams(location.search).get(
@@ -37,10 +40,9 @@ const RightPlayerPanel = () => {
 		)
 
 		if (commentId) {
-			setShowRightPanel(true)
 			setRightPanelView(RightPanelView.Comments)
 		} else {
-			setSelectedRightPanelTab('Events')
+			setSelectedRightPanelTab(RightPlayerTab.Events)
 		}
 	}, [setRightPanelView, setSelectedRightPanelTab, setShowRightPanel])
 
@@ -66,18 +68,10 @@ const RightPlayerPanel = () => {
 					return null
 				}
 
-			case RightPanelView.Error:
-				if (activeError) {
-					return <ErrorDetails error={activeError} />
-				} else {
-					setRightPanelView(RightPanelView.Session)
-					return null
-				}
-
 			case RightPanelView.Comments:
 				return <SessionFullCommentList />
 		}
-	}, [activeError, activeEvent, rightPanelView, session, setRightPanelView])
+	}, [activeEvent, rightPanelView, session, setRightPanelView])
 
 	return (
 		<Box
@@ -85,11 +79,11 @@ const RightPlayerPanel = () => {
 			flexShrink={0}
 			bt="dividerWeak"
 			bl="dividerWeak"
-			cssClass={[
-				{
-					[style.playerRightPanelContainerHidden]: !showRightPanel,
-				},
-			]}
+			cssClass={clsx({
+				[style.playerRightPanelContainerHidden]: !showRightPanel,
+			})}
+			overflowY="scroll"
+			hiddenScroll
 		>
 			{content}
 		</Box>

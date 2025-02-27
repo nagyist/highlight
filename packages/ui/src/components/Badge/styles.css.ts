@@ -1,16 +1,16 @@
-import { RecipeVariants, recipe } from '@vanilla-extract/recipes'
+import { recipe, RecipeVariants } from '@vanilla-extract/recipes'
+
 import { sprinkles } from '../../css/sprinkles.css'
 import { vars } from '../../css/vars'
 
 export const variants = recipe({
-	base: [
-		{
-			alignItems: 'center',
-			display: 'inline-flex',
-			userSelect: 'none',
-			width: 'max-content',
-		},
-	],
+	base: {
+		alignItems: 'center',
+		boxSizing: 'content-box',
+		display: 'inline-flex',
+		userSelect: 'none',
+		width: 'max-content',
+	},
 
 	variants: {
 		size: {
@@ -54,6 +54,10 @@ export const variants = recipe({
 			purple: {
 				background: vars.theme.static.surface.sentiment.informative,
 				color: vars.theme.static.content.sentiment.informative,
+			},
+			outlinePurple: {
+				border: vars.border.primary,
+				color: vars.theme.interactive.outline.primary.enabled,
 			},
 		},
 	},

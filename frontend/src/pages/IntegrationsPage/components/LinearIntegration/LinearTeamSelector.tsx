@@ -1,13 +1,14 @@
-import Select from '@components/Select/Select'
-import { Form, Text } from '@highlight-run/ui'
+import { Form } from '@highlight-run/ui/components'
 import { useLinearIntegration } from '@pages/IntegrationsPage/components/LinearIntegration/utils'
-import * as style from '@pages/IntegrationsPage/components/style.css'
 import { ContainerSelectionProps } from '@pages/IntegrationsPage/IssueTrackerIntegrations'
 import useLocalStorage from '@rehooks/local-storage'
 import { useEffect, useMemo } from 'react'
 
+import { OptionDropdown } from '@/pages/Graphing/OptionDropdown'
+
 const LinearTeamSelector: React.FC<ContainerSelectionProps> = ({
 	setSelectionId,
+	disabled,
 }) => {
 	const { teams } = useLinearIntegration()
 
@@ -16,11 +17,7 @@ const LinearTeamSelector: React.FC<ContainerSelectionProps> = ({
 			teams?.map((team) => ({
 				value: team.team_id,
 				id: team.team_id,
-				displayValue: (
-					<Text size="small" weight="medium">
-						{team.name} ({team.key})
-					</Text>
-				),
+				name: `${team.name} (${team.key})`,
 			})) || []
 		)
 	}, [teams])
@@ -48,15 +45,12 @@ const LinearTeamSelector: React.FC<ContainerSelectionProps> = ({
 	])
 
 	return (
-		<Form.NamedSection label="Linear Team" name="linearTeam">
-			<Select
-				aria-label="Linear Team"
-				placeholder="Choose a team to create the issue in"
+		<Form.NamedSection label="Team" name="linearTeam">
+			<OptionDropdown
 				options={linearTeamsOptions}
-				onChange={setLinearTeamId}
-				value={selectedLinearTeamId}
-				notFoundContent={<p>No teams found</p>}
-				className={style.selectContainer}
+				selection={selectedLinearTeamId}
+				setSelection={setLinearTeamId}
+				disabled={disabled}
 			/>
 		</Form.NamedSection>
 	)

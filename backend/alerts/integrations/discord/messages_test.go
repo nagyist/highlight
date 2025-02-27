@@ -3,7 +3,7 @@ package discord
 import (
 	"context"
 	"fmt"
-	"os"
+	"github.com/highlight-run/highlight/backend/env"
 	"testing"
 
 	"github.com/aws/smithy-go/ptr"
@@ -33,7 +33,7 @@ func (suite *DiscordChannelsTestSuite) SetupTest() {
 	guildID := "<REPLACE_WITH_GUILD_ID>"
 	discordBotSecret := "<REPLACE_WITH_DISCORD_BOT_SECRET>"
 
-	os.Setenv("DISCORD_BOT_SECRET", discordBotSecret)
+	env.Config.DiscordBotSecret = discordBotSecret
 
 	bot, err := NewDiscordBot(guildID)
 	if err != nil {
@@ -49,13 +49,16 @@ func (suite *DiscordChannelsTestSuite) TestSendErrorAlert() {
 	err := suite.bot.SendErrorAlert(suite.ChannelID, integrations.ErrorAlertPayload{
 		ErrorCount:      12,
 		ErrorTitle:      "something bad happened",
-		SessionURL:      "https://localhost:3000/1/sessions/uJgf8EvTHPbwCfnFMcWx3tnjW7sc?page=1&query=and%7C%7Ccustom_processed%2Cis%2Ctrue%2Cfalse%7C%7Ccustom_created_at%2Cbetween_date%2C30%20days",
+		SessionSecureID: "uJgf8EvTHPbwCfnFMcWx3tnjW7sc",
+		SessionURL:      "https://localhost:3000/1/sessions/uJgf8EvTHPbwCfnFMcWx3tnjW7sc?page=1&query=and%7C%7Ccustom_processed%2Cis%2Ctrue%2Cfalse",
+		SessionExcluded: false,
 		ErrorURL:        "https://localhost:3000/1/errors/8y4uezKfrGgvMZNAMt1Z4lpJq2bt?page=1",
 		ErrorResolveURL: "https://localhost:3000/1/errors/8y4uezKfrGgvMZNAMt1Z4lpJq2bt?action=resolved",
 		ErrorIgnoreURL:  "https://localhost:3000/1/errors/8y4uezKfrGgvMZNAMt1Z4lpJq2bt?action=ignore",
 		ErrorSnoozeURL:  "https://localhost:3000/1/errors/8y4uezKfrGgvMZNAMt1Z4lpJq2bt?action=snooze",
 		VisitedURL:      "http://google.com",
 		UserIdentifier:  "chilly@mcwilly.com",
+		FirstTimeAlert:  false,
 	})
 
 	if err != nil {
@@ -68,7 +71,7 @@ func (suite *DiscordChannelsTestSuite) TestSendErrorAlert() {
 
 func (suite *DiscordChannelsTestSuite) TestSendNewUserAlert() {
 	err := suite.bot.SendNewUserAlert(suite.ChannelID, integrations.NewUserAlertPayload{
-		SessionURL:     "https://localhost:3000/1/sessions/uJgf8EvTHPbwCfnFMcWx3tnjW7sc?page=1&query=and%7C%7Ccustom_processed%2Cis%2Ctrue%2Cfalse%7C%7Ccustom_created_at%2Cbetween_date%2C30%20days",
+		SessionURL:     "https://localhost:3000/1/sessions/uJgf8EvTHPbwCfnFMcWx3tnjW7sc?page=1&query=and%7C%7Ccustom_processed%2Cis%2Ctrue%2Cfalse",
 		UserIdentifier: "chilly@mcwilly.com",
 		UserProperties: map[string]string{
 			"Phone":  "867-5309",
@@ -87,7 +90,7 @@ func (suite *DiscordChannelsTestSuite) TestSendNewUserAlert() {
 
 func (suite *DiscordChannelsTestSuite) TestSendNewSessionAlert() {
 	err := suite.bot.SendNewSessionAlert(suite.ChannelID, integrations.NewSessionAlertPayload{
-		SessionURL:     "https://localhost:3000/1/sessions/uJgf8EvTHPbwCfnFMcWx3tnjW7sc?page=1&query=and%7C%7Ccustom_processed%2Cis%2Ctrue%2Cfalse%7C%7Ccustom_created_at%2Cbetween_date%2C30%20days",
+		SessionURL:     "https://localhost:3000/1/sessions/uJgf8EvTHPbwCfnFMcWx3tnjW7sc?page=1&query=and%7C%7Ccustom_processed%2Cis%2Ctrue%2Cfalse",
 		UserIdentifier: "chilly@mcwilly.com",
 		UserProperties: map[string]string{
 			"Phone":  "867-5309",
@@ -132,7 +135,7 @@ func (suite *DiscordChannelsTestSuite) TestSendTrackPropertiesAlert() {
 
 func (suite *DiscordChannelsTestSuite) TestSendUserPropertiesAlert() {
 	err := suite.bot.SendUserPropertiesAlert(suite.ChannelID, integrations.UserPropertiesAlertPayload{
-		SessionURL:     "https://localhost:3000/1/sessions/uJgf8EvTHPbwCfnFMcWx3tnjW7sc?page=1&query=and%7C%7Ccustom_processed%2Cis%2Ctrue%2Cfalse%7C%7Ccustom_created_at%2Cbetween_date%2C30%20days",
+		SessionURL:     "https://localhost:3000/1/sessions/uJgf8EvTHPbwCfnFMcWx3tnjW7sc?page=1&query=and%7C%7Ccustom_processed%2Cis%2Ctrue%2Cfalse",
 		UserIdentifier: "chilly@mcwilly.com",
 		MatchedProperties: []integrations.Property{
 			{
@@ -152,7 +155,7 @@ func (suite *DiscordChannelsTestSuite) TestSendUserPropertiesAlert() {
 
 func (suite *DiscordChannelsTestSuite) TestErrorFeedbackAlert() {
 	err := suite.bot.SendErrorFeedbackAlert(suite.ChannelID, integrations.ErrorFeedbackAlertPayload{
-		SessionCommentURL: "https://localhost:3000/1/sessions/yggihGDgdPlBwpgVFtwuTM9nMvpn?page=1&query=and%7C%7Ccustom_processed%2Cis%2Ctrue%2Cfalse%7C%7Ccustom_created_at%2Cbetween_date%2C30+days&ts=0&commentId=34",
+		SessionCommentURL: "https://localhost:3000/1/sessions/yggihGDgdPlBwpgVFtwuTM9nMvpn?page=1&query=and%7C%7Ccustom_processed%2Cis%2Ctrue%2Cfalse&ts=0&commentId=34",
 		UserIdentifier:    "chilly@mcwilly.com",
 		CommentText:       "Hey, what is up!",
 	})
@@ -169,7 +172,7 @@ func (suite *DiscordChannelsTestSuite) TestRageClicksAlert() {
 	err := suite.bot.SendRageClicksAlert(suite.ChannelID, integrations.RageClicksAlertPayload{
 		RageClicksCount: 100,
 		UserIdentifier:  "chilly@mcwilly.com",
-		SessionURL:      "https://localhost:3000/1/sessions/uJgf8EvTHPbwCfnFMcWx3tnjW7sc?page=1&query=and%7C%7Ccustom_processed%2Cis%2Ctrue%2Cfalse%7C%7Ccustom_created_at%2Cbetween_date%2C30%20days",
+		SessionURL:      "https://localhost:3000/1/sessions/uJgf8EvTHPbwCfnFMcWx3tnjW7sc?page=1&query=and%7C%7Ccustom_processed%2Cis%2Ctrue%2Cfalse",
 	})
 
 	if err != nil {

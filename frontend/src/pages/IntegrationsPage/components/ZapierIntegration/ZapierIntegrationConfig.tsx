@@ -1,4 +1,5 @@
 import Button from '@components/Button/Button/Button'
+import { toast } from '@components/Toaster'
 import PlugIcon from '@icons/PlugIcon'
 import Sparkles2Icon from '@icons/Sparkles2Icon'
 import {
@@ -6,8 +7,7 @@ import {
 	IntegrationConfigProps,
 } from '@pages/IntegrationsPage/components/Integration'
 import { useZapierIntegration } from '@pages/IntegrationsPage/components/ZapierIntegration/utils'
-import { CodeBlock } from '@pages/Setup/CodeBlock/CodeBlock'
-import { message } from 'antd'
+import { CodeBlock } from '@/pages/Connect/CodeBlock'
 import React, { useEffect } from 'react'
 import { coy as lightTheme } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
@@ -26,7 +26,7 @@ const ZapierIntegrationConfig: React.FC<
 		if (isZapierIntegratedWithProject) {
 			setIntegrationEnabled(true)
 			setModalOpen(false)
-			message.success('Zapier integration enabled')
+			toast.success('Zapier integration enabled')
 		}
 	}, [isZapierIntegratedWithProject, setIntegrationEnabled, setModalOpen])
 

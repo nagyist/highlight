@@ -1,44 +1,40 @@
 import { GetStaticProps } from 'next'
-import { getUniqueTags } from '../../../components/Blog/BlogPost/BlogPost'
 import { Tag } from '../../../components/Blog/Tag'
-import { Blog, loadPostsFromGithub, loadTagsFromGithub } from '../index'
+import BlogPage from '../../../components/Blog/BlogPage'
+import { loadPostsFromGithub, VALID_TAGS } from '../../../shared/blog'
 
 export async function getStaticPaths(): Promise<{
 	paths: string[]
 	fallback: string
 }> {
-	const posts = await loadPostsFromGithub()
-	let tags = await loadTagsFromGithub(posts)
-
-	tags = getUniqueTags(tags)
-
 	return {
-		paths: tags.map((tag) => `/blog/tag/${tag}`),
+		paths: VALID_TAGS.map((tag) => `/blog/tag/${tag.slug}`),
 		fallback: 'blocking',
 	}
 }
 
 export const getStaticProps: GetStaticProps = async ({ params }) => {
-	let posts = await loadPostsFromGithub()
-	let tags = await loadTagsFromGithub(posts)
+	console.log('rendering blog tag posts', params)
+	const { promises: fsp } = await import('fs')
+	let posts = await loadPostsFromGithub(fsp)
+	console.log('blog posts loaded', params)
 
 	posts = posts.filter((post) => {
-		return post.tags_relations.some((tag: Tag) => {
+		return post.tags.some((tag: Tag) => {
 			return tag.slug === (params!.tag as string)
 		})
 	})
 
-	tags = getUniqueTags(tags)
 	posts.sort((a, b) => Date.parse(b.postedAt) - Date.parse(a.postedAt))
 
 	return {
 		props: {
 			posts,
-			tags,
+			tags: VALID_TAGS,
 			currentTagSlug: params!.tag,
 		},
 		revalidate: 60,
 	}
 }
 
-export default Blog
+export default BlogPage

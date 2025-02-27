@@ -1,4 +1,3 @@
-import { siteUrl } from '../../../../utils/urls'
 import { QuickStartContent } from '../../QuickstartContent'
 import { frontendInstallSnippet } from '../shared-snippets'
 import {
@@ -12,7 +11,6 @@ import {
 export const JSApolloContent: QuickStartContent = {
 	title: 'Apollo',
 	subtitle: 'Learn how to set up highlight.io on your Apollo Server backend.',
-	logoUrl: siteUrl('/images/quickstart/apollo.svg'),
 	entries: [
 		frontendInstallSnippet,
 		jsGetSnippet(['node', 'apollo']),
@@ -33,7 +31,9 @@ import { ApolloServerHighlightPlugin } from '@highlight-run/apollo'
 const server = new ApolloServer({
   typeDefs,
   resolvers,
-  plugins: [ApolloServerHighlightPlugin({ projectID: '<YOUR_PROJECT_ID>' })],
+  plugins: [
+		ApolloServerHighlightPlugin({ projectID: '<YOUR_PROJECT_ID>', serviceName: 'my-apollo-app', serviceVersion: 'git-sha', environment: 'production' }),
+	],
 })`,
 					language: `js`,
 				},

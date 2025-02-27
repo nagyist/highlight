@@ -12,7 +12,7 @@ slug: go
   </div>
   <div className="right">
     <h6>Just getting started?</h6>
-    <p>Check out our [getting started guide](../getting-started/4_backend-sdk/go/1_overview.md) to get up and running quickly.</p>
+    <p>Check out our [getting started guide](../getting-started/4_server/1_go/1_overview.md) to get up and running quickly.</p>
   </div>
 </section>
 
@@ -20,10 +20,29 @@ slug: go
   <div className="left">
     <h3>highlight.Start()</h3>
     <p>Starts the background goroutine for transmitting metrics and errors.</p>
+    <h6>Options</h6>
+    <aside className="parameter">
+      <h5><code>WithProjectID</code></h5>
+      <p>Set the project ID for highlight. Can also be set with a highlight.SetProjectID call.</p>
+      <h5><code>WithEnvironment</code> <code>optional</code></h5>
+      <p>Set an environment name to report.</p>
+      <h5><code>WithSamplingRate</code> <code>optional</code></h5>
+      <p>Set a fractional sampling rate for traces to ingest.</p>
+      <h5><code>WithServiceName</code> <code>optional</code></h5>
+      <p>The name of your app.</p>
+      <h5><code>WithServiceVersion</code> <code>optional</code></h5>
+      <p>The version of this app. We recommend setting this to the most recent deploy SHA of your app.</p>
+    </aside>
   </div>
   <div className="right">
     <code>
-        highlight.Start()
+        highlight.Start(
+            highlight.WithProjectID("<YOUR_PROJECT_ID>"),
+            highlight.WithSamplingRate(1.),
+            highlight.WithServiceName("my-app"),
+            highlight.WithServiceVersion("git-sha"),
+            highlight.WithEnvironment(util.EnvironmentName()),
+        )
     </code>
   </div>
 </section>
@@ -39,12 +58,22 @@ This allows the user kill the highlight worker by canceling their context.Cancel
       <h5>ctx <code>context.Context</code> <code>required</code></h5>
       <p>The context provided for starting the Highlight daemon.</p>
     </aside>
+    <h6>Options</h6>
+    <aside className="parameter">
+      <h5><code>WithServiceName</code> <code>optional</code></h5>
+      <p>The name of your app.</p>
+      <h5><code>WithServiceVersion</code> <code>optional</code></h5>
+      <p>The version of this app. We recommend setting this to the most recent deploy SHA of your app.</p>
+    </aside>
   </div>
   <div className="right">
     <code>
         ctx := context.Background()
         ...
-        highlight.startWithContext(ctx)
+        highlight.startWithContext(ctx,
+          highlight.WithServiceName("my-app"),
+          highlight.WithServiceVersion("git-sha"),
+        )
     </code>
   </div>
 </section>

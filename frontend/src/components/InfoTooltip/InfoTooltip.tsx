@@ -1,8 +1,8 @@
-import { Box, IconSolidInformationCircle, vars } from '@highlight-run/ui'
+import { Box, IconSolidInformationCircle } from '@highlight-run/ui/components'
+import { vars } from '@highlight-run/ui/vars'
 import { Tooltip } from 'antd'
 import { TooltipPropsWithTitle } from 'antd/es/tooltip'
 import clsx from 'clsx'
-import React from 'react'
 
 import styles from './InfoTooltip.module.css'
 

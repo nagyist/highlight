@@ -1,34 +1,53 @@
 // vite.config.ts
-import { resolve } from 'path'
+import commonjs from '@rollup/plugin-commonjs'
+import json from '@rollup/plugin-json'
+import resolve from '@rollup/plugin-node-resolve'
+import typescript from '@rollup/plugin-typescript'
+import { resolve as resolvePath } from 'path'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
 	envPrefix: ['REACT_APP_'],
 	server: {
 		host: '0.0.0.0',
-		port: 8888,
+		port: 8877,
 		strictPort: true,
 		hmr: {
-			clientPort: 8888,
+			clientPort: 8877,
 		},
 	},
 	build: {
 		target: 'es6',
 		lib: {
-			formats: ['es', 'cjs', 'umd'],
-			entry: resolve(__dirname, 'src/index.tsx'),
+			formats: ['es', 'umd'],
+			entry: resolvePath(__dirname, 'src/index.tsx'),
 			name: 'H',
 			fileName: 'index',
 		},
-		minify: 'terser',
+		minify: true,
+		sourcemap: true,
 		emptyOutDir: false,
-		// sourcemaps are not published to reduce package size
-		sourcemap: false,
 		rollupOptions: {
+			treeshake: 'smallest',
+			plugins: [
+				json(),
+				commonjs({
+					transformMixedEsModules: true,
+				}),
+				resolve({
+					browser: true,
+				}),
+				typescript({
+					outputToFilesystem: true,
+				}),
+			],
 			output: {
 				exports: 'named',
-				entryFileNames: '[name].[format].js',
 			},
+			cache: false,
 		},
+	},
+	test: {
+		environment: 'jsdom',
 	},
 })

@@ -1,4 +1,4 @@
-import { vars } from '@highlight-run/ui/src/css/vars'
+import { vars } from '@highlight-run/ui/vars'
 import { style } from '@vanilla-extract/css'
 import { recipe } from '@vanilla-extract/recipes'
 
@@ -23,7 +23,7 @@ export const collapsibleContent = recipe({
 
 export const lineNumber = style({
 	display: 'inline-block',
-	textAlign: 'center',
+	textAlign: 'right',
 	width: 46,
 })
 
@@ -51,4 +51,11 @@ export const name = style({
 })
 export const file = style({
 	maxWidth: 560,
+})
+
+export const fileName = style({
+	maxWidth: 300,
+	paddingBottom: 6,
+	paddingRight: 6,
+	paddingTop: 6,
 })

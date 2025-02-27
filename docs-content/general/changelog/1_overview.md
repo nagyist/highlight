@@ -1,12 +1,36 @@
 ---
-heading: Changelog Overview
-title: Overview
+toc: Overview
+title: Changelog Overview
 slug: getting-started
 ---
 
 Stay up to date with what we work on week over week:
 
 <DocsCardGroup>
+    <DocsCard title="Changelog 29" href="./changelog-29.md">
+    {"Group matching, Logs drawer, Duration prefixes, Self-hosting improvements"}
+    </DocsCard>
+    <DocsCard title="Changelog 28" href="./changelog-28.md">
+    {"Related resources, Search query evolution, Relate logs back to traces"}
+    </DocsCard>
+    <DocsCard title="Changelog 27" href="./changelog-27.md">
+    {"Grafana support, Graduated pricing, Tracing flame graphs, Server-side environment data"}
+    </DocsCard>
+    <DocsCard title="Changelog 26" href="./changelog-26.md">
+    {"Client-side network sanitizing, Tracing beta improvements, Next.js tracing, Java 11 support."}
+    </DocsCard>
+    <DocsCard title="Changelog 25" href="./changelog-25.md">
+    {"GitHub stack trace settings, Next.js Edge runtime support, Large session exports"}
+    </DocsCard>
+    <DocsCard title="Changelog 24" href="./changelog-24.md">
+    {"GitHub-enhanced stack traces, Session search on ClickHouse, Algora.io open-source bounties"}
+    </DocsCard>
+    <DocsCard title="Changelog 23" href="./changelog-23.md">
+    {"Error list visual indicator, Poll for new sessions, Pino.js support, Alerts redesign "}
+    </DocsCard>
+    <DocsCard title="Changelog 22" href="./changelog-22.md">
+    {"Remix SDK, Render.com Log Stream, Go & Python SDK updates"}
+    </DocsCard>
     <DocsCard title="Changelog 21" href="./changelog-21.md">
     {"GitHub Auth, Invite detection, AllContributor App"}
     </DocsCard>

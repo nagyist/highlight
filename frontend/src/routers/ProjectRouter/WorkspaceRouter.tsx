@@ -6,16 +6,15 @@ import {
 	AppLoadingState,
 	useAppLoadingContext,
 } from '@context/AppLoadingContext'
-import { useGetWorkspaceDropdownOptionsQuery } from '@graph/hooks'
-import { Ariakit } from '@highlight-run/ui'
 import { GlobalContextProvider } from '@routers/ProjectRouter/context/GlobalContext'
-import { isOnPrem } from '@util/onPrem/onPremUtils'
 import { useParams } from '@util/react-router/useParams'
-import React, { useEffect } from 'react'
+import { useEffect } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import { useToggle } from 'react-use'
 
+import { useLocalStorageProjectId } from '@/hooks/useProjectId'
 import { SettingsRouter } from '@/pages/SettingsRouter/SettingsRouter'
+import { useApplicationContext } from '@/routers/AppRouter/context/ApplicationContext'
 
 import commonStyles from '../../Common.module.css'
 
@@ -23,6 +22,10 @@ export const WorkspaceRouter = () => {
 	const { isLoggedIn } = useAuthContext()
 	const [showKeyboardShortcutsGuide, toggleShowKeyboardShortcutsGuide] =
 		useToggle(false)
+	const {
+		projectId: localStorageProjectId,
+		setProjectId: setLocalStorageProjectId,
+	} = useLocalStorageProjectId()
 	const [showBanner, toggleShowBanner] = useToggle(false)
 
 	const { workspace_id } = useParams<{
@@ -30,25 +33,8 @@ export const WorkspaceRouter = () => {
 	}>()
 	const { setLoadingState } = useAppLoadingContext()
 
-	const { data, loading } = useGetWorkspaceDropdownOptionsQuery({
-		variables: { workspace_id: workspace_id ?? '' },
-		skip: !isLoggedIn || !workspace_id, // Higher level routers decide when guests are allowed to hit this router
-	})
-
-	useEffect(() => {
-		if (!isOnPrem) {
-			window.Intercom('update', {
-				hide_default_launcher: true,
-			})
-		}
-		return () => {
-			if (!isOnPrem) {
-				window.Intercom('update', {
-					hide_default_launcher: false,
-				})
-			}
-		}
-	}, [])
+	const { allProjects, joinableWorkspaces, loading, currentWorkspace } =
+		useApplicationContext()
 
 	useEffect(() => {
 		if (isLoggedIn) {
@@ -56,14 +42,23 @@ export const WorkspaceRouter = () => {
 		}
 	}, [isLoggedIn, setLoadingState])
 
-	const commandBarDialog = Ariakit.useDialogState()
+	useEffect(() => {
+		const projectsLoaded = allProjects?.length
+		const projectInWorkspace = allProjects?.find(
+			(p) => String(p?.id) === String(localStorageProjectId),
+		)
+
+		if (projectsLoaded && !projectInWorkspace) {
+			setLocalStorageProjectId('')
+		}
+	}, [allProjects, localStorageProjectId, setLocalStorageProjectId])
 
 	if (loading) {
 		return null
 	}
 
 	// if the user can join this workspace, give them that option via the ErrorState
-	const joinableWorkspace = data?.joinable_workspaces
+	const joinableWorkspace = joinableWorkspaces
 		?.filter((w) => w?.id === workspace_id)
 		?.pop()
 
@@ -74,7 +69,6 @@ export const WorkspaceRouter = () => {
 				toggleShowKeyboardShortcutsGuide,
 				showBanner,
 				toggleShowBanner,
-				commandBarDialog,
 			}}
 		>
 			<Header />
@@ -85,7 +79,7 @@ export const WorkspaceRouter = () => {
 						shownWithHeader
 						joinableWorkspace={joinableWorkspace}
 					/>
-				) : isLoggedIn && data?.workspace === null ? (
+				) : isLoggedIn && !currentWorkspace ? (
 					<ErrorState
 						title="Enter this Workspace?"
 						message={

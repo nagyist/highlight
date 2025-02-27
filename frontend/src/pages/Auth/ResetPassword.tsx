@@ -1,4 +1,5 @@
 import { Button } from '@components/Button'
+import { toast } from '@components/Toaster'
 import {
 	Box,
 	ButtonIcon,
@@ -6,15 +7,13 @@ import {
 	IconSolidCheveronLeft,
 	Stack,
 	Text,
-	useFormState,
-	vars,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
+import { vars } from '@highlight-run/ui/vars'
 import { SIGN_IN_ROUTE } from '@pages/Auth/AuthRouter'
 import { AuthBody, AuthFooter, AuthHeader } from '@pages/Auth/Layout'
 import analytics from '@util/analytics'
 import { auth } from '@util/auth'
 import { validateEmail } from '@util/string'
-import { message } from 'antd'
 import React, { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
@@ -23,43 +22,44 @@ export const ResetPassword: React.FC = () => {
 	const location = useLocation()
 	const initialEmail: string = location.state?.email ?? ''
 	const [loading, setLoading] = useState(false)
-	const formState = useFormState({
+	const formStore = Form.useStore({
 		defaultValues: {
 			email: initialEmail ?? '',
 		},
 	})
+	const email = formStore.useValue('email')
 
-	useEffect(() => analytics.page(), [])
+	useEffect(() => analytics.page('Reset Password'), [])
 
 	return (
 		<Form
-			state={formState}
+			store={formStore}
 			resetOnSubmit={false}
 			onSubmit={() => {
 				analytics.track('Reset password submission')
 
-				if (!validateEmail(formState.values.email)) {
-					message.warning('Please enter a valid email.')
+				if (!validateEmail(email)) {
+					toast.warning('Please enter a valid email.')
 					analytics.track('Reset password submission error')
 					setLoading(false)
 					return
 				}
 
 				setLoading(true)
-				auth.sendPasswordResetEmail(formState.values.email)
+				auth.sendPasswordResetEmail(email)
 					.catch(() => {
 						// swallow error if user does not exist
 						analytics.track('Reset password submission error')
 						setLoading(false)
 					})
 					.finally(() => {
-						message.success(
+						toast.success(
 							'Password reset email sent (if a user exists)!',
 						)
 
 						setTimeout(() => {
 							navigate(SIGN_IN_ROUTE, {
-								state: { email: formState.values.email },
+								state: { email },
 							})
 						}, 1000)
 					})
@@ -80,7 +80,7 @@ export const ResetPassword: React.FC = () => {
 							onClick={() => {
 								navigate(SIGN_IN_ROUTE, {
 									state: {
-										email: formState.values.email,
+										email,
 									},
 								})
 							}}
@@ -93,7 +93,7 @@ export const ResetPassword: React.FC = () => {
 			<AuthBody>
 				<Stack gap="12">
 					<Form.Input
-						name={formState.names.email}
+						name={formStore.names.email}
 						label="Email"
 						type="email"
 						autoFocus

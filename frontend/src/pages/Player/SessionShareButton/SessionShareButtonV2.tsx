@@ -1,5 +1,10 @@
 import { useAuthContext } from '@authentication/AuthContext'
-import { useUpdateSessionIsPublicMutation } from '@graph/hooks'
+import {
+	useGetWorkspaceSettingsQuery,
+	useUpdateSessionIsPublicMutation,
+} from '@graph/hooks'
+import { namedOperations } from '@graph/operations'
+import { colors } from '@highlight-run/ui/colors'
 import {
 	Box,
 	IconSolidGlobeAlt,
@@ -8,17 +13,18 @@ import {
 	Menu,
 	Tag,
 	Text,
-} from '@highlight-run/ui/src'
-import { colors } from '@highlight-run/ui/src/css/colors'
+} from '@highlight-run/ui/components'
 import {
 	onGetLink,
 	onGetLinkWithTimestamp,
 } from '@pages/Player/SessionShareButton/utils/utils'
+import { useApplicationContext } from '@routers/AppRouter/context/ApplicationContext'
 import analytics from '@util/analytics'
-import { useParams } from '@util/react-router/useParams'
 import { copyToClipboard } from '@util/string'
 import { MillisToMinutesAndSeconds } from '@util/time'
-import React, { useState } from 'react'
+import { useState } from 'react'
+
+import { useSessionParams } from '@/pages/Sessions/utils'
 
 import Switch from '../../../components/Switch/Switch'
 import { useReplayerContext } from '../ReplayerContext'
@@ -29,23 +35,16 @@ const SessionShareButtonV2 = () => {
 	const { time } = useReplayerContext()
 	const { isLoggedIn } = useAuthContext()
 	const { session } = useReplayerContext()
-	const { session_secure_id } = useParams<{
-		session_secure_id: string
-	}>()
+	const { sessionSecureId } = useSessionParams()
+	const { currentWorkspace } = useApplicationContext()
+	const { data } = useGetWorkspaceSettingsQuery({
+		variables: { workspace_id: currentWorkspace?.id ?? '' },
+		skip: !currentWorkspace?.id,
+	})
+	const canMakeSessionUnlisted =
+		!!data?.workspaceSettings?.enable_unlisted_sharing
 	const [updateSessionIsPublic] = useUpdateSessionIsPublicMutation({
-		update(cache, { data }) {
-			const is_public = data?.updateSessionIsPublic?.is_public === true
-			cache.modify({
-				fields: {
-					session(existingSession) {
-						return {
-							...existingSession,
-							is_public,
-						}
-					},
-				},
-			})
-		},
+		refetchQueries: [namedOperations.Query.GetSession],
 	})
 
 	return (
@@ -61,62 +60,62 @@ const SessionShareButtonV2 = () => {
 				Share
 			</Menu.Button>
 			<Menu.List cssClass={styles.noPadding}>
-				<Box
-					padding="8"
-					borderBottom="secondary"
-					gap="8"
-					display="flex"
-					alignItems="center"
-				>
-					<Box style={{ flexShrink: 0 }}>
-						<IconSolidGlobeAlt size={16} color={colors.n9} />
-					</Box>
-					<Box>
-						<Box
-							style={{ height: 20 }}
-							display="flex"
-							alignItems="center"
-						>
-							<Text
-								size="small"
-								weight="medium"
-								color="n11"
-								userSelect="none"
-							>
-								Web
-							</Text>
+				{isLoggedIn && canMakeSessionUnlisted ? (
+					<Box
+						padding="8"
+						borderBottom="secondary"
+						gap="8"
+						display="flex"
+						alignItems="center"
+					>
+						<Box style={{ flexShrink: 0 }}>
+							<IconSolidGlobeAlt size={16} color={colors.n9} />
 						</Box>
-						<Box
-							style={{ height: 12 }}
-							display="flex"
-							alignItems="center"
-						>
-							<Text
-								size="xxSmall"
-								weight="regular"
-								color="n10"
-								userSelect="none"
+						<Box>
+							<Box
+								style={{ height: 20 }}
+								display="flex"
+								alignItems="center"
 							>
-								Allow anyone with the link to view session.
-							</Text>
+								<Text
+									size="small"
+									weight="medium"
+									color="n11"
+									userSelect="none"
+								>
+									Web
+								</Text>
+							</Box>
+							<Box
+								style={{ height: 12 }}
+								display="flex"
+								alignItems="center"
+							>
+								<Text
+									size="xxSmall"
+									weight="regular"
+									color="n10"
+									userSelect="none"
+								>
+									Allow anyone with the link to view session.
+								</Text>
+							</Box>
 						</Box>
-					</Box>
-					{isLoggedIn && (
+
 						<Box>
 							<Switch
 								loading={!session}
 								checked={!!session?.is_public}
-								onChange={(checked: boolean) => {
+								onChange={async (checked: boolean) => {
 									analytics.track(
 										'Toggled session isPublic',
 										{
 											is_public: checked,
 										},
 									)
-									updateSessionIsPublic({
+									await updateSessionIsPublic({
 										variables: {
-											session_secure_id:
-												session_secure_id!,
+											session_secure_id: sessionSecureId!,
 											is_public: checked,
 										},
 									})
@@ -125,8 +124,8 @@ const SessionShareButtonV2 = () => {
 								setMarginForAnimation
 							/>
 						</Box>
-					)}
-				</Box>
+					</Box>
+				) : null}
 				<Box
 					px="8"
 					py="6"
@@ -146,7 +145,7 @@ const SessionShareButtonV2 = () => {
 										shareTimestamp
 											? onGetLinkWithTimestamp(
 													time,
-											  ).toString()
+												).toString()
 											: onGetLink().toString(),
 										{
 											onCopyText:

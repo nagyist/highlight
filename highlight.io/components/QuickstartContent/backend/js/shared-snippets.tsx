@@ -10,25 +10,12 @@ export const jsGetSnippet: (slugs: string[]) => QuickStartStep = (slugs) => {
 		)
 		.join(', ')
 	return {
-		title: 'Install the Highlight JS SDK.',
+		title: 'Install the relevant Highlight SDK(s).',
 		content: `Install ${linkedPackages} with your package manager.`,
 		code: [
 			{
 				key: 'npm',
-				text: `# with npm
-npm install --save ${packages}`,
-				language: 'bash',
-			},
-			{
-				key: 'yarn',
-				text: `# with yarn
-yarn add ${packages}`,
-				language: 'bash',
-			},
-			{
-				key: 'pnpm',
-				text: `# with pnpm
-pnpm add ${packages}`,
+				text: `npm install --save ${packages}`,
 				language: 'bash',
 			},
 		],
@@ -44,7 +31,11 @@ export const initializeNodeSDK: (slug: string) => QuickStartStep = (slug) => ({
 		{
 			text: `import { H } from '@highlight-run/${slug}'
 
-H.init({projectID: '<YOUR_PROJECT_ID>'})`,
+H.init({
+	projectID: '<YOUR_PROJECT_ID>',
+	serviceName: '<YOUR_SERVICE_NAME>',
+	environment: 'production',
+})`,
 			language: 'js',
 		},
 	],
@@ -66,7 +57,7 @@ export const verifyError: (name: string, code?: string) => QuickStartStep = (
 						language: `js`,
 					},
 				],
-		  }
+			}
 		: []),
 })
 

@@ -1,12 +1,15 @@
 import { recipe, RecipeVariants } from '@vanilla-extract/recipes'
+
 import { colors } from '../../css/colors'
 import { vars } from '../../css/vars'
-import { typographyStyles } from '../Text/styles.css'
+import { fontWeights, typographyStyles } from '../Text/styles.css'
 
 export const inputVariants = recipe({
 	base: {
 		border: 'none',
+		boxSizing: 'border-box',
 		fontSize: 13,
+		fontWeight: fontWeights.medium,
 		color: vars.theme.static.content.default,
 		caretColor: vars.theme.interactive.fill.primary.enabled,
 		outline: 0,
@@ -72,8 +75,15 @@ export const inputVariants = recipe({
 				border: 'none',
 			},
 		},
+		rounded: {
+			first: { borderRadius: '6px 6px 0 0' },
+			middle: { borderRadius: 0 },
+			last: { borderRadius: '0 0 6px 6px' },
+			true: { borderRadius: 6 },
+		},
 	},
 	defaultVariants: {
+		size: 'small',
 		outline: true,
 		truncate: false,
 	},
@@ -110,4 +120,58 @@ export const select = style({
 			border: vars.border.secondaryPressed,
 		},
 	},
+})
+
+export const inputNumber = style({
+	appearance: 'textfield',
+	selectors: {
+		'&::-webkit-inner-spin-button, &::-webkit-outer-spin-button': {
+			WebkitAppearance: 'none',
+		},
+		'&::-moz-range-thumb': {
+			visibility: 'hidden',
+		},
+	},
+})
+
+export const inputNumberDivider = style({
+	background: vars.theme.interactive.outline.secondary.enabled,
+	border: 0,
+	height: 1,
+	width: '100%',
+})
+
+export const inputNumberButton = style({
+	background: 'none',
+	border: vars.border.secondary,
+	cursor: 'pointer',
+	height: '50%',
+	padding: 0,
+	position: 'relative',
+	width: 21,
+	selectors: {
+		'&:first-of-type': {
+			borderBottom: 0,
+			borderTopRightRadius: 6,
+		},
+		'&:last-of-type': {
+			borderTop: 0,
+			borderBottomRightRadius: 6,
+		},
+		'&:hover': {
+			background: vars.theme.interactive.overlay.secondary.hover,
+		},
+		'&:active': {
+			background: vars.theme.interactive.overlay.secondary.pressed,
+		},
+	},
+})
+
+export const inputNumberIcon = style({
+	color: vars.theme.static.content.moderate,
+	position: 'absolute',
+	// center the icon vertically and horizontally
+	top: '50%',
+	left: '50%',
+	transform: 'translate(-50%, -50%)',
 })

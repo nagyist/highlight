@@ -25,12 +25,15 @@ yalc.lock
 **/coverage.out
 **/output.txt
 **/.nvmrc
+**/*.db
 
 backend/backend
 backend/__debug_bin
 backend/dump.rdb
 backend/.config
+
 docker/.telemetry
+docker/enterprise-private.pem
 
 # Editor Artifacts
 **/.idea
@@ -51,3 +54,15 @@ __pycache__
 .vercel
 temp
 .env
+.rollup.cache
+
+scripts/emails.csv
+scripts/invoices.csv
+scripts/images
+sdk/highlightinc-highlight-datasource/grafana/
+
+google-chrome*
+
+# WordPress plugin build files
+sdk/highlight-wordpress/highlight-io.zip
+sdk/highlight-wordpress/highlight-io/highlight.js

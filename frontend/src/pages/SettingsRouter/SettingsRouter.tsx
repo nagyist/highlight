@@ -1,8 +1,11 @@
-import { Box, Stack, Text } from '@highlight-run/ui'
+import { ProductType } from '@graph/schemas'
+import { Box, Stack, Text } from '@highlight-run/ui/components'
+import { ProjectProductFilters } from '@pages/ProjectSettings/ProjectFilters/ProjectFilters'
 import WorkspaceSettings from '@pages/WorkspaceSettings/WorkspaceSettings'
 import WorkspaceTeam from '@pages/WorkspaceTeam/WorkspaceTeam'
 import { useApplicationContext } from '@routers/AppRouter/context/ApplicationContext'
 import analytics from '@util/analytics'
+import { isOnPrem } from '@util/onPrem/onPremUtils'
 import { useParams } from '@util/react-router/useParams'
 import clsx from 'clsx'
 import React, { Suspense, useEffect, useMemo } from 'react'
@@ -16,6 +19,7 @@ import {
 	useNavigate,
 } from 'react-router-dom'
 
+import { useAuthContext } from '@/authentication/AuthContext'
 import { WorkspaceSettingsTab } from '@/hooks/useIsSettingsPath'
 import { EmailOptOutPanel } from '@/pages/EmailOptOut/EmailOptOut'
 import { HaroldAISettings } from '@/pages/HaroldAISettings/HaroldAISettings'
@@ -23,12 +27,15 @@ import { ProjectColorLabel } from '@/pages/ProjectSettings/ProjectColorLabel/Pro
 import ProjectSettings from '@/pages/ProjectSettings/ProjectSettings'
 import Auth from '@/pages/UserSettings/Auth/Auth'
 import { PlayerForm } from '@/pages/UserSettings/PlayerForm/PlayerForm'
+import { useGlobalContext } from '@/routers/ProjectRouter/context/GlobalContext'
 import { auth } from '@/util/auth'
 
 import * as styles from './SettingsRouter.css'
 
 const BillingPageV2 = React.lazy(() => import('../Billing/BillingPageV2'))
-const UpdatePlanPage = React.lazy(() => import('../Billing/UpdatePlanPage'))
+const PlanComparisonPage = React.lazy(
+	() => import('../Billing/PlanComparisonPage'),
+)
 
 const getTitle = (tab: WorkspaceSettingsTab | string): string => {
 	switch (tab) {
@@ -42,6 +49,8 @@ const getTitle = (tab: WorkspaceSettingsTab | string): string => {
 			return 'Upgrade plan'
 		case 'harold-ai':
 			return 'Harold AI'
+		case 'plan-features':
+			return 'Plan comparison'
 		default:
 			return ''
 	}
@@ -61,27 +70,35 @@ export const SettingsRouter = () => {
 	}>()
 	const { allProjects, currentProject, currentWorkspace } =
 		useApplicationContext()
+	const { toggleShowBanner } = useGlobalContext()
+	const { isProjectLevelMember } = useAuthContext()
 	const workspaceId = workspace_id || currentWorkspace?.id
 	const projectId = project_id || currentProject?.id
 	// Using useMatch instead of pulling from useParams because :page_id isn't
 	// defined in a route anywhere, it's only used by the tabs.
 	const workspaceMatch = useMatch('/w/:workspace_id/:section_id/:page_id?')
 	const projectMatch = useMatch('/:project_id/settings/:page_id?')
+	const productFilterMatch = useMatch(
+		'/:project_id/settings/filters/:product',
+	)
 	const pageId =
 		workspaceMatch?.params.page_id ||
 		projectMatch?.params.page_id ||
 		sectionId ||
 		''
 
+	toggleShowBanner(false)
+
 	const billingContent = (
 		<Suspense fallback={null}>
-			<BillingPageV2 />
-		</Suspense>
-	)
-
-	const updatePlanContent = (
-		<Suspense fallback={null}>
-			<UpdatePlanPage />
+			{isOnPrem ? (
+				<PlanComparisonPage
+					setSelectedPlanType={() => {}}
+					setStep={() => {}}
+				/>
+			) : (
+				<BillingPageV2 />
+			)}
 		</Suspense>
 	)
 
@@ -117,7 +134,7 @@ export const SettingsRouter = () => {
 						title: 'Authentication',
 						panelContent: <Auth />,
 					},
-			  ]
+				]
 			: []),
 		...[
 			{
@@ -139,13 +156,16 @@ export const SettingsRouter = () => {
 				? allProjects.map((project) => ({
 						key: project?.id,
 						title: project?.name,
-				  }))
+					}))
 				: [],
 		[allProjects],
 	)
 
 	useEffect(() => {
-		analytics.page()
+		analytics.page('Settings', {
+			page: pageId,
+		})
+
 		if (!pageId) {
 			navigate(`/w/${workspaceId}/team`, { replace: true })
 		}
@@ -197,32 +217,38 @@ export const SettingsRouter = () => {
 							</NavLink>
 						))}
 					</Stack>
-					<Stack gap="0">
-						<Box mt="12" mb="4" ml="8">
-							<Text
-								size="xxSmall"
-								color="secondaryContentText"
-								cssClass={styles.menuTitle}
-							>
-								Workspace Settings
-							</Text>
-						</Box>
-						{workspaceSettingTabs.map((tab) => (
-							<NavLink
-								key={tab.key}
-								to={`/w/${workspaceId}/${tab.key}`}
-								className={({ isActive }) =>
-									clsx(styles.menuItem, {
-										[styles.menuItemActive]: isActive,
-									})
-								}
-							>
-								<Stack direction="row" align="center" gap="4">
-									<Text>{tab.title}</Text>
-								</Stack>
-							</NavLink>
-						))}
-					</Stack>
+					{!isProjectLevelMember && (
+						<Stack gap="0">
+							<Box mt="12" mb="4" ml="8">
+								<Text
+									size="xxSmall"
+									color="secondaryContentText"
+									cssClass={styles.menuTitle}
+								>
+									Workspace Settings
+								</Text>
+							</Box>
+							{workspaceSettingTabs.map((tab) => (
+								<NavLink
+									key={tab.key}
+									to={`/w/${workspaceId}/${tab.key}`}
+									className={({ isActive }) =>
+										clsx(styles.menuItem, {
+											[styles.menuItemActive]: isActive,
+										})
+									}
+								>
+									<Stack
+										direction="row"
+										align="center"
+										gap="4"
+									>
+										<Text>{tab.title}</Text>
+									</Stack>
+								</NavLink>
+							))}
+						</Stack>
+					)}
 					<Stack gap="0">
 						<Box mt="12" mb="4" ml="8">
 							<Text
@@ -236,7 +262,7 @@ export const SettingsRouter = () => {
 						{projectSettingTabs.map((project) => (
 							<NavLink
 								key={project.key}
-								to={`/${project.key}/settings/sessions`}
+								to={`/${project.key}/settings/general`}
 								className={clsx(styles.menuItem, {
 									[styles.menuItemActive]:
 										projectId === project.key,
@@ -283,10 +309,6 @@ export const SettingsRouter = () => {
 									element={billingContent}
 								/>
 								<Route
-									path="current-plan/update-plan"
-									element={updatePlanContent}
-								/>
-								<Route
 									path="upgrade-plan"
 									element={billingContent}
 								/>
@@ -310,6 +332,30 @@ export const SettingsRouter = () => {
 								<Route
 									path=":tab?"
 									element={<ProjectSettings />}
+								/>
+								<Route
+									path="filters/:product"
+									element={
+										<Box
+											style={{ maxWidth: 560 }}
+											my="40"
+											mx="auto"
+										>
+											{productFilterMatch?.params
+												.product && (
+												<ProjectProductFilters
+													product={
+														(productFilterMatch?.params.product
+															?.charAt(0)
+															.toUpperCase() +
+															productFilterMatch?.params.product
+																?.slice(1)
+																.toLowerCase()) as ProductType
+													}
+												/>
+											)}
+										</Box>
+									}
 								/>
 							</Routes>
 						</Box>

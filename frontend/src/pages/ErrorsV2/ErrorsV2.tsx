@@ -1,11 +1,17 @@
 import { useAuthContext } from '@authentication/AuthContext'
+import {
+	CreateAlertButton,
+	Divider,
+} from '@components/CreateAlertButton/CreateAlertButton'
 import { ErrorState } from '@components/ErrorState/ErrorState'
 import { KeyboardShortcut } from '@components/KeyboardShortcut/KeyboardShortcut'
 import LoadingBox from '@components/LoadingBox'
 import { PreviousNextGroup } from '@components/PreviousNextGroup/PreviousNextGroup'
+import { toast } from '@components/Toaster'
 import {
+	useGetAiQuerySuggestionLazyQuery,
+	useGetAlertsPagePayloadQuery,
 	useGetErrorGroupQuery,
-	useGetProjectDropdownOptionsQuery,
 	useMarkErrorGroupAsViewedMutation,
 	useMuteErrorCommentThreadMutation,
 } from '@graph/hooks'
@@ -13,51 +19,119 @@ import {
 	Box,
 	ButtonIcon,
 	Callout,
-	Container,
 	IconSolidExitRight,
 	Text,
 	Tooltip,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
 import { SIGN_IN_ROUTE } from '@pages/Auth/AuthRouter'
-import { useErrorSearchContext } from '@pages/Errors/ErrorSearchContext/ErrorSearchContext'
 import { CompleteSetup } from '@pages/ErrorsV2/CompleteSetup/CompleteSetup'
 import ErrorBody from '@pages/ErrorsV2/ErrorBody/ErrorBody'
 import ErrorTabContent from '@pages/ErrorsV2/ErrorTabContent/ErrorTabContent'
 import ErrorTitle from '@pages/ErrorsV2/ErrorTitle/ErrorTitle'
 import { IntegrationCta } from '@pages/ErrorsV2/IntegrationCta'
 import NoActiveErrorCard from '@pages/ErrorsV2/NoActiveErrorCard/NoActiveErrorCard'
-import SearchPanel from '@pages/ErrorsV2/SearchPanel/SearchPanel'
+import { SearchPanel } from '@pages/ErrorsV2/SearchPanel/SearchPanel'
 import { getHeaderFromError } from '@pages/ErrorsV2/utils'
-import useErrorPageConfiguration from '@pages/ErrorsV2/utils/ErrorPageUIConfiguration'
 import {
 	PlayerSearchParameters,
-	useLinkLogCursor,
+	useShowSearchParam,
 } from '@pages/Player/PlayerHook/utils'
+import useLocalStorage from '@rehooks/local-storage'
 import analytics from '@util/analytics'
 import { useParams } from '@util/react-router/useParams'
-import { message } from 'antd'
-import clsx from 'clsx'
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { apiObject } from 'rudder-sdk-js'
-import { StringParam, useQueryParams } from 'use-query-params'
+import {
+	StringParam,
+	useQueryParam,
+	useQueryParams,
+	withDefault,
+} from 'use-query-params'
 
 import { DEMO_PROJECT_ID } from '@/components/DemoWorkspaceButton/DemoWorkspaceButton'
+import { AiSuggestion, SearchContext } from '@/components/Search/SearchContext'
+import { useRetentionPresets } from '@/components/Search/SearchForm/hooks'
+import {
+	PAGE_PARAM,
+	PAGE_SIZE,
+	START_PAGE,
+} from '@/components/SearchPagination/SearchPagination'
 import { GetErrorGroupQuery } from '@/graph/generated/operations'
+import {
+	ErrorState as ErrorStateEnum,
+	ProductType,
+} from '@/graph/generated/schemas'
+import { useSearchTime } from '@/hooks/useSearchTime'
+import ErrorIssueButton from '@/pages/ErrorsV2/ErrorIssueButton/ErrorIssueButton'
+import ErrorShareButton from '@/pages/ErrorsV2/ErrorShareButton/ErrorShareButton'
+import { ErrorStateSelect } from '@/pages/ErrorsV2/ErrorStateSelect/ErrorStateSelect'
+import { useGetErrorGroups } from '@/pages/ErrorsV2/useGetErrorGroups'
+import usePlayerConfiguration from '@/pages/Player/PlayerHook/utils/usePlayerConfiguration'
+import { useApplicationContext } from '@/routers/AppRouter/context/ApplicationContext'
 import { useIntegratedLocalStorage } from '@/util/integrated'
 
+import {
+	DEFAULT_PANEL_WIDTH,
+	LOCAL_STORAGE_PANEL_WIDTH_KEY,
+	MAX_PANEL_WIDTH,
+	MIN_PANEL_WIDTH,
+} from './constants'
 import * as styles from './styles.css'
 
 type Params = { project_id: string; error_secure_id: string; referrer?: string }
+
+const ERROR_QUERY_PARAM = withDefault(
+	StringParam,
+	`status=${ErrorStateEnum.Open} `,
+)
 
 export default function ErrorsV2() {
 	const { project_id, error_secure_id } = useParams<Params>()
 	const { isLoggedIn } = useAuthContext()
 	const [{ integrated }] = useIntegratedLocalStorage(project_id!, 'server')
 
-	const { data, loading, errorQueryingErrorGroup } = useErrorGroup()
+	const [query, setQuery] = useQueryParam('query', ERROR_QUERY_PARAM)
+	const [page, setPage] = useQueryParam('page', PAGE_PARAM)
+
+	const [aiMode, setAiMode] = useState(false)
+
+	const { presets } = useRetentionPresets(ProductType.Errors)
+	const initialPreset = presets[5] ?? presets.at(-1)
+
+	const searchTimeContext = useSearchTime({
+		presets: presets,
+		initialPreset: initialPreset,
+	})
+
+	const [
+		getAiQuerySuggestion,
+		{ data: aiData, error: aiError, loading: aiLoading },
+	] = useGetAiQuerySuggestionLazyQuery({
+		fetchPolicy: 'network-only',
+	})
+
+	const handleSubmit = useCallback(
+		(newQuery: string) => {
+			setQuery(newQuery)
+			setPage(START_PAGE)
+		},
+		[setPage, setQuery],
+	)
+
+	const getErrorsData = useGetErrorGroups({
+		query,
+		project_id,
+		startDate: searchTimeContext.startDate,
+		endDate: searchTimeContext.endDate,
+		page,
+		disablePolling: !searchTimeContext.selectedPreset,
+	})
+
+	const { data, loading, errorQueryingErrorGroup } =
+		useErrorGroup(error_secure_id)
 
 	const { isBlocked, loading: isBlockedLoading } = useIsBlocked({
 		isPublic: data?.error_group?.is_public ?? false,
@@ -66,17 +140,86 @@ export default function ErrorsV2() {
 
 	const navigate = useNavigate()
 	const location = useLocation()
-	const { logCursor } = useLinkLogCursor()
+	const { showSearch } = useShowSearchParam()
 	const [muteErrorCommentThread] = useMuteErrorCommentThreadMutation()
-	const navigation = useNavigation()
+	const navigation = useErrorPageNavigation(
+		getErrorsData.changeErrorGroupIndex,
+		getErrorsData.errorGroupSecureIds,
+		getErrorsData.totalCount,
+	)
+
+	const dragHandleRef = useRef<HTMLDivElement>(null)
+	const dragging = useRef(false)
+
+	const handleMouseMove = useCallback(
+		(e: MouseEvent) => {
+			if (!dragging.current) {
+				return
+			}
+
+			e.stopPropagation()
+			e.preventDefault()
+
+			navigation.setLeftPanelWidth(
+				Math.min(Math.max(e.clientX, MIN_PANEL_WIDTH), MAX_PANEL_WIDTH),
+			)
+		},
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[],
+	)
+
+	const handleMouseUp = useCallback(() => {
+		dragging.current = false
+	}, [])
+
+	const onAiSubmit = (aiQuery: string) => {
+		if (project_id && aiQuery.length) {
+			getAiQuerySuggestion({
+				variables: {
+					query: aiQuery,
+					project_id: project_id,
+					product_type: ProductType.Errors,
+					time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+				},
+			})
+		}
+	}
+
+	const aiSuggestion = useMemo(() => {
+		const { query, date_range = {} } = aiData?.ai_query_suggestion ?? {}
+
+		return {
+			query,
+			dateRange: {
+				startDate: date_range.start_date
+					? new Date(date_range.start_date)
+					: undefined,
+				endDate: date_range.end_date
+					? new Date(date_range.end_date)
+					: undefined,
+			},
+		} as AiSuggestion
+	}, [aiData])
+
+	useEffect(() => {
+		window.addEventListener('mousemove', handleMouseMove, true)
+		window.addEventListener('mouseup', handleMouseUp, true)
+
+		return () => {
+			window.removeEventListener('mousemove', handleMouseMove, true)
+			window.removeEventListener('mouseup', handleMouseUp, true)
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [])
 
 	useAllHotKeys(navigation)
 
 	useEffect(() => {
-		if (logCursor) {
+		if (!showSearch) {
 			navigation.setShowLeftPanel(false)
 		}
-	}, [logCursor, navigation])
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [])
 
 	useEffect(() => {
 		if (
@@ -109,9 +252,12 @@ export default function ErrorsV2() {
 			}).then(() => {
 				const searchParams = new URLSearchParams(location.search)
 				searchParams.delete(PlayerSearchParameters.muted)
-				navigate(`${location.pathname}?${searchParams.toString()}`)
+				navigate({
+					pathname: location.pathname,
+					search: searchParams.toString(),
+				})
 
-				message.success('Muted notifications for this comment thread.')
+				toast.success('Muted notifications for this comment thread.')
 			})
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -122,77 +268,146 @@ export default function ErrorsV2() {
 			return
 		}
 
-		analytics.page({ is_guest: !isLoggedIn })
+		analytics.page('Errors', { is_guest: !isLoggedIn })
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [error_secure_id])
 
 	return (
-		<>
+		<SearchContext
+			initialQuery={query}
+			onSubmit={handleSubmit}
+			loading={getErrorsData.loading}
+			results={getErrorsData.errorGroups}
+			totalCount={getErrorsData.totalCount}
+			moreResults={getErrorsData.moreErrors}
+			resetMoreResults={getErrorsData.resetMoreErrors}
+			histogramBucketSize={getErrorsData.histogramBucketSize}
+			page={page}
+			setPage={setPage}
+			changeResultIndex={getErrorsData.changeErrorGroupIndex}
+			pollingExpired={getErrorsData.pollingExpired}
+			aiMode={aiMode}
+			setAiMode={setAiMode}
+			onAiSubmit={onAiSubmit}
+			aiSuggestion={aiSuggestion}
+			aiSuggestionLoading={aiLoading}
+			aiSuggestionError={aiError}
+			{...searchTimeContext}
+		>
 			<Helmet>
 				<title>Errors</title>
 			</Helmet>
 
-			<Box cssClass={styles.container}>
-				{!isBlocked && <SearchPanel />}
-
-				<div
-					className={clsx(styles.detailsContainer, {
-						[styles.moveDetailsRight]:
-							!isBlocked && navigation.showLeftPanel,
-					})}
+			{!isBlocked && (
+				<Box
+					display={navigation.showLeftPanel ? 'block' : 'none'}
+					position="relative"
+					style={{
+						width: `${navigation.leftPanelWidth}px`,
+					}}
 				>
 					<Box
-						background="white"
-						border="secondary"
-						borderRadius="6"
-						display="flex"
-						flexDirection="column"
-						height="full"
-						shadow="medium"
-					>
-						<TopBar
-							isLoggedIn={isLoggedIn}
-							isBlocked={isBlocked}
-							projectId={project_id}
-							navigation={navigation}
-						/>
+						ref={dragHandleRef}
+						cssClass={styles.panelDragHandle}
+						onMouseDown={(e) => {
+							e.preventDefault()
+							dragging.current = true
+						}}
+					/>
+					<SearchPanel />
+				</Box>
+			)}
 
-						<ErrorDisplay
-							errorGroup={data?.error_group}
-							integrated={integrated}
-							isBlocked={isBlocked}
-							isBlockedLoading={isBlockedLoading}
-							isErrorGroupError={!!errorQueryingErrorGroup}
-							isErrorState={
-								!!errorQueryingErrorGroup || isBlocked
-							}
-							loading={loading}
-						/>
-					</Box>
-				</div>
-			</Box>
-		</>
+			<div
+				className={styles.detailsContainer}
+				style={{
+					width:
+						!isBlocked && navigation.showLeftPanel
+							? `calc(100% - ${navigation.leftPanelWidth}px)`
+							: '100%',
+				}}
+			>
+				<Box
+					background="white"
+					border="dividerWeak"
+					borderRadius="6"
+					display="flex"
+					flexDirection="column"
+					height="full"
+					shadow="small"
+					overflow="hidden"
+				>
+					<TopBar
+						errorGroup={data?.error_group}
+						isLoggedIn={isLoggedIn}
+						isBlocked={isBlocked}
+						projectId={project_id}
+						navigation={navigation}
+					/>
+
+					<ErrorDisplay
+						errorGroup={data?.error_group}
+						integrated={integrated}
+						isBlocked={isBlocked}
+						isBlockedLoading={isBlockedLoading}
+						isErrorGroupError={!!errorQueryingErrorGroup}
+						isErrorState={!!errorQueryingErrorGroup || isBlocked}
+						loading={loading}
+					/>
+				</Box>
+			</div>
+		</SearchContext>
 	)
 }
 
 type TopBarProps = {
+	errorGroup: GetErrorGroupQuery['error_group']
 	isLoggedIn: boolean
 	isBlocked: boolean
-	navigation: ReturnType<typeof useNavigation>
+	navigation: ReturnType<typeof useErrorPageNavigation>
 	projectId?: string
 }
-function TopBar({ isLoggedIn, isBlocked, projectId, navigation }: TopBarProps) {
+function TopBar({
+	errorGroup,
+	isLoggedIn,
+	isBlocked,
+	projectId,
+	navigation,
+}: TopBarProps) {
+	const { data: alertsData } = useGetAlertsPagePayloadQuery({
+		variables: {
+			project_id: projectId!,
+		},
+		skip: !projectId,
+	})
+
+	const showCreateAlertButton = useMemo(() => {
+		if (!!alertsData?.error_alerts?.length) {
+			return false
+		}
+
+		return !alertsData?.alerts?.some(
+			(alert) => alert?.product_type === ProductType.Errors,
+		)
+	}, [alertsData])
+
 	const {
 		showLeftPanel,
-		setShowLeftPanel,
 		canMoveBackward,
 		canMoveForward,
-		nextSecureId,
-		previousSecureId,
-		goToErrorGroup,
+		next,
+		prev,
+		changeErrorGroupIndex,
 	} = navigation
+
 	return (isLoggedIn || projectId === DEMO_PROJECT_ID) && !isBlocked ? (
-		<Box display="flex" alignItems="center" borderBottom="secondary" p="6">
+		<Box
+			display="flex"
+			alignItems="center"
+			borderBottom="secondary"
+			p="6"
+			justifyContent="space-between"
+		>
 			<Box display="flex" gap="8">
 				{!showLeftPanel && (
 					<Tooltip
@@ -204,7 +419,9 @@ function TopBar({ isLoggedIn, isBlocked, projectId, navigation }: TopBarProps) {
 								shape="square"
 								emphasis="medium"
 								icon={<IconSolidExitRight size={14} />}
-								onClick={() => setShowLeftPanel(true)}
+								onClick={() =>
+									navigation.setShowLeftPanel(true)
+								}
 							/>
 						}
 					>
@@ -217,9 +434,26 @@ function TopBar({ isLoggedIn, isBlocked, projectId, navigation }: TopBarProps) {
 				<PreviousNextGroup
 					canMoveBackward={canMoveBackward}
 					canMoveForward={canMoveForward}
-					onPrev={() => goToErrorGroup(previousSecureId)}
-					onNext={() => goToErrorGroup(nextSecureId)}
+					onPrev={() => changeErrorGroupIndex(prev)}
+					onNext={() => changeErrorGroupIndex(next)}
 				/>
+			</Box>
+			<Box>
+				{errorGroup && (
+					<Box display="flex" gap="8" alignItems="center">
+						<ErrorShareButton errorGroup={errorGroup} />
+						{showCreateAlertButton ? (
+							<CreateAlertButton type={ProductType.Errors} />
+						) : null}
+						<Divider />
+						<ErrorStateSelect
+							errorSecureId={errorGroup.secure_id}
+							state={errorGroup.state}
+							snoozedUntil={errorGroup.snoozed_until}
+						/>
+						<ErrorIssueButton errorGroup={errorGroup} />
+					</Box>
+				)}
 			</Box>
 		</Box>
 	) : null
@@ -230,30 +464,30 @@ function useAllHotKeys({
 	setShowLeftPanel,
 	canMoveBackward,
 	canMoveForward,
-	nextSecureId,
-	previousSecureId,
-	goToErrorGroup,
-}: ReturnType<typeof useNavigation>) {
+	next,
+	prev,
+	changeErrorGroupIndex,
+}: ReturnType<typeof useErrorPageNavigation>) {
 	useHotkeys(
 		'j',
 		() => {
-			if (canMoveForward) {
+			if (canMoveForward && changeErrorGroupIndex) {
 				analytics.track('NextErrorGroupKeyboardShortcut')
-				goToErrorGroup(nextSecureId)
+				changeErrorGroupIndex(next)
 			}
 		},
-		[canMoveForward, nextSecureId],
+		[canMoveForward, next, changeErrorGroupIndex],
 	)
 
 	useHotkeys(
 		'k',
 		() => {
-			if (canMoveBackward) {
+			if (canMoveBackward && changeErrorGroupIndex) {
 				analytics.track('PrevErrorGroupKeyboardShortcut')
-				goToErrorGroup(previousSecureId)
+				changeErrorGroupIndex(prev)
 			}
 		},
-		[canMoveBackward, previousSecureId],
+		[canMoveBackward, prev, changeErrorGroupIndex],
 	)
 
 	useHotkeys(
@@ -299,26 +533,27 @@ function ErrorDisplay({
 						</title>
 					</Helmet>
 
-					<div className={styles.errorDetails}>
-						<Container>
-							{loading ? (
-								<LoadingBox />
-							) : (
-								<>
-									<IntegrationCta />
-									<Box pt="16" pb="32">
-										<ErrorTitle errorGroup={errorGroup} />
+					<Box overflowY="scroll" width="full">
+						{loading ? (
+							<LoadingBox />
+						) : (
+							<>
+								<IntegrationCta />
+								<Box
+									py="24"
+									px="20"
+									mx="auto"
+									style={{ maxWidth: 940 }}
+								>
+									<ErrorTitle errorGroup={errorGroup} />
 
-										<ErrorBody errorGroup={errorGroup} />
+									<ErrorBody errorGroup={errorGroup} />
 
-										<ErrorTabContent
-											errorGroup={errorGroup}
-										/>
-									</Box>
-								</>
-							)}
-						</Container>
-					</div>
+									<ErrorTabContent errorGroup={errorGroup} />
+								</Box>
+							</>
+						)}
+					</Box>
 				</>
 			)
 
@@ -326,9 +561,7 @@ function ErrorDisplay({
 			return (
 				<ErrorState
 					title="Enter this Workspace?"
-					message={
-						"Sadly, you don’t have access to the workspace 😢 Request access and we'll shoot an email to your workspace admin. Alternatively, feel free to make an account!"
-					}
+					message="Sadly, you don’t have access to the workspace 😢 Request access and we'll shoot an email to your workspace admin. Alternatively, feel free to make an account!"
 					shownWithHeader
 					showRequestAccess
 				/>
@@ -356,8 +589,7 @@ function ErrorDisplay({
 	}
 }
 
-function useErrorGroup() {
-	const { error_secure_id } = useParams<Params>()
+export function useErrorGroup(errorSecureId?: string) {
 	const [{ referrer }] = useQueryParams({
 		referrer: StringParam,
 	})
@@ -368,13 +600,16 @@ function useErrorGroup() {
 		loading,
 		error: errorQueryingErrorGroup,
 	} = useGetErrorGroupQuery({
-		variables: { secure_id: error_secure_id! },
-		skip: !error_secure_id,
+		variables: {
+			secure_id: errorSecureId!,
+			use_clickhouse: true,
+		},
+		skip: !errorSecureId,
 		onCompleted: () => {
-			if (error_secure_id) {
+			if (errorSecureId) {
 				markErrorGroupAsViewed({
 					variables: {
-						error_secure_id,
+						error_secure_id: errorSecureId,
 						viewed: true,
 					},
 				}).catch(console.error)
@@ -393,38 +628,37 @@ function useErrorGroup() {
 	return { data, loading, errorQueryingErrorGroup }
 }
 
-function useNavigation() {
-	const navigate = useNavigate()
-	const { project_id, error_secure_id } = useParams<Params>()
-	const { searchResultSecureIds } = useErrorSearchContext()
-	const { showLeftPanel, setShowLeftPanel } = useErrorPageConfiguration()
-	const goToErrorGroup = useCallback(
-		(secureId: string) => {
-			navigate(`/${project_id}/errors/${secureId}${location.search}`, {
-				replace: true,
-			})
-		},
-		[navigate, project_id],
-	)
-	const currentSearchResultIndex = searchResultSecureIds.findIndex(
+export function useErrorPageNavigation(
+	changeErrorGroupIndex: (index: number) => void = () => null,
+	secureIds: string[] = [],
+	totalCount: number = 0,
+) {
+	const [page] = useQueryParam('page', PAGE_PARAM)
+	const { error_secure_id } = useParams<Params>()
+	const { showLeftPanel, setShowLeftPanel } = usePlayerConfiguration()
+	const currentSearchResultIndex = secureIds.findIndex(
 		(secureId) => secureId === error_secure_id,
 	)
-	const canMoveForward =
-		!!searchResultSecureIds.length &&
-		currentSearchResultIndex < searchResultSecureIds.length - 1
-	const canMoveBackward =
-		!!searchResultSecureIds.length && currentSearchResultIndex > 0
-	const nextSecureId = searchResultSecureIds[currentSearchResultIndex + 1]
-	const previousSecureId = searchResultSecureIds[currentSearchResultIndex - 1]
+	const next = currentSearchResultIndex + 1
+	const prev = currentSearchResultIndex - 1
+	const canMoveForward = (page - 1) * PAGE_SIZE + next < totalCount
+	const canMoveBackward = prev >= 0 || page > 1
+
+	const [leftPanelWidth, setLeftPanelWidth] = useLocalStorage(
+		LOCAL_STORAGE_PANEL_WIDTH_KEY,
+		DEFAULT_PANEL_WIDTH,
+	)
 
 	return {
+		leftPanelWidth,
+		setLeftPanelWidth,
 		showLeftPanel,
 		setShowLeftPanel,
 		canMoveBackward,
 		canMoveForward,
-		nextSecureId,
-		previousSecureId,
-		goToErrorGroup,
+		next,
+		prev,
+		changeErrorGroupIndex,
 	}
 }
 
@@ -435,13 +669,11 @@ function useIsBlocked({
 	isPublic: boolean
 	projectId?: string
 }) {
-	const { data, loading } = useGetProjectDropdownOptionsQuery({
-		variables: { project_id: projectId! },
-		skip: !projectId,
-	})
+	const { loading, currentProject, joinableWorkspaces } =
+		useApplicationContext()
+
 	const isBlocked = useMemo(() => {
-		const currentProjectId = data?.project?.id
-		const canJoin = data?.joinable_workspaces?.some((w) =>
+		const canJoin = joinableWorkspaces?.some((w) =>
 			w?.projects.map((p) => p?.id).includes(projectId),
 		)
 		const isDemo = projectId === DEMO_PROJECT_ID
@@ -451,9 +683,9 @@ function useIsBlocked({
 			!isDemo &&
 			!loading &&
 			!canJoin &&
-			currentProjectId !== projectId
+			currentProject?.id !== projectId
 		)
-	}, [data, isPublic, loading, projectId])
+	}, [currentProject?.id, isPublic, joinableWorkspaces, loading, projectId])
 
 	return { isBlocked, loading }
 }

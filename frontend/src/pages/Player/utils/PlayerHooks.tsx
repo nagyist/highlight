@@ -1,24 +1,15 @@
+import { toast } from '@components/Toaster'
 import {
-	getFullScreenPopoverGetPopupContainer,
 	RightPanelView,
 	usePlayerUIContext,
 } from '@pages/Player/context/PlayerUIContext'
-import {
-	changeSession,
-	findNextSessionInList,
-	findPreviousSessionInList,
-} from '@pages/Player/PlayerHook/utils'
+
 import usePlayerConfiguration, {
 	PLAYBACK_SPEED_OPTIONS,
 } from '@pages/Player/PlayerHook/utils/usePlayerConfiguration'
 import analytics from '@util/analytics'
-import { useParams } from '@util/react-router/useParams'
-import { message } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
-import { useNavigate } from 'react-router-dom'
-
-import { useProjectId } from '@/hooks/useProjectId'
 
 import { ReplayerState, useReplayerContext } from '../ReplayerContext'
 
@@ -50,15 +41,8 @@ export const getNewTimeWithSkip = ({
 }
 
 export const usePlayerKeyboardShortcuts = () => {
-	const {
-		state,
-		play,
-		pause,
-		time,
-		replayer,
-		sessionResults,
-		sessionMetadata,
-	} = useReplayerContext()
+	const { state, play, pause, time, replayer, sessionMetadata } =
+		useReplayerContext()
 	const { setIsPlayerFullscreen, setRightPanelView } = usePlayerUIContext()
 	const {
 		setPlayerSpeedIdx,
@@ -73,14 +57,6 @@ export const usePlayerKeyboardShortcuts = () => {
 		setShowHistogram,
 		showHistogram,
 	} = usePlayerConfiguration()
-	const { projectId } = useProjectId()
-	const { session_secure_id } = useParams<{ session_secure_id: string }>()
-	const navigate = useNavigate()
-	message.config({
-		maxCount: 1,
-		rtl: false,
-		getContainer: getFullScreenPopoverGetPopupContainer,
-	})
 
 	/**
 	 * This function needs to be called before each hot key.
@@ -192,50 +168,6 @@ export const usePlayerKeyboardShortcuts = () => {
 	)
 
 	useHotkeys(
-		'shift+n',
-		(e) => {
-			if (sessionResults.sessions.length > 0 && !!session_secure_id) {
-				analytics.track('PlayerSkipToNextSessionKeyboardShortcut')
-				moveFocusToDocument(e)
-
-				const nextSession = findNextSessionInList(
-					sessionResults.sessions,
-					session_secure_id,
-				)
-				changeSession(
-					projectId!,
-					navigate,
-					nextSession,
-					'Playing the next session.',
-				)
-			}
-		},
-		[session_secure_id, sessionResults],
-	)
-
-	useHotkeys(
-		'shift+p',
-		(e) => {
-			if (sessionResults.sessions.length > 0 && !!session_secure_id) {
-				analytics.track('PlayerSkipToPreviousSessionKeyboardShortcut')
-				moveFocusToDocument(e)
-
-				const nextSession = findPreviousSessionInList(
-					sessionResults.sessions,
-					session_secure_id,
-				)
-				changeSession(
-					projectId!,
-					navigate,
-					nextSession,
-					'Playing the previous session.',
-				)
-			}
-		},
-		[session_secure_id, sessionResults],
-	)
-
-	useHotkeys(
 		'cmd+up, ctrl+up',
 		(e) => {
 			analytics.track('PlayerIncreasePlayerSpeedKeyboardShortcut')
@@ -279,9 +211,8 @@ export const usePlayerKeyboardShortcuts = () => {
 		moveFocusToDocument(e)
 
 		setEnableInspectElement(false)
-		setShowRightPanel(true)
 		setRightPanelView(RightPanelView.Comments)
-		message.success(
+		toast.success(
 			'Commenting enabled, click anywhere on the video to create a comment.',
 		)
 	})
@@ -292,7 +223,8 @@ export const usePlayerKeyboardShortcuts = () => {
 
 		setEnableInspectElement(true)
 		setShowRightPanel(false)
-		message.success(
+		setRightPanelView(RightPanelView.Event)
+		toast.success(
 			"Inspect element enabled, you can open up your browser's DevTools and inspect the DOM now.",
 		)
 	})

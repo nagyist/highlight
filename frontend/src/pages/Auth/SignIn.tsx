@@ -11,8 +11,7 @@ import {
 	IconSolidGoogle,
 	Stack,
 	Text,
-	useFormState,
-} from '@highlight-run/ui'
+} from '@highlight-run/ui/components'
 import SvgHighlightLogoOnLight from '@icons/HighlightLogoOnLight'
 import { AuthBody, AuthError, AuthFooter, AuthHeader } from '@pages/Auth/Layout'
 import useLocalStorage from '@rehooks/local-storage'
@@ -22,7 +21,13 @@ import React, { useCallback, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuthContext } from '@/authentication/AuthContext'
+import { AUTH_MODE } from '@/constants'
+import {
+	AppLoadingState,
+	useAppLoadingContext,
+} from '@/context/AppLoadingContext'
 import { SIGN_UP_ROUTE } from '@/pages/Auth/AuthRouter'
+import { VERIFY_EMAIL_ROUTE } from '@/routers/AppRouter/AppRouter'
 import analytics from '@/util/analytics'
 
 type Props = {
@@ -34,31 +39,48 @@ type Props = {
 export const SignIn: React.FC<Props> = ({ setResolver }) => {
 	const navigate = useNavigate()
 	const { fetchAdmin, signIn } = useAuthContext()
+	const { setLoadingState } = useAppLoadingContext()
 	const [inviteCode] = useLocalStorage('highlightInviteCode')
 	const [loading, setLoading] = React.useState(false)
 	const [error, setError] = React.useState('')
 	const location = useLocation()
+
 	const initialEmail: string = location.state?.email ?? ''
-	const formState = useFormState({
+	const formStore = Form.useStore({
 		defaultValues: {
 			email: initialEmail,
 			password: '',
 		},
 	})
-	const [createAdmin] = useCreateAdminMutation()
-	const { data } = useGetWorkspaceForInviteLinkQuery({
-		variables: {
-			secret: inviteCode!,
-		},
-		skip: !inviteCode,
+	const email = formStore.useValue('email')
+	formStore.useSubmit(async (formState) => {
+		setLoading(true)
+
+		auth.signInWithEmailAndPassword(
+			formState.values.email,
+			formState.values.password,
+		)
+			.then(handleAuth)
+			.catch(handleAuthError)
 	})
+
+	const [createAdmin] = useCreateAdminMutation()
+	const { data, loading: loadingWorkspaceForInvite } =
+		useGetWorkspaceForInviteLinkQuery({
+			variables: {
+				secret: inviteCode!,
+			},
+			skip: !inviteCode,
+		})
 	const workspaceInvite = data?.workspace_for_invite_link
 
 	const handleAuth = useCallback(
 		async ({ additionalUserInfo, user }: firebase.auth.UserCredential) => {
-			if (additionalUserInfo?.isNewUser && user?.email) {
+			const isNewUser = additionalUserInfo?.isNewUser && user?.email
+
+			if (isNewUser) {
 				analytics.track('Sign up', {
-					email: user.email,
+					email: user.email!,
 					provider: additionalUserInfo.providerId,
 				})
 
@@ -71,8 +93,12 @@ export const SignIn: React.FC<Props> = ({ setResolver }) => {
 
 			await fetchAdmin()
 			signIn(user)
+
+			if (isNewUser) {
+				navigate(VERIFY_EMAIL_ROUTE, { replace: true })
+			}
 		},
-		[createAdmin, fetchAdmin, signIn],
+		[createAdmin, fetchAdmin, signIn, navigate],
 	)
 
 	const handleAuthError = useCallback(
@@ -100,23 +126,15 @@ export const SignIn: React.FC<Props> = ({ setResolver }) => {
 		auth.signInWithPopup(provider).then(handleAuth).catch(handleAuthError)
 	}
 
-	useEffect(() => analytics.page(), [])
+	useEffect(() => analytics.page('Sign In'), [])
+	useEffect(() => {
+		if (!loadingWorkspaceForInvite) {
+			setLoadingState(AppLoadingState.LOADED)
+		}
+	}, [loadingWorkspaceForInvite, setLoadingState])
 
 	return (
-		<Form
-			state={formState}
-			resetOnSubmit={false}
-			onSubmit={() => {
-				setLoading(true)
-
-				auth.signInWithEmailAndPassword(
-					formState.values.email,
-					formState.values.password,
-				)
-					.then(handleAuth)
-					.catch(handleAuthError)
-			}}
-		>
+		<Form store={formStore} resetOnSubmit={false}>
 			<AuthHeader>
 				<Box mb="4">
 					<Stack direction="column" gap="16" align="center">
@@ -126,91 +144,100 @@ export const SignIn: React.FC<Props> = ({ setResolver }) => {
 								? `You're invited to join ‘${workspaceInvite.workspace_name}’`
 								: 'Welcome back.'}
 						</Heading>
-						<Text>
-							New here?{' '}
-							<Link
-								to={SIGN_UP_ROUTE}
-								state={{ email: formState.values.email }}
-							>
-								Create an account
-							</Link>
-							.
-						</Text>
+						{AUTH_MODE === 'firebase' ? (
+							<Text>
+								New here?{' '}
+								<Link to={SIGN_UP_ROUTE} state={{ email }}>
+									Create an account
+								</Link>
+								.
+							</Text>
+						) : null}
 					</Stack>
 				</Box>
 			</AuthHeader>
-			<AuthBody>
-				<Stack gap="12">
-					<Form.Input
-						name={formState.names.email}
-						label="Email"
-						type="email"
-						autoFocus
-						autoComplete="email"
-					/>
-					<Form.Input
-						name={formState.names.password}
-						label="Password"
-						type="password"
-						autoComplete="current-password"
-					/>
-					<Link
-						to="/reset_password"
-						state={{ email: formState.values.email }}
-					>
-						<Text size="xSmall">Forgot your password?</Text>
-					</Link>
-					{error && <AuthError>{error}</AuthError>}
-				</Stack>
-			</AuthBody>
+			{AUTH_MODE === 'oauth' ? null : (
+				<AuthBody>
+					<Stack gap="12">
+						<Form.Input
+							name={formStore.names.email}
+							label="Email"
+							type="email"
+							autoFocus
+							autoComplete="email"
+						/>
+						<Form.Input
+							name={formStore.names.password}
+							label="Password"
+							type="password"
+							autoComplete="current-password"
+						/>
+						<Link to="/reset_password" state={{ email }}>
+							<Text size="xSmall">Forgot your password?</Text>
+						</Link>
+						{error && <AuthError>{error}</AuthError>}
+					</Stack>
+				</AuthBody>
+			)}
+
 			<AuthFooter>
 				<Stack gap="12">
 					<Button
 						trackingId="sign-up-submit"
 						loading={loading}
 						type="submit"
+						id="email-password-signin"
 					>
 						Sign in
+						{AUTH_MODE === 'oauth' ? <>{' with SSO'}</> : null}
 					</Button>
-					<Stack direction="row" align="center">
-						<Box
-							borderTop="divider"
-							style={{ height: 0, flexGrow: 1 }}
-						/>
-						<Text color="weak" size="xSmall" align="center">
-							or
-						</Text>
-						<Box
-							borderTop="divider"
-							style={{ height: 0, flexGrow: 1 }}
-						/>
-					</Stack>
-					<Button
-						kind="secondary"
-						type="button"
-						trackingId="sign-in-with-google"
-						onClick={() => {
-							handleExternalAuthClick(auth.googleProvider!)
-						}}
-					>
-						<Box display="flex" alignItems="center" gap="6">
-							<IconSolidGoogle />
-							Sign in with Google
-						</Box>
-					</Button>
-					<Button
-						kind="secondary"
-						type="button"
-						trackingId="sign-in-with-github"
-						onClick={() => {
-							handleExternalAuthClick(auth.githubProvider!)
-						}}
-					>
-						<Box display="flex" alignItems="center" gap="6">
-							<IconSolidGithub />
-							Sign in with Github
-						</Box>
-					</Button>
+					{AUTH_MODE !== 'firebase' ? null : (
+						<>
+							<Stack direction="row" align="center">
+								<Box
+									borderTop="divider"
+									style={{ height: 0, flexGrow: 1 }}
+								/>
+								<Text color="weak" size="xSmall" align="center">
+									or
+								</Text>
+								<Box
+									borderTop="divider"
+									style={{ height: 0, flexGrow: 1 }}
+								/>
+							</Stack>
+							<Button
+								kind="secondary"
+								type="button"
+								trackingId="sign-in-with-google"
+								onClick={() => {
+									handleExternalAuthClick(
+										auth.googleProvider!,
+									)
+								}}
+							>
+								<Box display="flex" alignItems="center" gap="6">
+									<IconSolidGoogle />
+									Sign in with Google
+								</Box>
+							</Button>
+							<Button
+								kind="secondary"
+								type="button"
+								trackingId="sign-in-with-github"
+								onClick={() => {
+									handleExternalAuthClick(
+										auth.githubProvider!,
+									)
+								}}
+							>
+								<Box display="flex" alignItems="center" gap="6">
+									<IconSolidGithub />
+									Sign in with Github
+								</Box>
+							</Button>
+						</>
+					)}
 				</Stack>
 			</AuthFooter>
 		</Form>

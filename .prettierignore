@@ -19,3 +19,6 @@ scripts/venv
 .yarnrc.yml
 __generated
 .reflame.config.jsonc
+highlight.io/out
+sdk/highlightinc-highlight-datasource/grafana/data
+sdk/highlight-php

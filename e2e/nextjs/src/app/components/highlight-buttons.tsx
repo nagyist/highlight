@@ -1,7 +1,7 @@
 'use client'
 
 import { Button } from '@/app/components/button'
-import { H } from 'highlight.run'
+import { H } from '@highlight-run/next/client'
 
 export function HighlightButtons() {
 	return (
@@ -15,10 +15,13 @@ export function HighlightButtons() {
 		>
 			<Button
 				onClick={() => {
-					H.identify('vadim@highlight.io', { foo: 'bar' })
+					H.identify('vadim@highlight.io', {
+						foo: 'bar',
+						host: window.location.host,
+					})
 				}}
 			>
-				Identify
+				Identify As Vadim
 			</Button>
 			<Button
 				onClick={() => {
